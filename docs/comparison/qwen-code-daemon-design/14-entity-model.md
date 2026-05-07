@@ -196,7 +196,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | LSP server | **Workspace** | §06 §3 |
 | MCP server | **Workspace** | §06 §1（决策 §3）|
 | Auth credentials（API key 等）| **Workspace** | §06 §6.1 |
-| `.qwen/settings.json` | **Workspace** | §15 配置 cascade（待写）|
+| `.qwen/settings.json` | **Workspace** | [§14 §八 配置 Cascade](#八配置-cascade4-层--5-层-with-tenant) |
 | `permission_decisions` | **Tenant + Workspace** 双键 | §07 §4 / §12 §3.3 |
 | Skill registry | daemon 全局 + path-conditional 激活 | §06 §5 |
 | Provider registry | daemon 全局 | §06 §6 |
