@@ -79,6 +79,7 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 |---|---|---|
 | 08 | [3 阶段路线图](./08-roadmap.md) | Stage 1 MVP（~1 周 HTTP-bridge）/ Stage 2 原生（~3 周）/ Stage 3 完整（~2 月）+ Stage 4-6（多租户 → 沙箱 → SaaS）|
 | 09 | [与 OpenCode 详细对比](./09-comparison-with-opencode.md) | 路由 / 技术栈 / 设计哲学逐项对照 |
+| 20 | [与 Anthropic Managed Agents 对比](./20-vs-anthropic-managed-agents.md) | **5 层架构对照**（client / agent runtime / tool / sandbox / persistence）+ **内置工具映射** + **协议层差异**（Anthropic 私有 vs ACP 标准）+ **双向 migration path**（Anthropic→Qwen / Qwen→Anthropic 兼容 API）+ **计费成本曲线交叉点**（用户量 ~50/500 是分水岭）+ **6 类客户场景推荐** + **决策树 7 问选型** + **3 种混合部署模式** + **"Managed Qwen Agents" 产品蓝图**（基于 Stage 6 包装，6 月可建）|
 
 ## 一句话 TL;DR
 

@@ -1098,4 +1098,4 @@ Chaos 测试: 主动注入故障，验证防御机制
 
 ---
 
-[← 返回 README](./README.md)
+[← 返回 README](./README.md) · [下一篇：与 Anthropic Managed Agents 对比 →](./20-vs-anthropic-managed-agents.md)
