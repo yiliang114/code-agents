@@ -3,6 +3,10 @@
 本文档提供 Code Agent CLI 工具的详细横向对比。
 
 > **2026-04-13 新增 Hermes Agent**（第 19 款）—— Nous Research 的自我改进代理，核心卖点是**闭环学习系统**（冻结快照 Memory + 自主 Skill + FTS5 跨会话搜索 + 双计数器 Nudge）。详见 [Hermes Agent 文档](../tools/hermes-agent/) 和 [闭环学习系统深度对比](./closed-learning-loop-deep-dive.md)。
+>
+> **2026-05-07 增量更新**：
+> - **Claude Code v2.1.132**（2026-05-06）：默认模型 Opus 4.6 → **Opus 4.7**（Max/Team Premium）+ 新 `xhigh` effort level + 5 个云端新特性（Computer Use / Auto Mode / Ultraplan / Ultrareview / Routines）+ 7 个新斜杠命令 + Conditional `if` Hooks + native binaries。详见 [Claude Code §23 近期更新](../tools/claude-code/23-recent-updates.md)
+> - **Qwen Code v0.15.6**：4 kinds Background tasks framework（agent/shell/monitor/dream）全落地 + foreground subagents 也接入 pill+dialog（PR#3768）+ subagent context auto-compact（PR#3735）+ subagent Config 真正隔离（PR#3873）+ transcript-first fork resume（PR#3739，比 Claude Code 更稳健）。详见 [SubAgent 展示 Deep-Dive](./subagent-display-deep-dive.md)
 
 ## 快速参考表
 
@@ -26,7 +30,7 @@
 
 | Agent | Claude | GPT-4 | Gemini | 本地模型 | 说明 |
 |------|--------|-------|--------|----------|------|
-| Claude Code | ✓ | | | | 仅 Claude |
+| Claude Code | ✓ | | | | 仅 Claude（Opus 4.7 默认 / Sonnet 4.x / Haiku 4.5；`xhigh` effort level）|
 | Aider | ✓ | ✓ | | ✓ | 通过 Ollama |
 | Copilot CLI | ✓ | ✓ | | | Claude Sonnet 4.5 默认，可选 GPT-5 |
 | Cursor | ✓ | ✓ | ✓ | | 多提供商 |
@@ -169,7 +173,7 @@
 | Warp | | | | 无 |
 | Gemini CLI | ✓ | ✓ | ✓ | 会话恢复 + rewind |
 | OpenHands | ✓ | ✓ | | Docker 检查点 |
-| Qwen Code | ✓ | ✓ | ✓ | 会话恢复（继承 Gemini CLI） |
+| Qwen Code | ✓ | ✓ | ✓ | 会话恢复 + **PR#3739 transcript-first fork resume**（比 Claude Code 更稳健：转抄优先 / `system/agent_bootstrap` + `system/agent_launch_prompt` 重放 / paused 生命周期）|
 | Kimi CLI | ✓ | | | 会话保存 |
 
 ### 输入队列与预测
@@ -215,7 +219,7 @@
 
 | 能力 | Claude Code | Aider | Gemini CLI | Kimi CLI | Qwen Code | Copilot CLI | Codex CLI | Goose | OpenCode |
 |------|-------------|-------|-----------|----------|-----------|-------------|-----------|-------|---------|
-| **命令总数** | ~79（含 Skill） | ~42 | ~39 | ~28 | 41 | 34 | 28 | 16（斜杠）+ 15（CLI） | 23（TUI） |
+| **命令总数** | ~86（含 Skill · v2.1.132 加 `/ultrareview` `/ultraplan` `/autofix-pr` `/usage` `/team-onboarding` `/theme`）| ~42 | ~39 | ~28 | 51（v0.15.6）| 34 | 28 | 16（斜杠）+ 15（CLI） | 23（TUI） |
 | **代码审查** | `/review` 插件 | — | `/code-review`（扩展） | — | `/review`（Skill，4 代理并行） | `/review` | `@codex review` | — | — |
 | **模式切换** | — | `/code` `/architect` `/ask` | `/plan` | `/plan` `/yolo` | `/plan` | — | `--ask-for-approval` | — | `--agent` |
 | **模型切换** | `/model` | `/model` `/editor-model` `/weak-model` | `/model` | `/model` | `/model` | `/model` | `--model` | `--model` | — |
@@ -236,14 +240,34 @@
 | **Vim 模式** | `/vim` | — | `/vim` | — | `/vim` | — | — | — | — |
 
 **关键发现：**
-- **Aider** 命令最多（~42），文件/上下文管理和模式切换最细粒度
-- **Gemini CLI / Qwen Code / Kimi CLI** 命令体系接近（Gemini CLI 分叉谱系），Qwen Code 新增 Arena/语言/洞察/扩展 4 个独有命令
-- **Claude Code** 独有 `/review`（代码审查）和 `/remote-control`（远程控制）
+- **Claude Code** 命令数 ~86（v2.1.132），独有 `/review`（代码审查）`/remote-control`（远程控制）`/ultrareview`（云端 fleet 评审）`/ultraplan`（云端 plan 协作）`/autofix-pr`（PR auto-fix）
+- **Qwen Code** 51 命令（v0.15.6），新增 `/tasks`（PR#3642 background tasks 调度入口）+ Arena / 语言 / 洞察 / 扩展独有命令
+- **Aider** ~42 命令，文件/上下文管理和模式切换最细粒度
+- **Gemini CLI / Qwen Code / Kimi CLI** 命令体系接近（Gemini CLI 分叉谱系）
 - **Copilot CLI** 34 命令 + 67 工具 + 3 内置代理，GitHub 生态深度集成
 - **Codex CLI** 28 交互命令（官方文档验证）+ 15 CLI 子命令 + Rust 原生沙箱
 - **OpenCode** 使用 Ctrl+K 命令面板 + 23 个 TUI 斜杠命令
 - **Goose** 16 个交互式斜杠命令 + 15 个 CLI 命令（clap derive），MCP 原生架构
 - **Qoder CLI** 19+ 交互命令 + 7 CLI 子命令 + Go 原生 43MB + Quest 模式 + Claude Code 兼容（`--with-claude-config`）
+
+### 后台任务与多 Agent 协调
+
+> 详见 [SubAgent 展示 Deep-Dive](./subagent-display-deep-dive.md)。本节反映 2026-05-07 状态。
+
+| 能力 | Claude Code | Qwen Code | OpenCode | 其他 |
+|------|-------------|-----------|----------|------|
+| **后台任务 UI** | footer 上方常驻面板（CoordinatorAgentStatus）| **footer pill + 按需打开 dialog**（按需折叠节省屏幕空间）| 无 | 大多无 |
+| **任务 kind 框架** | LocalAgentTask（agent only）| **4 kinds：agent / shell / monitor / dream** 通用 framework | 无 | 大多无 |
+| **统一调度面** | agent / shell 分离 UI | **统一 BackgroundTasksDialog**（PR#3720）—— 超越 Claude | 无 | — |
+| **状态分类** | 2 类（running / completed）| **4 类**（Running / Completed / Failed / Cancelled）—— 超越 Claude | — | — |
+| **TTL 自动驱逐** | ✓ 30s 已完成自动消失 | ✗ 保持可见，用户主动 `x` 取消 | — | — |
+| **foreground subagent UI** | inline 渲染 | **inline + pill+dialog 双模式**（PR#3768，2026-05-06 完成）| — | — |
+| **subagent context overflow 防御** | 主 agent compaction | **subagent 也共享主 agent compaction trigger**（PR#3735）| — | — |
+| **Subagent Config 隔离** | tool registry 共享 parent | **Object.create 重建 tool registry**（PR#3873，subagent 工具走自己 FileReadCache + approval mode）| — | — |
+| **云端 fleet 多 Agent** | ✨ **Ultrareview**（v2.1.132 Week 17，云端 fleet 并行 review agents → CLI/Desktop）| 无（本地 only）| 无 | — |
+| **跨设备协作 plan** | ✨ **Ultraplan**（v2.1.132 Week 15，本地 plan + 云端 web 评审 + 远程或本地执行）| 无 | 无 | — |
+| **Permission classifier** | ✨ **Auto Mode**（v2.1.132 Week 13，介于 manual / `--dangerously-skip-permissions` 之间）| 4 mode permission flow（PR#3723）| — | — |
+| **Computer Use（GUI 自动化）**| ✨ Week 14，CLI 内打开 app + 点击 + 视觉验证 | 无 | 无 | — |
 
 ## 使用场景推荐
 
