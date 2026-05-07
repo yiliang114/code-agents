@@ -128,6 +128,47 @@ Upgrade: websocket                 → 用 WebSocket
 **SSE 优势**：HTTP/2 友好、自动重连（client 用 EventSource API）、防火墙透明。
 **WebSocket 优势**：双向通信（permission response / interrupt 可同 channel 发回，免单独 POST 路由）。
 
+### WebSocket 库选型（Express 5 + `express-ws` 默认）
+
+Express 5 不内置 WebSocket，需挂第三方库。两种方案：
+
+| 维度 | **`express-ws`（默认推荐）** | `ws` 直挂 `http.Server` |
+|---|---|---|
+| 包装方式 | wraps Express app，`app.ws('/path', handler)` 风格 | `new WebSocketServer({ server: httpServer })` |
+| 路由集成 | ✓ 与 Express 路由统一 | ✗ 路径匹配自己写 |
+| **Middleware 复用** | ✓ Express middleware（Bearer / CORS / Origin lock）自动跑 | ✗ upgrade 请求需手动校验 |
+| Upgrade handshake 控制 | 黑盒 | 完全可控 |
+| 包大小 | +~50KB（含底层 `ws`）| +~50KB（仅 `ws`）|
+| 生态 / 维护 | 中（社区）| 高（核心库，几乎所有 Node WS 实现底层都是 `ws`）|
+
+**默认推荐 `express-ws`**——理由：
+- vscode-ide-companion 已有的 Bearer + Origin lock middleware（`ide-server.ts:185-200`）直接复用到 ws 路由，0 额外代码
+- 语法 `app.ws('/session/:id/events', handler)` 与 `app.get` 同款，降低团队学习成本
+- middleware 自动校验 → 不会出现"忘了在 upgrade handler 里校验 Bearer"的安全 bug
+
+**例外用 `ws` 直挂**：
+- 需要严格控制 upgrade handshake（如 protocol negotiation / subprotocols）
+- 需要在升级前做 expensive 校验（rate limit / 大 body 校验）
+- Stage 6+ 切到 Hono 时（Hono 用 Bun.serve 原生 createBunWebSocket，不再需 express-ws）
+
+代码样例：
+
+```ts
+// Express 5 + express-ws (默认)
+import express from 'express'
+import expressWs from 'express-ws'
+
+const { app } = expressWs(express())
+app.use(authMiddleware)         // Bearer / Origin lock 自动跑
+app.use(corsMiddleware)
+
+app.ws('/session/:id/events', (ws, req) => {
+  const session = getSession(req.params.id)
+  const unsubscribe = session.subscribe((event) => ws.send(JSON.stringify(event)))
+  ws.on('close', unsubscribe)
+})
+```
+
 ### 事件 schema 复用 ACP `SessionNotification`
 
 ```ts

@@ -80,7 +80,7 @@
 |---|---|---|
 | HTTP 框架 | Hono | **Express 5（默认）** / Hono（Stage 6 可选） |
 | Runtime | Bun 优先 / Node fallback | **Node.js 优先（prod 长跑稳）/ Bun dev** |
-| WebSocket | `Bun.serve` + `createBunWebSocket` | `express-ws` 或 `ws` 直接挂 + SSE 兜底 |
+| WebSocket | `Bun.serve` + `createBunWebSocket` | 默认 `express-ws`（备选 `ws` 直挂）+ SSE 兜底 |
 | OpenAPI 生成 | `hono-openapi` | `@asteasolutions/zod-to-openapi`（Stage 3）|
 | Schema 验证 | Effect Schema | **zod**（与现有 ACP 一致）|
 | 上下文传播 | Effect `Context.Service` | **`AsyncLocalStorage` 直接** |

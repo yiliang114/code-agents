@@ -88,7 +88,7 @@ Stage 3 (~2 月): 对标 OpenCode 完整设计
 | HttpTransport（SDK 端）| 2-3d | `packages/sdk-typescript/src/transport/HttpTransport.ts` —— 镜像 ProcessTransport |
 | Web UI 接入（HttpAcpAdapter）| 2d | `packages/webui/src/adapters/HttpAcpAdapter.ts` |
 | Permission flow `daemon-http` mode | 2d | 扩展 PR#3723 `evaluatePermissionFlow()` + SSE permission_request |
-| WebSocket 升级 + bidi 通信 | 2d | `express-ws` 或 `ws` 直接挂（也可 Bun.serve + createBunWebSocket）|
+| WebSocket 升级 + bidi 通信 | 2d | 默认 `express-ws`（备选 `ws` 直挂；详见 [§04 §三 WebSocket 库选型](./04-http-api.md#websocket-库选型express-5--express-ws-默认)）|
 | MCP per-workspace 共享（同 workspace 多 session 复用）| 2d | 扩展 `mcp-client-manager.ts` 绑定 Workspace（决策 §3）|
 | `/permission/:id` 路由 + persist | 1d | Stage 2 写 settings.json / Stage 3 切 SQLite `permission_decisions` 表（§15）|
 | daemon 生命周期（pid file / graceful shutdown / SIGTERM）| 1d | |
