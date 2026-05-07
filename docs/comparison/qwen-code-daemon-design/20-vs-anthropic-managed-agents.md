@@ -591,7 +591,16 @@ Enterprise   → Qwen daemon 私有部署
 
 ## 十七、一句话总结
 
-**Anthropic Managed Agents 与 Qwen daemon 是两种互补哲学：前者"管运维换控制权"（云托管 SaaS / Claude only / 几分钟集成 / 数据驻留 Anthropic / 单 client 设计 / 1 种 managed sandbox / 闭源 / 适合 MVP 与小型部署）；后者"自管运维拿控制权"（自托管 / 任意 LLM provider / 几天-几周部署 / 数据完全自主 / 多 client live collaboration / 5 种 sandbox / Apache-2.0 开源 / 适合高合规 / 离线 / 多 provider 路由 / 大规模 SaaS）。架构维度对照高度相似（multi-tenant / sandbox / persistence / HA / MCP 都有），但实现位置和默认值完全不同。混合模式可行：Qwen daemon 自托管作 router + Anthropic API 作 provider；或不同 tier 用不同方案。Qwen daemon Stage 6 + 商业层（Console / Marketplace / 客服 / 合规）= 完整 "Managed Qwen Agents" 产品对标 Anthropic Managed Agents——架构 6 个月就位（已设计完成），商业层 6 个月可建。阿里云有天然优势包装这个产品（DashScope / 钉钉飞书 / 中国合规 / 中文生态）。决策树 6 问选型 + 6 类客户场景推荐 + 3 种混合模式 = 全场景覆盖。**
+Anthropic Managed Agents 与 Qwen daemon 是**两种互补哲学**：
+
+- **前者"管运维换控制权"**：云托管 SaaS / Claude only / 几分钟集成 / 数据驻留 Anthropic / 单 client 设计 / 1 种 managed sandbox / 闭源 / 适合 MVP 与小型部署
+- **后者"自管运维拿控制权"**：自托管 / 任意 LLM provider / 几天-几周部署 / 数据完全自主 / 多 client live collaboration / 5 种 sandbox / Apache-2.0 开源 / 适合高合规 / 离线 / 多 provider 路由 / 大规模 SaaS
+
+**架构维度对照高度相似**（multi-tenant / sandbox / persistence / HA / MCP 都有），但实现位置和默认值完全不同。**混合模式可行**：Qwen daemon 自托管作 router + Anthropic API 作 provider；或不同 tier 用不同方案。
+
+**Qwen daemon Stage 6 + 商业层**（Console / Marketplace / 客服 / 合规）= 完整 "Managed Qwen Agents" 产品对标 Anthropic Managed Agents——架构 6 个月就位（已设计完成），商业层 6 个月可建。阿里云有天然优势包装这个产品（DashScope / 钉钉飞书 / 中国合规 / 中文生态）。
+
+**全场景覆盖**：决策树 6 问选型 + 6 类客户场景推荐 + 3 种混合部署模式。
 
 ---
 
