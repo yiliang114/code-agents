@@ -3,6 +3,13 @@
 > MCP (Model Context Protocol) 是 Code Agent 连接外部工具和数据源的通用协议。Claude Code 的 MCP 实现是三个主要 Agent 中最完整的——23 个文件、~12,000 行、6 种传输类型、OAuth + XAA 认证、Channel 消息推送。
 >
 > **Qwen Code 对标**：Qwen Code 已有 MCP 基础实现（~4,300 行），包括 OAuth token 存储抽象和 Google 认证。差距主要在 Channel 消息推送、资源订阅、断线重连策略。
+>
+> **v2.1.82 → v2.1.132 增量**（详见 [§23 §八](./23-recent-updates.md)）：
+> - **Per-tool MCP result-size override**（Week 14）：可设单 tool output 上限到 **500K**，覆盖默认上限
+> - **Plugin executables on Bash `PATH`**（Week 14）：plugin 可注入 binary 到 shell 环境
+> - **MCP server OAuth 改进**（v2.1.126）：浏览器 callback 不可达时手动粘贴 OAuth code
+> - **MCP retry logic 改进**（v2.1.132）：连接失败的 status 更清楚
+> - **stdio MCP memory leak 修复**（v2.1.132）：长跑 RSS 无界增长（10GB+）问题修了——daemon 长跑场景的关键 fix
 
 ## 一、为什么 MCP 集成是 Agent 的关键基础设施
 

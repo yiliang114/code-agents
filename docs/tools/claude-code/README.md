@@ -6,6 +6,10 @@
 >
 > **不是**：Claude Code 用户手册或功能介绍
 
+> **基线版本说明**：
+> - 主体内容基于 **v2.1.81 二进制逆向分析**（2026-03-25）
+> - **v2.1.82 → v2.1.132 增量更新**汇总在 [§23-recent-updates.md](./23-recent-updates.md)（5 个云端新特性 / 默认 Opus 4.6 → 4.7 / 新斜杠命令 / 新 env vars / hooks conditional / MCP per-tool size override / 1 个 breaking）。各章节内的小幅更新就地标注 `(v2.1.X+)` 或 `(2026-04 后)`。
+
 ## 文档索引
 
 | 文档 | 开发者关注点 | Qwen Code 对标 |
@@ -32,6 +36,7 @@
 | [20-查询状态转换](./20-query-transitions.md) | 6 种转换原因、状态机模型 | TransitionReason 枚举 |
 | [21-工具执行运行时](./21-tool-execution-runtime.md) | 并发分类、波次调度、进度消息 | Wave-based 并行 |
 | [22-消息管线](./22-message-pipeline.md) | 消息标准化、system-reminder 注入、Cache 分区 | QWEN.md 注入方式 |
+| [23-近期更新](./23-recent-updates.md) | v2.1.82 → v2.1.132 增量（Computer Use / Auto Mode / Ultraplan / Ultrareview / Routines / Opus 4.7 / 新命令 / hooks conditional / MCP size override）| 云端新模式 + 多 agent fleet 借鉴 |
 | [EVIDENCE.md](./EVIDENCE.md) | 二进制分析原始证据 | — |
 
 ## 如何使用本系列

@@ -3,6 +3,14 @@
 > 本文分析 Claude Code 的核心架构：Bootstrap 启动链、QueryEngine 推理循环、22 个 Feature Flag DCE、Prompt Cache 分区、5 层压缩策略、重试退避等。这些模式大多与模型无关，可在 Qwen Code 等 Agent 中复现。
 >
 > **Qwen Code 对标**：启动优化（TCP preconnect）、核心循环（Mid-Turn Queue Drain，PR#2854 ✓ 已合并）、Prompt Cache 分区、API 重试策略
+>
+> **v2.1.82 → v2.1.132 增量**（详见 [§23](./23-recent-updates.md)）：
+> - Native binaries 取代 Bun 打包 JS（Week 16）—— 启动速度进一步提升
+> - 默认模型 Max/Team Premium **Opus 4.6 → Opus 4.7**（Week 16），新增 `xhigh` effort level
+> - 交互式 `/effort` 滑块替代命令行 args
+> - Tool Search / Lazy Loading 在 v2.1.76 已稳定（启动开销下降）
+>
+> 下文模型/版本表述基于 v2.1.81 基线，需要叠加上述增量理解。
 
 ## 为什么架构设计比模型能力更具参考价值
 

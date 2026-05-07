@@ -3,6 +3,23 @@
 > Hook 系统是 Claude Code 中演进最快的子系统——从 2025-06 首次引入的 5 个事件，到 2026-03 的 27 个事件 + 6 种处理器类型，经历了 9 个月的持续扩展。它解决了一个 Code Agent 的根本问题：**如何让用户对 Agent 行为拥有确定性控制，而不是仅靠 LLM 的"好意"**。
 >
 > **Qwen Code 对标**：Qwen Code 有 12 种事件（与 Claude Code 早期版本接近），仅 command 处理器。Claude Code 的 prompt/agent 类型 Hook（LLM 推理决策）和 hookify 自动规则生成是主要差距。
+>
+> **v2.1.82 → v2.1.132 增量**（详见 [§23 §6.1](./23-recent-updates.md)）：
+> - **Conditional `if` Hooks**（Week 13，2026-03 末）：Hook 配置新增 `if` 字段做条件判断，从"all-or-nothing 拦截"进化为"条件拦截"
+>
+> ```jsonc
+> {
+>   "hooks": {
+>     "PreToolUse": [{
+>       "matcher": "Bash",
+>       "if": "tool.args.command =~ /rm -rf/",
+>       "command": "echo 'Blocked dangerous rm -rf' && exit 2"
+>     }]
+>   }
+> }
+> ```
+>
+> 下文 27 事件 / 6 处理器主体不变，conditional `if` 是它们的**正交增强**——任何 hook 都可叠加 `if` 条件。降低误拦截率。
 
 ## 一、为什么需要 Hook 系统
 
