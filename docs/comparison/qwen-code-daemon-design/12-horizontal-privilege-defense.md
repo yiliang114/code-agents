@@ -40,10 +40,10 @@
 └────────────────────────────────────────────────────────────┘
                            ↑
 ┌────────────────────────────────────────────────────────────┐
-│ 第 2 层: 资源边界（自然隔离）                                 │
-│   Workspace path realpath + chroot/symlink 防御              │
-│   FileReadCache per-session（决策 §4）                        │
-│   MCP per-workspace（决策 §3）                                │
+│ 第 2 层: 资源边界（进程级自然隔离）                           │
+│   daemon 进程绑定唯一 workspace（OS cwd lock）                │
+│   FileReadCache per-daemon（决策 §4）                         │
+│   MCP per-daemon（决策 §3）                                   │
 └────────────────────────────────────────────────────────────┘
                            ↑
 ┌────────────────────────────────────────────────────────────┐
@@ -372,7 +372,7 @@ type SafeFileKey = {
 }
 ```
 
-但因为 **§4 决策 FileReadCache per-session 私有**，跨 session 跨 tenant 本来就不共享——这个攻击向量在当前设计下**已经被 §4 决策天然防御**。
+但因为 **§4 决策 FileReadCache per-daemon**（在 1 daemon = 1 session 模型下天然 per-session 私有），跨 daemon 跨 tenant 本来就不共享——这个攻击向量在当前设计下**已经被进程边界 + §4 决策天然防御**。
 
 **额外审计**：确保 SessionService 内 FileReadCache 的 instance 不被任何全局 Map 持有引用（防止泄漏）。
 
@@ -713,8 +713,8 @@ class Tenant {
 | 已有设计 | 安全加成 |
 |---|---|
 | 决策 §1 sessionScope: 'thread'（多租户模式）| 严格隔离 mode 已经定义，多 tenant 必用此 scope |
-| 决策 §3 MCP per-workspace | 天然防御 C2 (MCP state 泄漏) |
-| 决策 §4 FileReadCache per-session | 天然防御 C1 (cache key 碰撞) |
+| 决策 §3 MCP per-daemon | 天然防御 C2 (MCP state 泄漏) |
+| 决策 §4 FileReadCache per-daemon | 天然防御 C1 (cache key 碰撞) |
 | 决策 §5 Permission flow PR#3723 | 加 tenant 第 5 mode 后扩展防御 C3 |
 | 决策 §6 fan-out 多 client 同 session | session 内多 client 都属同 tenant，不存在跨租户问题 |
 | §7 bearer token | 直接 scaling 到多 token + ACL |
@@ -764,7 +764,7 @@ Stage 6 (SaaS) 加的:
 3. **timing-safe 响应**——不存在和越权返回相同 status + 相同延迟
 4. **失败默认 deny + audit**——任何不确定都拒绝并记录
 
-**当前设计的几个决策（§1 sessionScope: 'thread' / §3 MCP per-workspace / §4 FileReadCache per-session / §5 PR#3723 mode-based / §11 ShellSandbox interface）天然提供了多个攻击向量的防御**——不是为了多租户专门加的，但落地多租户时这些决策会成为 free lunch。
+**当前设计的几个决策（§1 sessionScope: 'thread' / §3 MCP per-daemon / §4 FileReadCache per-daemon / §5 PR#3723 mode-based / §11 ShellSandbox interface / §2 1 daemon = 1 session 进程边界）天然提供了多个攻击向量的防御**——不是为了多租户专门加的，但落地多租户时这些决策会成为 free lunch。
 
 ---
 
