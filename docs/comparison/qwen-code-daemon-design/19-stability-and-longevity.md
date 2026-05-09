@@ -1,16 +1,19 @@
-# 19 — 长跑稳定性与可观测性
+# 19 — 长跑稳定性与可观测性（External Reference Architecture）
 
 > [← 上一篇：多端协调策略](./18-client-coordination.md) · [回到 README](./README.md)
 
-> 多租户 daemon 跑 24h+ 的稳定性设计。Node.js 长跑 7 类风险、多租户加剧的 5 类风险、qwen daemon 10 个具体泄漏点、9 项稳定性模式、6 类 native module 风险、Bun vs Node.js 长跑实测、与 §16 HA / §18 协同。
-
-> **稳定性要点**（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
+> **⚠️ 整章是 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)，不在 qwen-code 主线路线图**——是给商业平台 / k8s operator / 云厂商的 SaaS 部署稳定性设计蓝图（多租户 daemon 跑 24h+ / Memory budget per tenant / Worker thread isolation / 30 天 Soak/Chaos 测试矩阵 / 22 Prometheus 指标 / Bun vs Node.js 长跑实测）。
 >
-> - **Crash isolation 免费**——一 session 跑爆不影响其他 session
+> **qwen-code 主线稳定性**（适合大多数读者）：在 1 daemon = 1 session 模型下显著简化——
+>
+> - **Crash isolation 免费**——一 session 跑爆不影响其他 session（OS 进程边界）
 > - **Resource cleanup 简单**——kill daemon = 清理所有 fd / child process / memory
-> - **§四 10 个泄漏点中 5 个自动消失**：session TTL / FileReadCache 累积 / Background task 残留 / permission decision cache / subscriber queue 累积——daemon 退出即释放
+> - **传统 daemon 长跑 10 个泄漏点中 5 个自动消失**：session TTL / FileReadCache 累积 / Background task 残留 / permission decision cache / subscriber queue 累积——daemon 退出即释放
+> - **Daemon 长跑窗口缩短**：不再追求"daemon 跑数月"，每 daemon 跑一个 session 时长（数分钟到数天）
+> - **基础稳定性需求**：Node.js 长跑 7 类风险（heap / GC / fd / zombie / exception / native crash / ALS 链表，本章 §二）+ 6 类 native module 风险（本章 §六）+ 基础 health check（本章 §十）—— 单 daemon instance 内仍可能遇到，主线参考本章相应小节
 > - **Daemon pool 管理**（idle daemon hibernation / lazy spawn / 内存上限）在 orchestrator 层
-> - **本章作用对象**：单 daemon instance 内仍有内存增长 / 监听器累积 / native crash 等问题，9 项稳定性模式仍适用
+>
+> **只关心主线稳定性**：读上面要点 + 本章 §二（Node.js 7 类风险）+ §六（native module 风险）+ §十（基础 health check / metrics 概念）就够；其他章节（§三 多租户加剧 / §五 9 稳定性模式 / §七 per-tenant memory budget / §九 Worker thread isolation / §十一 30 天 Soak / Chaos / §十四 Stage 3-6 实施）是 External SaaS 部署蓝图。
 
 ## 一、TL;DR
 

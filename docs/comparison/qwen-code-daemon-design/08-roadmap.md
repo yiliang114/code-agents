@@ -167,6 +167,21 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | Multi-tenancy / OIDC / Quota / Audit | **External**（参考 [§23](./23-orchestrator-multi-tenancy.md)）|
 | Shell sandbox（OS user / namespace / container / remote）| **External**（参考 [§11](./11-multi-tenancy-and-sandbox.md)）|
 
+#### 7️⃣ Stage 1 主线 HA 与稳定性已覆盖范围
+
+qwen-code 主线 HA / 稳定性需求由 PR#3889 + PR#3739 已完整覆盖（详细 SaaS 部署 HA / 长跑稳定性蓝图见 [§16](./16-high-availability.md) / [§19](./19-stability-and-longevity.md)，作为 External Reference Architecture）：
+
+| 机制 | 实现 | 覆盖 |
+|---|---|---|
+| **Daemon crash 自动重启** | 由外部进程管理器（systemd / k8s / orchestrator）负责 | 单 daemon 进程崩溃 → 重启 |
+| **Transcript-first fork resume** | PR#3739 已合并 | 新 daemon 启动 replay transcript JSONL 重建 session 状态 |
+| **SSE Last-Event-ID 重连** | PR#3889 commit `41aa95094` | client 网络抖动 / daemon 重启后断点续连（详细协议见 [§04 §三](./04-http-api.md#三sse--websocket-事件流核心)）|
+| **Crash isolation 免费** | OS 进程边界（决策 §2 1 daemon = 1 session）| 一 daemon 崩溃只影响其唯一 session，其他 daemon 不受影响 |
+| **资源 cleanup 简单** | OS process exit | kill daemon = 清理所有 fd / child process / memory，无需主动 cleanup hooks |
+| **timing-safe bearer auth + 401 uniform** | PR#3889 commit `ad0e6ec06` | 防 side-channel 攻击 |
+
+主线**不需要**：multi-pod sticky session / Postgres Patroni / Redis Sentinel / per-tenant heap budget / Worker thread tenant isolation / 30 天 Soak/Chaos 测试矩阵 等——这些都是 External SaaS 运营层关切，由 [§16](./16-high-availability.md) / [§19](./19-stability-and-longevity.md) 设计参考蓝图描述。
+
 ---
 
 ## Stage 1.5：Mode A CLI + HttpServer（~4 天增量）
