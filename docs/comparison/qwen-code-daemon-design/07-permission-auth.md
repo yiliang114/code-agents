@@ -2,6 +2,19 @@
 
 > **🚀 Stage 1 实现状态**（2026-05-07）：本章 Bearer token / Host allowlist / 0.0.0.0 拒绝默认 + first-responder permission vote 全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` auth scaffold + `6ee655f0a` permission vote + `ad0e6ec06` timing-safe SHA-256+timingSafeEqual + 401 uniform）。Stage 1 实测加了原 §12 §3.5 才有的 side-channel 防御（401 在 no-header/bad-scheme/wrong-token 三情况返回完全一致）。详见 [§08 Stage 1 实现 audit](./08-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
+> **🆕 双部署模式认证差异（2026-05-09）**：[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式cli-httpserver-vs-headless-httpserverpivot-后新增) 新增 Mode A（CLI + HttpServer）后，认证默认值按模式区分：
+>
+> | 维度 | Mode A（`qwen --serve`）| Mode B（`qwen serve`）|
+> |---|---|---|
+> | **默认 auth** | `none`（loopback only）| **`bearer`**（生成 token + 写 `~/.qwen/serve/token`）|
+> | **默认 listen** | `127.0.0.1`（loopback）| `127.0.0.1`，需显式 `--host 0.0.0.0` |
+> | **CORS / Origin lock** | loopback only | 配置驱动 |
+> | **关键场景** | 终端用户本地 + 同机 IDE / WebUI 接入 | 服务器 / 容器 / 远端机器 |
+>
+> 本章详细的 Bearer token 生命周期、permission flow、first-responder vote 等机制 **两种模式完全一致**——只是 Mode A 默认关掉 bearer（loopback 信任）但仍可显式 `--token` 启用。
+>
+> **Pivot 影响（2026-05-09）**：pivot 改为"1 Daemon Instance = 1 Session"后，permission decisions cache **per-daemon**（不再需要 per-session 隔离）；first-responder vote 仍是 per-daemon 内逻辑（同一 daemon 多 client 抢答 permission_request）。详见 [§03 §2 §6](./03-architectural-decisions.md#2-状态进程模型pivot-后)。
+
 > [← 上一篇：MCP / 资源共享](./06-mcp-resources.md) · [下一篇：3 阶段路线图 →](./08-roadmap.md)
 
 > 设计原则：**双层权限**——传输层 bearer token 阻止未授权访问，应用层复用 PR#3723 已合并的 `evaluatePermissionFlow()` 把 daemon 加为第 4 种 execution mode。

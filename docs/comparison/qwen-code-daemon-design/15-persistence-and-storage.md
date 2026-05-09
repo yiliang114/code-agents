@@ -4,6 +4,18 @@
 
 > 当前 Qwen Code 持久化是纯 JSON / JSONL 文件栈（**没有 SQLite / 任何 ORM**）。本章讨论：daemon 化进程中**何时引入 SQLite**（不是 Stage 1 起就引入）、何时继续用文件、何时跳到 Postgres，以及如何抽象 Storage Adapter 让各阶段可平滑切换。
 
+> **🔄 设计 pivot 影响（2026-05-09）：持久层模型简化**。pivot 改为"1 Daemon Instance = 1 Session"后：
+>
+> - **Stage 1-2（JSON/JSONL）模型完全保留**——每 daemon instance 写自己的 transcript JSONL（不需要跨 session 共享存储）
+> - **Stage 3 引入 SQLite 的位置变了**——从"daemon 内多 session 共享 SQLite"改为：
+>   - **每 daemon instance 自己的 SQLite**（permission decisions / cache state）—— 简单，但有"启动 N daemon 各自一个 SQLite"开销
+>   - **或 orchestrator 层共享 SQLite**（聚合 audit log / cross-daemon metadata）—— 更经济
+>   - 推荐：**daemon 内仍用 JSONL（不引入 SQLite）+ orchestrator 用 SQLite/Postgres 做 cross-daemon 聚合**
+> - **Stage 6 Postgres 模型**：orchestrator 层管，每 daemon instance 仍只读自己 transcript JSONL；transcript 通过 orchestrator 异步 sync 到 Postgres
+> - **Storage Adapter 抽象仍适用**——只是被使用的"主体"从 daemon 内 SessionService 变为 orchestrator + 单 daemon 各自
+>
+> 详见 [§03 §2 状态进程模型 pivot](./03-architectural-decisions.md#2-状态进程模型pivot-后)。本章原内容（JSONL → SQLite → Postgres 演进路径、Storage Adapter 抽象、跨阶段平滑切换）大部分仍适用——pivot 只改"谁在用"而不改"用什么"。
+
 ## 一、TL;DR
 
 | Stage | 持久化栈 | 关键变化 |

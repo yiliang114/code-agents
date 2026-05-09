@@ -4,6 +4,23 @@
 
 > 多租户下"水平越权"（Horizontal Privilege Escalation, HPE）= 同等级 tenant 访问另一 tenant 的资源。本章系统列出 **17 个攻击向量** 并给出**分层防御**方案。
 
+> **🔄 设计 pivot 影响（2026-05-09）：HPE 防御复杂度大幅降低**。pivot 改为"1 Daemon Instance = 1 Session"后，**17 个攻击向量中至少 8 个 vanish**——OS 进程边界天然隔离取代了应用层 ACL：
+>
+> | 原攻击向量 | Pivot 后状态 |
+> |---|---|
+> | sessionId 猜测访问他 tenant session | ✗ vanish——每 daemon 一个 session，无 cross-session 路由 |
+> | workspace path traversal 跨 tenant | ✗ vanish——每 daemon 一个 workspace，OS 级 cwd 绑定 |
+> | FileReadCache cache key 碰撞跨 tenant | ✗ vanish——cache per-daemon process |
+> | MCP server 端口共享窃听 | ✗ vanish——MCP child per-daemon |
+> | Permission decision cache 跨 tenant 污染 | ✗ vanish——decision cache per-daemon |
+> | Background task ID 跨 tenant 取结果 | ✗ vanish——task in same daemon process |
+> | Subscriber queue 跨 session 信息泄漏 | ✗ vanish——queue 在 daemon 进程内 |
+> | Subagent transcript 跨 session 引用 | ✗ vanish——subagent 在同 daemon 内 |
+>
+> **仍需关注**：剩 9 个攻击向量（orchestrator 路由层、token 复用、HTTP body 注入、Bearer token 泄漏、shell 沙箱逃逸、跨容器 IPC 等）—— 这些**移到 orchestrator 层**或 daemon 内部（如 shell 沙箱）。本章原 5 层防御纵深仍适用，但**第 2 层（应用层 ACL）和第 3 层（cache/queue 隔离）的复杂度大幅简化**为"每 daemon 进程级隔离"。
+>
+> 详见 [§03 §2](./03-architectural-decisions.md#2-状态进程模型pivot-后)。
+
 ## 一、TL;DR — 防御纵深 5 层
 
 ```

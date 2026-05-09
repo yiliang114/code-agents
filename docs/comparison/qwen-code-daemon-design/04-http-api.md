@@ -2,6 +2,15 @@
 
 > **🚀 Stage 1 实现状态**（2026-05-07）：本章 9 路由全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` scaffold + `ca996ecb5` prompt/cancel + `41aa95094` SSE EventBus + `6ee655f0a` permission + `a8ce5e08d` workspace/model）。详见 [§08 Stage 1 实现 audit](./08-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
+> **🔄 设计 pivot 影响（2026-05-09）**：pivot 改为"1 Daemon Instance = 1 Session"后：
+>
+> - **`POST /session` 仍存在**——但语义从"在多 session daemon 内创建一个 session"变为"daemon instance 启动时绑定唯一 session（如已绑定则返回 409）"
+> - **多 session 操作移到 orchestrator 层**：`POST /coordinator/sessions/{id}/route` 等聚合 API 由 orchestrator 提供，单 daemon 不感知
+> - **本章 9 路由的 wire 格式不变**——pivot 不改协议，只改"daemon 内 N 个 session"语义为"orchestrator 路由到 N 个 daemon 各自的唯一 session"
+> - **Mode A vs Mode B**：两种部署模式的 HTTP API **完全一致**（Mode A 多挂个 in-process TUI subscriber 不影响 wire）
+>
+> 详见 [§03 §2](./03-architectural-decisions.md#2-状态进程模型pivot-后) + [§03 §7](./03-architectural-decisions.md#7-daemon-部署模式cli-httpserver-vs-headless-httpserverpivot-后新增)。
+
 > [← 上一篇：6 个架构决策](./03-architectural-decisions.md) · [下一篇：进程模型 →](./05-process-model.md)
 
 > daemon HTTP 路由的核心创新：**复用 ACP NDJSON 的 zod schema** —— body 结构与 `PromptRequest` / `NewSessionRequest` 等 ACP 类型 1:1 对应。

@@ -6,6 +6,15 @@
 
 > **免责声明**：本对比基于 Anthropic 公开文档（截至 2026 Q1），Managed Agents 是闭源服务，具体实现细节、定价、内置工具列表可能已变更。本系列是 codeagents 项目的设计提案，与 Anthropic / Qwen 团队均无关联。
 
+> **🔄 设计 pivot 影响（2026-05-09）：架构哲学相似度提高**。pivot 改为"1 Daemon Instance = 1 Session"后：
+>
+> - **Anthropic Managed Agents 的内部模型很可能也是"per-session container/process"**（云原生隔离的最自然形态），Qwen pivot 后与之**架构哲学更接近**
+> - 主要差异从"single-process 多 session vs cloud per-session container"变为"**self-host 多进程 vs cloud 多容器**"——更是部署形态之差，而非架构之差
+> - "Managed Qwen Agents"反向构建蓝图**简化**——不需要从 single-process daemon 重构到 per-session container，pivot 后 Qwen daemon instance 就是天然的 deployment unit
+> - Stage 6 SaaS 路径变为：daemon instance per-pod + orchestrator 路由（与 Managed Agents 的 container per-session 形态等价）
+>
+> 详见 [§03 §2 状态进程模型 pivot](./03-architectural-decisions.md#2-状态进程模型pivot-后)。本章 4 维特性对比、双向 migration、反向蓝图等内容大部分仍适用——pivot 让 Qwen 在"deployment unit 粒度"上向 Managed Agents 靠近，但自托管 vs 云托管的核心哲学差异不变。
+
 ## 一、TL;DR
 
 | 维度 | Anthropic Managed Agents | Qwen daemon |

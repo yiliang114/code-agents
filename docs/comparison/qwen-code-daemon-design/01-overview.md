@@ -2,6 +2,10 @@
 
 > [← 返回 README](./README.md) · [下一篇：现有资产盘点 →](./02-existing-assets.md)
 
+> **🔄 设计 pivot（2026-05-09）：1 Daemon Instance = 1 Session**。本章描述的"daemon 模型"在 pivot 后明确为：每个 daemon 进程承载唯一一个 session；多 session 通过 orchestrator spawn 多个 daemon 实例实现。详见 [§03 §2 状态进程模型 pivot](./03-architectural-decisions.md#2-状态进程模型pivot-后)。
+>
+> **🆕 双部署模式（2026-05-09）**：daemon instance 有两种形态——**Mode A（CLI + HttpServer，`qwen --serve`）** 同时承载本地 TUI 客户端 + 远端 HTTP 接入；**Mode B（Headless Daemon，`qwen serve`）** 无 TUI 全 HTTP。两种模式都遵循"1 daemon = 1 session"，区别仅在是否包含本地 TUI。详见 [§03 §7](./03-architectural-decisions.md#7-daemon-部署模式cli-httpserver-vs-headless-httpserverpivot-后新增)。
+
 ## 一、daemon 模型 vs Qwen 当前的 subprocess 模型
 
 Qwen Code 当前的程序化访问形态：
