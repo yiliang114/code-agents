@@ -56,8 +56,8 @@
 
 /permission/:requestId                   审批响应（异步流模式）
 
-/workspace                               多 workspace 路由
-  ├─ POST /workspace                     register workspace
+/workspace                               daemon 绑定的唯一 workspace（多 workspace 由 External orchestrator 通过多 daemon 实现）
+  ├─ POST /workspace                     register workspace（daemon 未绑时；已绑返回现有）
   ├─ GET  /workspace/:id/skills          已加载 skill
   ├─ GET  /workspace/:id/mcp             MCP server 状态
   ├─ GET  /workspace/:id/lsp             LSP 状态

@@ -378,7 +378,7 @@ type SafeFileKey = {
 
 #### C2: MCP server state 泄漏
 
-决策 §3 已选 **per-workspace MCP**——每 workspace 独立子进程，跨 workspace 跨 tenant 不复用，**已天然防御**。
+决策 §3 已选 **per-daemon MCP**——每 daemon instance 独立 MCP children，跨 daemon 跨 tenant 不复用（在 1 daemon = 1 session 模型下天然成立），**已天然防御**。
 
 但仍需审计：
 - **Auth credentials** 是否 per-workspace 传递（不是全局）—— ✓ 决策 §6 已确认

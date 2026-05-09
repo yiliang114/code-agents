@@ -86,7 +86,7 @@ export interface InstanceContext {
   clientId?: string
 }
 
-const storage = new AsyncLocalStorage<InstanceContext>()
+const storage = new AsyncLocalStorage<InstanceContext>()  // 注：当前 1 daemon = 1 session 不需要；下面是 multi-session 扩展参考（§21 路径 C）
 
 export const Instance = {
   provide<R>(ctx: InstanceContext, fn: () => R): R {

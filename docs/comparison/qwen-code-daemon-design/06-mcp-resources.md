@@ -18,7 +18,7 @@
 
 ### 1.1 决策回顾（[03 §3](./03-architectural-decisions.md#3-mcp-server-生命周期)）
 
-**per-workspace MCP state**（与 OpenCode `packages/opencode/src/mcp/index.ts` 模式一致）—— 每 workspace 持有自己的一套 MCP client 集，**不跨 workspace 共享**。同 workspace 内的多 session 共享同一组 MCP client。
+**per-daemon MCP state**——每个 daemon instance 持有自己的一套 MCP client 集（在 1 daemon = 1 session 模型下，等价于 per-workspace 等价于 per-session）。**不跨 daemon 共享**。OpenCode 在 multi-session 模型下走 per-workspace（`packages/opencode/src/mcp/index.ts`），qwen-code 在单 session 模型下自然合并为 per-daemon。
 
 ### 1.2 与 OpenCode 一致的 4 条工程实践
 

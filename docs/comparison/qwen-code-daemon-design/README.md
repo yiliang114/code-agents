@@ -120,17 +120,18 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
               ~2-3 周 MVP，~1.5-2 月对标 OpenCode
 ```
 
-**核心设计哲学**（与 OpenCode 一致）：
+**核心设计哲学**：
 - daemon 内部不再 spawn CLI 子进程；core 通过 import 加载到 daemon 进程内
-- 多 session 共享 daemon 进程；用 `AsyncLocalStorage` 做 cwd / context 隔离
-- LSP / MCP server / PTY 才是真正的子进程
-- 持久化分层：Stage 1-2 沿用 JSON / JSONL（与现状一致），Stage 3 引入 SQLite，Stage 6 SaaS 切 Postgres + S3
+- **1 Daemon Instance = 1 Session = 1 Workspace**——daemon 进程级隔离，无 multi-session 路由层；多 session 由外部 orchestrator spawn 多 daemon 实现
+- LSP / MCP server / PTY 才是真正的子进程（per-daemon · 不跨 daemon 共享）
+- 持久化：每 daemon 自己的 transcript JSONL；外部 orchestrator 可选 SQLite/Postgres 做 cross-daemon 聚合（详见 [§15](./15-persistence-and-storage.md)）
 
 **与 OpenCode 不同的地方**：
+- **进程模型分歧**：OpenCode 走 single-process multi-session；qwen-code 走 multi-process single-session（OS 进程边界天然 isolation，避开应用层 ALS / Effect-TS / per-session resource managers 复杂度）
 - **复用 ACP NDJSON schema 作为内部 RPC**（OpenCode 用自定义 OpenAPI schema codegen）
 - **Channels 多路由复用**（IM / WebUI / IDE 都走 SessionRouter）—— OpenCode 没有等价物
 - **bearer token + PR#3723 共享 L3→L4 权限流**（OpenCode 用单密码）
-- **默认跨 client 共享 session（live collaboration 模型）**：CLI + IDE + WebUI + 手机微信同时观察同一会话；任何 client 都可代为审批权限请求；prompt 串行 / 事件 fan-out / 任意 client 取消（OpenCode 是每 SDK call 独立 session）
+- **默认跨 client 共享同一 daemon instance（live collaboration 模型）**：CLI + IDE + WebUI + 手机微信同时观察同一 daemon 的唯一 session；任何 client 都可代为审批权限请求；prompt 串行 / 事件 fan-out / 任意 client 取消（OpenCode 是每 SDK call 独立 session）
 
 ## 决策与文档的对应
 

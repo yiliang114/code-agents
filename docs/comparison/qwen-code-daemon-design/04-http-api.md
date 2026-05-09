@@ -40,10 +40,10 @@ GET    /session/:id/events                 SSE / WebSocket   ← SessionNotifica
 # 权限审批（HTTP 异步流模式）
 POST   /permission/:requestId              respond to permission_request
 
-# Workspace 管理（多 workspace 路由）
-GET    /workspace                          list workspaces
-POST   /workspace                          register workspace  body: { directory }
-DELETE /workspace/:id                      dispose workspace
+# Workspace 管理（daemon 启动时绑定 1 个 workspace；多 workspace 由 External orchestrator spawn 多 daemon）
+GET    /workspace                          list workspace（仅 1 个，对应当前 daemon）
+POST   /workspace                          register workspace  body: { directory }（仅 daemon 未绑定时；已绑定返回现有）
+DELETE /workspace/:id                      dispose（等价于 daemon shutdown）
 
 # 工具能力查询
 GET    /workspace/:id/skills               已加载 skill 列表
@@ -112,7 +112,7 @@ app.post('/session/:id/prompt',
 ```ts
 // 新增 schema（daemon 特有）
 const DaemonSessionMeta = z.object({
-  workspaceId: z.string(),                // 多 workspace 路由
+  workspaceId: z.string(),                // daemon 绑定的 workspace 标识（用于 client-side 校验，daemon 拒绝不匹配请求）
   cwd: z.string().optional(),              // 显式 cwd（覆盖 workspace 默认）
   clientId: z.string().optional(),         // 多 client 标识
   scope: z.enum(['thread', 'single', 'user']).optional(),

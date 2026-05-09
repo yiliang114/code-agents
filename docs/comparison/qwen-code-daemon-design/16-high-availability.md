@@ -58,7 +58,7 @@
 | **active LLM streaming** | pod 内存 + Provider | ✗ | **极高** | 不续接，UI 提示 |
 | **MCP / LSP server 子进程** | pod 本地 spawn | ✗ | **极高** | 新 pod 重新 spawn（accept 1-3s 启动延迟）|
 | **FileReadCache** | pod 内存 | ✗ | 中 | 重建（下次 read 时 miss → fill）|
-| **AsyncLocalStorage Instance ctx** | pod 内存 | ✗ | 低 | tool call 边界自然重建 |
+| ~~AsyncLocalStorage Instance ctx~~（1 daemon = 1 session 后不需要）| —— | —— | —— | —— |
 | **Background task 子进程**（shell PTY / sandbox）| pod 本地 | ✗ | **极高** | 失败标记 task 状态 `interrupted`|
 | **subscribers Set** | pod 内存 + Redis | 部分 | 低 | Redis pub/sub 转发事件 |
 

@@ -147,7 +147,7 @@ Anthropic Managed Agents
 | `text_editor` | `Edit` tool 的内嵌行为 |
 | Vision input | Multi-modal 通过 LLM provider（DashScope / Claude / GPT-4V）|
 | Function calling | ACP zod schema 内置 |
-| MCP servers | per-workspace MCP（决策 §3）|
+| MCP servers | per-daemon MCP（决策 §3）|
 | Sub-agent (Anthropic 的 agent-as-tool) | Background agent task kind（PR#3471/3488）|
 | Anthropic-managed file storage | Workspace directory（用户 fs）|
 | Long-running task callback | Background tasks dialog + SSE 事件（[§subagent-display](../subagent-display-deep-dive.md)）|

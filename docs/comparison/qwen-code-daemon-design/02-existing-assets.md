@@ -238,7 +238,7 @@ ProcessTransport 假设"对端是 CLI 子进程"，daemon 模式下对端是 dae
 ### 4.2 可考虑弃用：vscode-ide-companion 的 ide-server.ts
 
 VSCode 当前自起 express server 给 IDE 用。daemon 推出后，**VSCode 直接连 daemon 即可**——可弃用 ide-server。但需确认：
-- VSCode 的"打开多 workspace 各自独立"语义是否能在 daemon 的 multi-workspace router 下复现 ✓
+- VSCode 的"打开多 workspace 各自独立"语义在 1 daemon = 1 session 模型下自动成立——每个 workspace 对应自己的 daemon instance ✓
 - ide-server 当前的特殊功能（代码补全提示等）是否在 daemon HTTP 路由有等价物 —— 需逐项核对
 
 **建议**：Stage 2 把 VSCode companion 切到 daemon；ide-server.ts 在 daemon GA 后逐步弃用（保留兼容性 deprecation 期）。

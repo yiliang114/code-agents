@@ -278,7 +278,7 @@ SDK Client → HTTP → daemon (in-process)
 | 多 client 并发 | ❌ 一次只能一个（stdio pipe 不能 fan-out）| ✅ 默认支持（决策 §1 跨 client 共享 session）|
 | 中断性 | Ctrl+C SDK 进程也杀 daemon | Ctrl+C SDK 进程，daemon session 继续跑 |
 | 权限审批 UX | TUI dialog（同步）| SSE event + 任意 client 应答（决策 §6 fan-out + first responder）|
-| 资源（LSP/MCP）| 每次 spawn 重新加载 | 跨 query 复用（决策 §3 per-workspace MCP 共享）|
+| 资源（LSP/MCP）| 每次 spawn 重新加载 | daemon 内复用（决策 §3 per-daemon MCP）|
 | 故障半径 | 一个 query 崩溃只死自己 | 一个 session 崩溃可能影响其他 session（共进程 — 决策 §2）|
 | Working directory | 子进程 spawn 时 OS 级 cwd | AsyncLocalStorage 应用层 cwd（[05-进程模型](./05-process-model.md)）|
 

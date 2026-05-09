@@ -208,54 +208,48 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 
 ## 3. MCP server 生命周期
 
-**问题**：MCP server 是每 session 启动一个？daemon 全局 fingerprint pool 跨 workspace 共享？还是 per-workspace 边界管理？
+**问题**：MCP server 是每 session 启动一个？daemon 全局 fingerprint pool 跨实例共享？还是 per-daemon 边界管理？
 
 ### 决策（最终）
 
-**per-workspace MCP state**（与 OpenCode 模式一致）—— 每个 workspace 持有自己的一套 MCP client 集，**不跨 workspace 共享**。同 workspace 内的多 session 共享同一组 MCP client。
+**per-daemon MCP state**——每个 daemon instance 持有自己的一套 MCP client 集（在 1 daemon = 1 session 模型下，等价于 per-workspace 等价于 per-session）。**不跨 daemon 实例共享**。
 
-> 注：早期设计曾考虑"daemon 全局 fingerprint pool 跨 workspace 复用"，经源码核查 OpenCode `packages/opencode/src/mcp/index.ts` (917 行) 走 per-workspace 路线后，本设计改为对齐——理由见下文。
+> 注：早期设计（pivot 前的 multi-session 模型）曾区分 "daemon 全局 fingerprint pool 跨 workspace" vs "per-workspace MCP state"。pivot 到 1 daemon = 1 session 后，三者（per-daemon / per-workspace / per-session）合并为同一概念——每 daemon 进程一组 MCP children，daemon 退出全部清理。
 
 ### 共享语义
 
 ```
-Qwen daemon 进程
-├─ Workspace A（/work/repo-a）
-│   └─ McpState（per-workspace）
-│       ├─ github MCP client (子进程 A1)
-│       ├─ filesystem MCP client (子进程 A2)
-│       └─ status: { github: 'connected', filesystem: 'connected' }
-│
-└─ Workspace B（/work/repo-b）
-    └─ McpState（per-workspace）
-        ├─ github MCP client (子进程 B1)   ← 与 A1 配置相同但独立
-        └─ status: { github: 'connected' }
+qwen daemon instance 进程（1 session 绑定）
+└─ McpState（daemon-global singleton）
+    ├─ github MCP client (子进程)
+    ├─ filesystem MCP client (子进程)
+    └─ status: { github: 'connected', filesystem: 'connected' }
 
-同 workspace 内：所有 session 共享同一组 MCP client
-跨 workspace：各自独立的 MCP client 子进程
+跨 daemon 实例：各自独立的 MCP client 子进程
+（如同 user 同 workspace 跑 N 个 daemon → N 套 MCP children；可投资源池化优化，详见 §21 路径 A）
 ```
 
 ### 决策依据
 
-1. **MCP server 可能持有 workspace-specific state** —— 例如 `filesystem` MCP 限制只能访问某目录、`git` MCP 持有该项目的 repo path、企业内部数据库 MCP 持有 workspace 特定连接字符串。跨 workspace 共享会泄漏或破坏这种隔离假设
-2. **配置可能微小差异** —— 同样 `github` MCP，workspace A 用 token X、workspace B 用 token Y → 严格说不是同一个 server，fingerprint hash 会区分但产生意外语义
-3. **OpenCode 已生产验证可行** —— `Effect.acquireUseRelease` + `concurrency: 'unbounded'` + 单 server 失败不传染（`Effect.catch(() => Effect.void)`）三个工程实践经过验证
-4. **与决策 §1 sessionScope: 'single' 协调** —— 既然 session 在 workspace 边界内共享（不跨 workspace），MCP 也按 workspace 边界管理是自然延伸
+1. **MCP server 可能持有 workspace-specific state** —— 例如 `filesystem` MCP 限制只能访问某目录、`git` MCP 持有该项目的 repo path、企业内部数据库 MCP 持有 workspace 特定连接字符串。每 daemon 1 workspace 1 session，state 边界天然清晰
+2. **配置可能微小差异** —— 同样 `github` MCP，不同 daemon 可能用不同 token；fingerprint hash 区分会产生意外语义；per-daemon 实例化避免此风险
+3. **OpenCode multi-session 工程实践仍可借鉴** —— `Effect.acquireUseRelease` + `concurrency: 'unbounded'` + 单 server 失败不传染（`Effect.catch(() => Effect.void)`）三项工程实践直接复用，仅作用对象从"per-workspace"变为"per-daemon"
+4. **与决策 §2 1 daemon = 1 session 协调** —— daemon 内只有 1 session 1 workspace，MCP 自然 daemon-global singleton（无需 Map 路由层）
 5. **避免 fingerprint pool 复杂性** —— 不需要"per-server fallback"开关、不需要 sessionId metadata 透传、不需要应用层去重 hash
 
 ### 重复 spawn 的代价是否可接受？
 
-per-workspace 的代价：用户在 daemon 内开 5 个 workspace 都用同一个 `github` MCP server → 启 5 个 github MCP 子进程。
+per-daemon 的代价：用户在同 user 同 workspace 跑 5 个 daemon（多 session）都用同一个 `github` MCP server → 启 5 个 github MCP 子进程。
 
 | 维度 | 评估 |
 |---|---|
 | 单个 MCP server 内存 | 50-200MB（轻量 stdio server）|
-| 启动开销 | 0.5-2s，但 lazy 初始化（第一次访问 workspace 才启动）|
-| 同时 active workspace 数 | 大多数用户 ≤ 3 个 |
-| 重复 spawn 数量 | 有限（active workspace × 配置的 MCP server 数）|
-| **隔离收益** | **state 绝对干净，不用担心 token / cache / connection 跨 workspace 泄漏** |
+| 启动开销 | 0.5-2s，但 lazy 初始化（daemon 第一次访问 MCP 才启动）|
+| 同时 active daemon 数 | 个人用户 ≤ 5；中等团队 ≤ 50；大规模 SaaS 100+ |
+| 重复 spawn 数量 | active daemon × 配置的 MCP server 数 |
+| **隔离收益** | **state 绝对干净，不用担心 token / cache / connection 跨 daemon 泄漏** |
 
-**结论**：可接受。优化跨 workspace 共享是过早优化。
+**结论**：N < 50 可接受；N ≥ 50 时考虑 [§21 路径 A 资源池化](./21-future-multi-session-migration.md#四路径-a资源池化推荐-2-3w)（用户级 MCP daemon + IPC 共享，External Reference Architecture 范畴）。
 
 ### Qwen 保留的两项独有优化（OpenCode 没有）
 
@@ -285,32 +279,28 @@ Qwen 现有 `MCPServerStatus`（`packages/core/src/tools/mcp-client.ts:73`）只
 
 ```ts
 // 复用 Qwen 现有 mcp-client-manager.ts（已实现 per-instance 多 client）
-// daemon 化主要工作：把 manager instance 绑定到 Workspace 而非全局
+// daemon 化主要工作：mcp-client-manager 作为 daemon-global singleton
 
-class Workspace {
-  private mcpManager: McpClientManager  // ← 每 workspace 一个 manager
-  
-  constructor(private id: string, private directory: string) {
+class DaemonInstance {
+  private mcpManager: McpClientManager  // ← daemon-global singleton
+
+  constructor(private workspaceDirectory: string) {
     this.mcpManager = new McpClientManager({
-      configFor: this.id,
-      cwd: this.directory,
+      cwd: this.workspaceDirectory,
     })
   }
-  
+
   async start() {
     // 复刻 OpenCode 的 lazy 初始化模式
-    // 第一次访问 workspace 时才启动 MCP servers
+    // 第一次 tool call 触发 MCP 时才启动 MCP servers
     // concurrency: 'unbounded' 全部 MCP server 并发连接
     await this.mcpManager.initializeFromConfig()
   }
-  
+
   async dispose() {
     await this.mcpManager.disconnectAll()
   }
 }
-
-// daemon 内
-const workspaceMap: Map<string, Workspace> = new Map()
 ```
 
 详见 [06-MCP/资源共享](./06-mcp-resources.md)。
