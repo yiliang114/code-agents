@@ -21,24 +21,34 @@ Qwen Code 当前的程序化访问形态：
 每次 SDK query() / Client 实例 = 1 个 CLI 子进程
 ```
 
-引入 daemon 后：
+引入 daemon 后（pivot 后：1 daemon = 1 session，多 session 由 orchestrator 管）：
 
 ```
+                                   ┌──────────────────────────────┐
+                                   │ Orchestrator（多 session 时） │
+                                   │ - sessionScope routing        │
+                                   │ - daemon instance discovery   │
+                                   └──────────────┬───────────────┘
+                                                  │ spawn / route
+                                                  ↓
 ┌─────────────────────┐  HTTP/WS  ┌──────────────────────────────┐
-│ SDK 客户端 1         │──────────▶│ qwen daemon 进程（长生命）     │
-└─────────────────────┘           │ ├─ Express 5 / Node.js        │
-                                   │ ├─ Instance Map               │
-┌─────────────────────┐  HTTP/WS  │ │   ├─ workspace A             │
-│ Web UI / VSCode     │──────────▶│ │   │   ├─ session 1 (in-mem)  │
-└─────────────────────┘           │ │   │   ├─ session 2 (in-mem)  │
-                                   │ │   │   └─ LSP server (子进程) │
-┌─────────────────────┐  HTTP/WS  │ │   └─ workspace B             │
-│ Channel adapters    │──────────▶│ │       └─ ...                 │
-│ (IM / Telegram)     │           │ ├─ MCP servers (跨 session 复用) │
-└─────────────────────┘           │ └─ core in-process（库调用）   │
-                                   └──────────────────────────────┘
+│ SDK 客户端 1         │──────────▶│ daemon instance（绑唯一 session）│
+└─────────────────────┘           │ ├─ Express 5 + express-ws     │
+                                   │ ├─ EventBus（多 client fan-out）│
+┌─────────────────────┐  HTTP/WS  │ ├─ core in-process（库调用）  │
+│ Web UI / VSCode     │──────────▶│ │  ├─ Session（唯一）          │
+└─────────────────────┘           │ │  ├─ FileReadCache（per-daemon）│
+                                   │ │  ├─ Permission flow          │
+┌─────────────────────┐  HTTP/WS  │ │  └─ Background tasks         │
+│ Channel adapters    │──────────▶│ ├─ LSP server（per-daemon）    │
+│ (IM / Telegram)     │           │ └─ MCP servers（per-daemon）   │
+└─────────────────────┘           └──────────────────────────────┘
 
-启动 daemon 一次 → N 个 client 永久 HTTP/WS 复用
+Mode A: daemon instance 同时含本地 TUI 客户端（qwen --serve）
+Mode B: daemon instance 无 TUI 全 HTTP（qwen serve）
+
+启动 daemon 一次 → N 个 client 共享同一 session（live collaboration）
+多 session = 多 daemon instances（orchestrator spawn / route）
 ```
 
 ## 二、本质差异（与 OpenCode 共识 + Qwen 特色）
@@ -97,59 +107,96 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 
 详见 [07-权限/认证](./07-permission-auth.md)。
 
-## 三、整体架构图
+## 三、整体架构图（pivot 后：1 Daemon Instance = 1 Session）
+
+> **Pivot 后核心变化**（[§03 §2](./03-architectural-decisions.md#2-状态进程模型pivot-后)）：
+> - 每个 daemon 进程**只承载唯一一个 session**——不再有 daemon 内 `Map<workspaceId, Instance>` 多 session 路由
+> - **多 session 由 orchestrator 层 spawn 多个 daemon 实例**（"qwen-coordinator"角色，原 `qwen serve` HTTP front 在 multi-session 部署下升级为此）
+> - **Mode A（CLI + HttpServer）/ Mode B（Headless Daemon）双部署模式**（[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式cli-httpserver-vs-headless-httpserverpivot-后新增)）—— 区别仅在 daemon 进程是否同时承载本地 TUI
+
+### 3.1 单 Daemon Instance 内部架构（Mode A / Mode B 共用）
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│  qwen daemon 进程 (qwen serve)                                  │
+┌─────────────────────────────────────────────────────────────────┐
+│  qwen daemon instance 进程（1 个 session 绑定）                   │
+│                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ HTTP / WebSocket 入口（Express 5 · Node.js prod / Bun dev）│  │
-│  │ ├─ Auth middleware (bearer token)                        │  │
-│  │ ├─ /session / /file / /pty / /event / ...                │  │
-│  │ └─ WS upgrade → SSE/WebSocket 流式事件                   │  │
+│  │ HTTP / WebSocket 入口（Express 5 + express-ws）            │  │
+│  │ ├─ Auth middleware（Mode A 默认 loopback / Mode B bearer） │  │
+│  │ ├─ /session/:id/prompt /cancel /events /permission ...    │  │
+│  │ └─ SSE / WebSocket 流式事件 + Last-Event-ID 重连            │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │ HTTP → ACP Adapter（HttpAcpBridge）                       │  │
-│  │ - 把 HTTP body 解析为 ACP request 类型                    │  │
-│  │ - 调用 core 的 ACP-equivalent in-process API              │  │
-│  │ - 把 SessionNotification stream 转 SSE/WS                 │  │
+│  │ - HTTP body ↔ ACP NDJSON 双向桥接                         │  │
+│  │ - SessionNotification stream → SSE/WS fan-out             │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Channels SessionRouter（多 client 路由）                   │  │
-│  │ - 复用现有 SessionRouter / PairingStore                   │  │
-│  │ - HTTP client 注册为 'http' channel                       │  │
+│  │ EventBus（多 client 协作）                                 │  │
+│  │ ├─ in-process subscriber（Mode A 本地 TUI = client #0）    │  │
+│  │ ├─ HTTP/SSE subscriber（远端 client：CLI / WebUI / IDE）   │  │
+│  │ └─ first-responder permission vote（任何 client 可应答）   │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Instance Map（workspaceId → Instance）                    │  │
-│  │ ┌──────────┬──────────┬──────────┬─────────────────────┐ │  │
-│  │ │ ws-A     │ ws-B     │ ws-C     │ AsyncLocalStorage   │ │  │
-│  │ │ ├ ses 1  │ ├ ses 1  │ ├ ses 1  │ Instance.directory  │ │  │
-│  │ │ ├ ses 2  │ ├ ses 2  │ ├ ses 2  │ 跨 await 隔离       │ │  │
-│  │ │ ├ LSP    │ ├ LSP    │ ├ LSP    │                     │ │  │
-│  │ │ └ shared │ └ shared │ └ shared │                     │ │  │
-│  │ └──────────┴──────────┴──────────┴─────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↓                                      │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ core (in-process 库调用)                                  │  │
+│  │ core（in-process 库调用 · 直接绑唯一 session）              │  │
 │  │ - SessionService（PR#3739 transcript-first resume）        │  │
-│  │ - FileReadCache（PR#3717 + PR#3810 5 路径 invalidation）   │  │
-│  │ - Permission flow（PR#3723 共享 L3→L4）                   │  │
-│  │ - MCP client manager（PR#3818 coalesce rediscovery）      │  │
-│  │ - Background tasks（PR#3471/3488/3642/3791/3836 4 kinds） │  │
+│  │ - FileReadCache（per-daemon · PR#3717+3810 invalidation）  │  │
+│  │ - Permission flow（PR#3723 + daemon 第 4 mode）            │  │
+│  │ - MCP client manager（PR#3818 coalesce + 30s health check）│  │
+│  │ - Background tasks（PR#3471/3488/3642/3791/3836 4 kinds）  │  │
+│  │   ⚠️ pivot 后无需 AsyncLocalStorage Instance ctx           │  │
+│  │      —— daemon 进程本身就是 session ctx                    │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ 子进程层（按需 spawn，跨 session 复用）                    │  │
-│  │ - LSP servers（每 workspace 一个）                         │  │
-│  │ - MCP servers（每 MCP 配置一个，全局共享）                  │  │
-│  │ - PTY / Bash 工具调用（按工具调用粒度）                    │  │
+│  │ 子进程层（per-daemon · 不再跨 session 共享）                │  │
+│  │ - LSP server（1 个 · 此 daemon 的 workspace）              │  │
+│  │ - MCP servers（per-daemon · 不与其他 daemon 共享）          │  │
+│  │ - PTY / Bash 工具调用（按工具调用粒度）                     │  │
 │  └──────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+### 3.2 多 session 场景：Orchestrator + 多 Daemon Instances
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Orchestrator (qwen-coordinator)                                    │
+│  - sessionScope routing: single / user / thread                    │
+│  - daemon instance discovery / spawn / cleanup                     │
+│  - cross-daemon aggregate API（Web UI 跨 session 聚合视图）         │
+│  - daemon pool / warm pool（Stage 4+ 资源池化优化，详见 §21）        │
+└────────────────────┬───────────────────────────────────────────────┘
+                     │ spawn / route
+       ┌─────────────┼─────────────┬──────────────┐
+       ↓             ↓             ↓              ↓
+   ┌────────┐    ┌────────┐    ┌────────┐    ┌────────┐
+   │daemon-1│    │daemon-2│    │daemon-3│    │daemon-N│
+   │sess-A  │    │sess-B  │    │sess-C  │    │  ...   │
+   │        │    │        │    │        │    │        │
+   │ Mode A │    │ Mode B │    │ Mode B │    │        │
+   │ (含TUI)│    │(headl) │    │(headl) │    │        │
+   │        │    │        │    │        │    │        │
+   │ + LSP  │    │ + LSP  │    │ + LSP  │    │ + LSP  │
+   │ + MCP  │    │ + MCP  │    │ + MCP  │    │ + MCP  │
+   │ + cache│    │ + cache│    │ + cache│    │ + cache│
+   └───┬────┘    └───┬────┘    └───┬────┘    └───┬────┘
+       │             │             │              │
+   ┌───┴─────────────┴─────────────┴──────────────┴───┐
+   │  client 层（CLI / WebUI / IDE / IM bot）           │
+   │  - client 通过 orchestrator discovery 找到目标 daemon│
+   │  - 之后直连 daemon instance HTTP 端口（少一跳）      │
+   │  - 同 session 多 client 共享同一 daemon 的 EventBus  │
+   └──────────────────────────────────────────────────┘
+```
+
+**关键性质**：
+- **Daemon instance 内 0 cross-session 复杂度**——AsyncLocalStorage Instance ctx / Map<workspaceId, Instance> / per-session resource managers 全部不需要
+- **进程级隔离免费**——一 daemon crash 只影响其 session，由 orchestrator 重启
+- **资源池化由 orchestrator 层做**（[§21](./21-future-multi-session-migration.md) 路径 A：用户级 LSP daemon / 共享 MCP / 共享 cache）—— 触发条件出现后再投，pivot 模型本身够用
 
 ## 四、关键设计决策预告
 
