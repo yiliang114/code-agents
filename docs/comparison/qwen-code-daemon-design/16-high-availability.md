@@ -778,7 +778,7 @@ SLI 3: Session resume 正确性
 | §4 FileReadCache per-daemon | 新 daemon 重建（首次 read 需重 stat → 命中率短期下降）|
 | §5 Permission 第 4-5 mode | failover 后未决 permission 请求需重发 |
 | §6 多 client fan-out + first responder | Redis pub/sub 跨 pod 同步 subscribers + first responder lock 用 Redis SETNX |
-| §11 多租户 + sandbox | sandbox 子进程不可跨 pod 迁移，failover 后重建 |
+| §11 sandbox / §23 多租户 | sandbox 子进程不可跨 pod 迁移，failover 后重建；orchestrator quota / audit 复用 Postgres + Redis HA |
 | §12 越权防御 | HA 下加固：cookie HMAC 防伪造路由 |
 
 ## 十五、与 OpenCode / Claude Code HA 对比

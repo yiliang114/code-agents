@@ -80,13 +80,13 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | Workspace allowlist | glob 模式（如 `ws-alice-*`）|
 | Quota | LLM tokens / tool calls / concurrent sessions |
 | Audit log | 本 tenant 所有操作记录（SQLite per-tenant `tenant_id` WHERE）|
-| Sandbox tier | none / os-user / namespace / container（§11 §五）|
+| Sandbox tier | none / os-user / namespace / container（[§11](./11-multi-tenancy-and-sandbox.md)）|
 | Default settings | tenants/&lt;id&gt;.json（§15 配置 cascade）|
 | Provider config | API keys / OAuth tokens（per-tenant）|
 
 **关系**：
 - 1 tenant 拥有 N token（每 token 一对一属于本 tenant）
-- 1 tenant 拥有 N workspace（决策 §11 §3 不跨 tenant 共享 workspace）
+- 1 tenant 拥有 N workspace（[§23 §三 WorkspaceAccess](./23-orchestrator-multi-tenancy.md) 不跨 tenant 共享 workspace）
 
 **Stage 4 加入此层** —— Stage 1-3 单租户模式下相当于"虚拟单 tenant"。
 
@@ -169,7 +169,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 - Tool 名称 + 参数（验证通过 ACP zod schema）
 - AsyncLocalStorage Instance context（§05 §3）—— 携带 tenantId / workspaceId / sessionId / cwd
 - Permission flow 决策（PR#3723 复用，daemon 是第 4-5 mode）
-- Sandbox handle（如果是 shell 类工具，§11 §五）
+- Sandbox handle（如果是 shell 类工具，[§11 §二 ShellSandbox interface](./11-multi-tenancy-and-sandbox.md#二shellsandbox-抽象接口)）
 
 **关系**：
 - 1 session 顺序执行 N 个 tool call（不并发）
@@ -186,7 +186,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 |---|---|---|
 | Token ↔ Tenant | N:1 | 一 token 仅属一 tenant（认证凭证，不是 hierarchy）|
 | Tenant ↔ Workspace | 1:N | tenant 拥有多 workspace |
-| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | 决策 §11 §3 + 同 directory 在不同 tenant 下是不同 workspace 实例 |
+| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | [§23 §三 WorkspaceAccess](./23-orchestrator-multi-tenancy.md) + 同 directory 在不同 tenant 下是不同 workspace 实例 |
 | Workspace ↔ Session | 1:N | 同 workspace 可有多 session |
 | Workspace ↔ Session 默认 | 1:1（'single' scope）| 决策 §1 默认值 |
 | Session ↔ Task | 1:N | 一 session 起多 background task |
@@ -201,9 +201,9 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | 资源 | 所有者层级 | 引用 / PR |
 |---|---|---|
 | Token | Tenant | §07 |
-| Quota tracker | **Tenant** | §11 §4.6 |
-| Audit log | **Tenant** | §11 §4.7 |
-| Sandbox factory | **Tenant** | §11 §5.6 |
+| Quota tracker | **Tenant**（在 orchestrator）| [§23 §五](./23-orchestrator-multi-tenancy.md#五per-tenant-quota-引擎) |
+| Audit log | **Tenant**（在 orchestrator）| [§23 §六](./23-orchestrator-multi-tenancy.md#六audit-log) |
+| Sandbox factory | **Daemon Instance** | [§11 §四](./11-multi-tenancy-and-sandbox.md#四sandbox-选择逻辑) |
 | LSP server | **Workspace** | §06 §3 |
 | MCP server | **Workspace** | §06 §1（决策 §3）|
 | Auth credentials（API key 等）| **Workspace** | §06 §6.1 |
@@ -382,8 +382,9 @@ Session (runtime SetSessionConfigOptionRequest)
 | §03 §6 | 同 daemon 串行 + fan-out 多 client | Daemon.taskQueue + subscribers Set |
 | §03 §7 | Mode A / Mode B 双部署模式 | Daemon Instance 形态：含 TUI / 不含 |
 | §05 | 不需要 ALS Instance ctx（daemon 进程本身就是 session ctx）| tool call 执行上下文 = daemon-global |
-| §11 | Tenant 抽象（移到 orchestrator 层）| Orchestrator 路由 |
-| §11 §5 | ShellSandbox interface | Tool call 层调用 |
+| §11 §二 | ShellSandbox interface | Tool call 层调用 |
+| §11 §五 | 远程 sandbox（daemon 与 shell 不同机）| Stage 5.5+ |
+| §23 | Tenant 抽象 + AuthN/AuthZ + Quota + Audit | Orchestrator 层 |
 | §12 | 17 个攻击向量 + 5 层防御 | 跨 tenant 硬约束 + 同 session 隔离 |
 | §13 | TUI 多 client 共 session | Layer 3 多订阅者 |
 

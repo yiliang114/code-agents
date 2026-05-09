@@ -1069,7 +1069,7 @@ Chaos 测试: 主动注入故障，验证防御机制
 |---|---|
 | TTL 清理 | §18 §五 liveness 协议（subscriber TTL）+ §14 §五 生命周期表 |
 | Memory threshold restart | §16 §八 graceful drain（90s）+ §16 §四.3 multi-pod sticky |
-| Circuit breaker | §11 §4 quota tracker + §12 §4 DoS 防御 |
+| Circuit breaker | §23 §五 quota engine + §12 §4 DoS 防御 |
 | heap dump | §16 §十一 监控告警 |
 | Worker thread | §16 §三 状态可恢复性矩阵（worker 隔离的 LLM streaming 算"瞬时"状态）|
 | Native supervisor | §16 §十三 degraded mode（supervisor 触发 graceful drain）|

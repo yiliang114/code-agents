@@ -112,7 +112,7 @@ Anthropic Managed Agents
 | 内置 tool | web_search / code_execution / file_operations / text_editor | bash / edit / read / web_search / glob / grep / etc. |
 | Tool definition | JSON schema | ACP zod schema |
 | Custom tool | 通过 MCP server | 通过 MCP server 或直接挂 Qwen Code 的 tool framework |
-| Tool execution location | Anthropic sandbox | 用户机器（NoSandbox）/ namespace / container / 远端机器（[§11 §五](./11-multi-tenancy-and-sandbox.md)）|
+| Tool execution location | Anthropic sandbox | 用户机器（NoSandbox）/ namespace / container / 远端机器（[§11](./11-multi-tenancy-and-sandbox.md)）|
 | Tool result cache | Anthropic 自动 | FileReadCache（[§06 §2](./06-mcp-resources.md)）+ session-private（决策 §4）|
 | Permission flow | Anthropic-managed approval（推测）| 4 mode permission flow + 跨 client 应答（[§07](./07-permission-auth.md)）|
 
@@ -120,10 +120,10 @@ Anthropic Managed Agents
 
 | 维度 | Anthropic | Qwen daemon |
 |---|---|---|
-| 沙箱方案 | Anthropic-managed（推测 micro-VM 或 gVisor）| **5 选 1**（[§11 §五](./11-multi-tenancy-and-sandbox.md)）：NoSandbox / OS-user / namespace / container / remote |
+| 沙箱方案 | Anthropic-managed（推测 micro-VM 或 gVisor）| **5 选 1**（[§11](./11-multi-tenancy-and-sandbox.md)）：NoSandbox / OS-user / namespace / container / remote |
 | 用户可控 | ❌ | ✓ 完全可控 |
 | 离线能力 | ❌ | ✓ NoSandbox / OS-user 模式 |
-| 跨机器 sandbox | partial（managed）| ✓ remote sandbox（[§11 §5.7](./11-multi-tenancy-and-sandbox.md)）|
+| 跨机器 sandbox | partial（managed）| ✓ remote sandbox（[§11 §五](./11-multi-tenancy-and-sandbox.md#五远程-sandboxdaemon-与-shell-不在同机)）|
 | 多租户隔离 | Anthropic 管理 | 用户 enforce（[§12 5 层防御](./12-horizontal-privilege-defense.md)）|
 
 ### 3.5 Persistence 层
@@ -142,7 +142,7 @@ Anthropic Managed Agents
 | Anthropic Managed | Qwen daemon 对应 |
 |---|---|
 | `web_search` | `WebSearchTool`（[web-search-tool 对比](../web-search-tool-deep-dive.md)）|
-| `code_execution`（managed sandbox Python）| `Bash` tool + Sandbox 5 种（[§11 §五](./11-multi-tenancy-and-sandbox.md)）|
+| `code_execution`（managed sandbox Python）| `Bash` tool + Sandbox 5 种（[§11](./11-multi-tenancy-and-sandbox.md)）|
 | `file_operations`（managed filesystem）| `Edit` / `Read` / `Write` / `Glob` / `Grep` |
 | `text_editor` | `Edit` tool 的内嵌行为 |
 | Vision input | Multi-modal 通过 LLM provider（DashScope / Claude / GPT-4V）|

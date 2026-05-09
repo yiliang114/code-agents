@@ -192,7 +192,7 @@ daemon 校验 + 加入 subscribers + 返回 SSE 流的 endpoint。
 
 ### 4.3 Kind 不可伪造
 
-每个 kind 的 token scope 限制（决策 §11 多租户）：
+每个 kind 的 token scope 限制（[§23 §四 AuthZ](./23-orchestrator-multi-tenancy.md#四authentication--authorization)）：
 - `webui` token 不能声明 `cli` kind（防止绕过 cli 上限）
 - `im_bot` token 不能声明 `cli` kind（防止 IM bot 当成 CLI 抢 active typer）
 - daemon 端校验 `token.allowedKinds.includes(declared_kind)`
@@ -441,7 +441,7 @@ data: {
 
 ### 7.4 审计
 
-每次 takeover 写入 [§11 audit log](./11-multi-tenancy-and-sandbox.md)：
+每次 takeover 写入 [§23 §六 audit log](./23-orchestrator-multi-tenancy.md#六audit-log)：
 
 ```sql
 INSERT INTO audit_log (tenant_id, timestamp, method, path, details)
