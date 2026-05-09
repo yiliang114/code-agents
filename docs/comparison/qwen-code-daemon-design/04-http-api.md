@@ -401,7 +401,7 @@ GET / HTTP/1.1
 
 ## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> 1 Daemon Instance = 1 Session 模型下（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) + [§21 设计对比](./21-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
+> 1 Daemon Instance = 1 Session 模型下（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) + [§20 设计对比](./20-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 
 ### 8.1 Daemon 层路由（主线）
 

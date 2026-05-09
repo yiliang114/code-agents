@@ -10,7 +10,7 @@
 > |---|---|---|
 > | **传统单进程**（`qwen`）| in-process direct call（`Session.handleXxx()`）| 现状 |
 > | **Mode A in-process bus subscriber**（`qwen --serve`）| in-process EventBus（与 HTTP 远端 client 走同一套 fan-out） | §03 §7 |
-> | **Mode B 远端 TUI**（`qwen client --remote-url`，[§17](./17-remote-cli-mode.md)）| HTTP/SSE via HttpAcpAdapter | §17 |
+> | **Mode B 远端 TUI**（`qwen client --remote-url`，[§16](./16-remote-cli-mode.md)）| HTTP/SSE via HttpAcpAdapter | §16 |
 >
 > Mode A 的 TUI **不是 HTTP client**——它是 in-process subscriber，省了 HTTP 序列化成本但拿到字节级一致的事件流。本章下面的 HttpAcpAdapter 部分主要适用于 Mode B（远端 TUI）。Mode A 用 `InProcAdapter` 做同等抽象但内部直接订阅 EventBus。详见 [§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)。
 
@@ -702,11 +702,11 @@ qwen --json-file /tmp/events.jsonl --input-file /tmp/input.jsonl
 | 跨机器（远端 client）| ❌ 仅同机本地文件 | ✅ HTTP 走任何网络 |
 | Bearer token / 认证 | ❌ 任何能读文件的进程都能加入 | ✅（[§07](./07-permission-auth.md)）|
 | First-responder permission vote 协议 | ❌ 文件 race | ✅ 协议级抢答 + 防双 approve（[§03 §6](./03-architectural-decisions.md#6-多-client-并发请求)）|
-| Last-Event-ID 重连补漏 | ❌ 只能重读整个 jsonl | ✅ EventBus + ring replay（[§16](./16-high-availability.md)）|
-| Fan-out backpressure / bounded queue | ❌ 文件无限追加 | ✅ subscriber bounded queue + evict（[§18](./18-client-coordination.md)）|
+| Last-Event-ID 重连补漏 | ❌ 只能重读整个 jsonl | ✅ EventBus + ring replay（[§15](./15-high-availability.md)）|
+| Fan-out backpressure / bounded queue | ❌ 文件无限追加 | ✅ subscriber bounded queue + evict（[§17](./17-client-coordination.md)）|
 | 多端输入串行 / 排队 | ❌ 多 writer append 无原子保证 | ✅ session task queue 串行 |
 | Heartbeat / 断连检测 | ❌ 文件读者断开 TUI 不知 | ✅ 15s heartbeat + AbortController |
-| 跨 client capability 反向 RPC | ❌ | ✅（[§17](./17-remote-cli-mode.md)）|
+| 跨 client capability 反向 RPC | ❌ | ✅（[§16](./16-remote-cli-mode.md)）|
 | 多 session 路由 | ❌ 一对文件路径 = 一 session | ✅ orchestrator |
 
 ### 11.6.4 定位
@@ -727,7 +727,7 @@ qwen --json-file /tmp/events.jsonl --input-file /tmp/input.jsonl
 | File I/O → HTTP/SSE | = Mode A 启动 Express server |
 | 加 bearer token | = [§07 §1](./07-permission-auth.md) 鉴权 |
 | 加 fan-out + bounded queue | = [§03 §6](./03-architectural-decisions.md#6-多-client-并发请求) EventBus |
-| 加 Last-Event-ID 重连 | = [§16 §五](./16-high-availability.md) SSE 重连协议 |
+| 加 Last-Event-ID 重连 | = [§15 §五](./15-high-availability.md) SSE 重连协议 |
 
 → 直接做 Mode A 即可，不需要"先升级 dual-output"。
 

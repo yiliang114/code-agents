@@ -1,6 +1,6 @@
-# 21 — 单 Session vs 多 Session 设计优缺点深度对比
+# 20 — 单 Session vs 多 Session 设计优缺点深度对比
 
-> [下一篇：Orchestrator 多租户与配额 →](./22-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+> [下一篇：Orchestrator 多租户与配额 →](./21-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
 
 > 系统对比"1 Daemon Instance = 1 Session"（当前架构）与"单 daemon 多 session"（OpenCode 模式）两种设计的 tradeoff。**本章回答"为什么选这个"——为选型决策提供数据**；扩展到多 session 不在 qwen-code 主线设计目标（决策已定，本章解释为什么选 1 daemon = 1 session）。
 
@@ -39,7 +39,7 @@
 | 12 | **HPE 攻击面**（[§12](./12-horizontal-privilege-defense.md)） | ✅ 17 个攻击向量 vanish 8 个 | ❌ 17 个全部需防御 |
 | 13 | **Cross-session race condition** | ✅ 不存在 | ❌ 共享状态需要 lock / 原子操作 |
 | 14 | **OOM 隔离** | ✅ 单 session 跑爆只杀自己 | ❌ 整 daemon OOM |
-| 15 | **Long-run 稳定性**（[§19](./19-stability-and-longevity.md)） | ✅ 10 个泄漏点 vanish 5 个 | ❌ 全部需 TTL/quota/circuit breaker |
+| 15 | **Long-run 稳定性**（[§18](./18-stability-and-longevity.md)） | ✅ 10 个泄漏点 vanish 5 个 | ❌ 全部需 TTL/quota/circuit breaker |
 | 16 | **Cross-session 聚合 UI**（"我所有 task"）| ❌ 需 orchestrator 聚合 API | ✅ daemon 内一个 query |
 | 17 | **同 session 多 client live collaboration** | ✅ 同 daemon EventBus fan-out | ✅ 同 daemon 内 fan-out |
 | 18 | **持久化模型** | ✅ 每 daemon 自己 transcript JSONL | ⚠️ 跨 session 共享 SQLite（写入并发管理）|
@@ -117,7 +117,7 @@ N 个 cold session 启动总成本：
 | File descriptor 泄漏 | ✅ daemon 退出释放 | ❌ 累积到系统 ulimit |
 | Listener 累积（EventEmitter）| ✅ daemon 退出释放 | ❌ 长跑泄漏 |
 
-**多 session 模式的"single point of failure"是它最大的运营负担**——所有 9 项稳定性模式（[§19 §五](./19-stability-and-longevity.md)）都是为了缓解此问题：TTL / bounded / quota / circuit breaker / memory threshold restart / heap dump / liveness / native supervisor / worker isolation。
+**多 session 模式的"single point of failure"是它最大的运营负担**——所有 9 项稳定性模式（[§18 §五](./18-stability-and-longevity.md)）都是为了缓解此问题：TTL / bounded / quota / circuit breaker / memory threshold restart / heap dump / liveness / native supervisor / worker isolation。
 
 **单 session 模式天然规避**——9 项稳定性模式中至少 5 项变成 "kill daemon 即清理"，无需主动管理。
 
@@ -251,8 +251,8 @@ OpenCode daemon 进程
 | [§03 §2 状态进程模型](./03-architectural-decisions.md#2-状态进程模型) | 单 session 决策的来源 |
 | [§09 与 OpenCode 详细对比](./09-comparison-with-opencode.md) | 多 session 模式的现实参考 |
 | [§12 多租户水平越权防御](./12-horizontal-privilege-defense.md) | 多 session 的 17 攻击向量证据 |
-| [§19 长跑稳定性](./19-stability-and-longevity.md) | 多 session 的 9 稳定性模式负担 |
-| [§20 vs Anthropic Managed Agents](./20-vs-anthropic-managed-agents.md) | Anthropic 的 per-session container 与 Qwen 单 session 模型架构相似 |
+| [§18 长跑稳定性](./18-stability-and-longevity.md) | 多 session 的 9 稳定性模式负担 |
+| [§19 vs Anthropic Managed Agents](./19-vs-anthropic-managed-agents.md) | Anthropic 的 per-session container 与 Qwen 单 session 模型架构相似 |
 
 ## 八、一句话总结
 
@@ -267,4 +267,4 @@ OpenCode daemon 进程
 
 ---
 
-[下一篇：Orchestrator 多租户与配额 →](./22-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+[下一篇：Orchestrator 多租户与配额 →](./21-orchestrator-multi-tenancy.md) · [回到 README](./README.md)

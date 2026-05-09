@@ -1,6 +1,6 @@
-# 16 — HA 高可用与故障恢复（External Reference Architecture）
+# 15 — HA 高可用与故障恢复（External Reference Architecture）
 
-> [← 上一篇：持久层与外部存储](./15-persistence-and-storage.md) · [回到 README](./README.md)
+> [← 上一篇：实体模型与层级关系](./14-entity-model.md) · [回到 README](./README.md)
 
 > **⚠️ 整章是 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)，不在 qwen-code 主线路线图**——是给商业平台 / k8s operator / 云厂商的 SaaS 部署 HA 设计蓝图。
 >
@@ -12,7 +12,7 @@
 >
 > Crash isolation 免费（OS 进程边界）；主线不需要 multi-pod / sticky session / Postgres Patroni 等。**只关心主线 HA 读到这里就够，下面 §一 - §十七 是 SaaS 部署完整蓝图**。
 >
-> 触发需要本章 Layer 2 内容的条件：daemon 池规模 ≥ 100 / 99.9%+ SLO / 多 region / 商业 SaaS 产品（见 [§22](./22-orchestrator-multi-tenancy.md)）。
+> 触发需要本章 Layer 2 内容的条件：daemon 池规模 ≥ 100 / 99.9%+ SLO / 多 region / 商业 SaaS 产品（见 [§21](./21-orchestrator-multi-tenancy.md)）。
 
 > 章节中"daemon" 指 daemon-pool 中的单个 daemon 实例（即 1 daemon = 1 session 的 daemon process）。"pod" 是 k8s 部署形态——通常 1 daemon = 1 pod，方便 orchestrator 用 k8s native 机制做生命周期管理。
 
@@ -233,7 +233,7 @@ spec:
 
 ### 4.4 L3b — 共享状态层
 
-详见 [§15 持久层](./15-persistence-and-storage.md)；HA 视角下补充：
+详见 [§21 持久化栈](./21-orchestrator-multi-tenancy.md)（持久层）；HA 视角下补充：
 
 **Postgres Patroni**：
 
@@ -778,7 +778,7 @@ SLI 3: Session resume 正确性
 | §4 FileReadCache per-daemon | 新 daemon 重建（首次 read 需重 stat → 命中率短期下降）|
 | §5 Permission 第 4-5 mode | failover 后未决 permission 请求需重发 |
 | §6 多 client fan-out + first responder | Redis pub/sub 跨 pod 同步 subscribers + first responder lock 用 Redis SETNX |
-| §11 sandbox / §22 多租户 | sandbox 子进程不可跨 pod 迁移，failover 后重建；orchestrator quota / audit 复用 Postgres + Redis HA |
+| §11 sandbox / §21 多租户 | sandbox 子进程不可跨 pod 迁移，failover 后重建；orchestrator quota / audit 复用 Postgres + Redis HA |
 | §12 越权防御 | HA 下加固：cookie HMAC 防伪造路由 |
 
 ## 十五、与 OpenCode / Claude Code HA 对比
@@ -831,4 +831,4 @@ Stage 8   全球：edge daemon + 区域中心
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：远端 CLI 模式 →](./17-remote-cli-mode.md)
+[← 返回 README](./README.md) · [下一篇：远端 CLI 模式 →](./16-remote-cli-mode.md)

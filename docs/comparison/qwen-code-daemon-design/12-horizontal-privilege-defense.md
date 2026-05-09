@@ -142,7 +142,7 @@ async function rotateToken(oldToken: string): Promise<TenantToken> {
 **关键**：所有请求中的 ID 必须**与 token 绑定的 tenant 校验**：
 
 ```ts
-// auth middleware (扩展自 §22 §四 AuthN/AuthZ)
+// auth middleware (扩展自 §21 §四 AuthN/AuthZ)
 export const authMiddleware = async (c, next) => {
   const token = c.req.header('Authorization')?.slice(7)
   const tenant = await tokenToTenant.get(token)

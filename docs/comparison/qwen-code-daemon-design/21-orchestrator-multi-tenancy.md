@@ -1,8 +1,10 @@
-# 22 — Orchestrator 多租户与配额
+# 21 — Orchestrator 多租户与配额
 
-> [← 上一篇：单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)
+> [← 上一篇：单 vs 多 Session 设计深度对比](./20-single-vs-multi-session-design.md) · [回到 README](./README.md)
 
-> [§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 Daemon Instance = 1 Session" 模型下，daemon 进程不感知租户——multi-tenancy 概念全部在 orchestrator 层。本章设计 orchestrator 的 Tenant 抽象、AuthN/AuthZ、配额引擎、审计日志、SaaS 路线图。Shell sandbox 见 [§11](./11-multi-tenancy-and-sandbox.md)。
+> [§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 Daemon Instance = 1 Session" 模型下，daemon 进程不感知租户——multi-tenancy 概念全部在 orchestrator 层。本章设计 orchestrator 的 Tenant 抽象、AuthN/AuthZ、配额引擎、审计日志、SaaS 路线图、持久化栈。Shell sandbox 见 [§11](./11-multi-tenancy-and-sandbox.md)。
+>
+> **Daemon 主线持久化基线**（对比基线，不再单列章节）：每 daemon instance 一份 transcript JSONL（PR#3739）+ `~/.qwen/settings.json` / skills / OAuth credentials 启动加载、运行时只读。**0 RDBMS 依赖**——并发写 / audit 查询 / quota 原子 / hash lookup 这些 RDBMS 痛点在 1 daemon = 1 session 模型下天然不出现。本章 §八-§十七 描述的 SQLite/Postgres/drizzle-orm/8 表 schema 全部属于 orchestrator 层（External Reference Architecture）。
 
 ## 一、TL;DR
 
@@ -358,7 +360,7 @@ Phase 4 (~1-2 月)：完整 SaaS
 
 ---
 
-> **§八-§十七 持久化栈细节**：以下章节回答"orchestrator 层使用什么存储栈支撑上面 §三-§七 的多租户语义"，是从原 §15 整体迁移过来的——qwen-code 主线 daemon 不引入 SQLite / ORM（详见 [§15](./15-persistence-and-storage.md)）。如果只关心多租户语义本身可以跳到 [§十八 与 OpenCode / Claude 对比](#十八与-opencode--claude-code-多租户对比)。
+> **§八-§十七 持久化栈细节**：以下章节回答"orchestrator 层使用什么存储栈支撑上面 §三-§七 的多租户语义"，是从原 §21 整体迁移过来的——qwen-code 主线 daemon 不引入 SQLite / ORM（详见 [§21 持久化栈](./21-orchestrator-multi-tenancy.md#八引入-sqlite-的边界external-phase-1-orchestrator-层)）。如果只关心多租户语义本身可以跳到 [§十八 与 OpenCode / Claude 对比](#十八与-opencode--claude-code-多租户对比)。
 
 ## 八、引入 SQLite 的边界（External Phase 1 orchestrator 层）
 
@@ -1073,9 +1075,9 @@ REVOKE ALL ON pg_catalog FROM qwen_app;
 
 orchestrator 是 SaaS 部署的关键路径——挂了所有用户无法 spawn 新 daemon。设计上：
 
-- **现有 daemon 不受影响**——已 spawn 的 daemon instance 直接服务现有 client（沿用 [§17 §discovery 协议](./17-remote-cli-mode.md)）
+- **现有 daemon 不受影响**——已 spawn 的 daemon instance 直接服务现有 client（沿用 [§16 §discovery 协议](./16-remote-cli-mode.md)）
 - **新建 session 阻塞**——orchestrator 不可用时 client 短期重试 + UI 提示
-- **HA 设计**：orchestrator 自身多副本 + Postgres 主备 + Redis Sentinel + 负载均衡（参考 [§16 5 层 HA 架构](./16-high-availability.md)）
+- **HA 设计**：orchestrator 自身多副本 + Postgres 主备 + Redis Sentinel + 负载均衡（参考 [§15 5 层 HA 架构](./15-high-availability.md)）
 
 ### 9.2 Quota 准确性 vs 性能
 
@@ -1105,4 +1107,4 @@ orchestrator 是 SaaS 部署的关键路径——挂了所有用户无法 spawn 
 
 ---
 
-[← 上一篇：单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)
+[← 上一篇：单 vs 多 Session 设计深度对比](./20-single-vs-multi-session-design.md) · [回到 README](./README.md)

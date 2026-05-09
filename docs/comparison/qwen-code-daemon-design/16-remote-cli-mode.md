@@ -1,6 +1,6 @@
-# 17 — 远端 CLI 模式与 Client Capability 协议
+# 16 — 远端 CLI 模式与 Client Capability 协议
 
-> [← 上一篇：HA 高可用与故障恢复](./16-high-availability.md) · [回到 README](./README.md)
+> [← 上一篇：HA 高可用与故障恢复](./15-high-availability.md) · [回到 README](./README.md)
 
 > **远端 client 接入流程**（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
 >
@@ -20,7 +20,7 @@
 | 反向 RPC | **Client Capability Request 协议**：daemon 通过 SSE event 反向调用 CLI（editor / clipboard / browser / notification / file_picker）|
 | NAT 穿透 | Cloudflare Tunnel / Tailscale / SSH reverse tunnel |
 | 性能优化 | TUI 端 local echo 抹平 keystroke RTT；LLM streaming 50ms RTT 几乎无感 |
-| 重连 | SSE Last-Event-ID（[§16 §五](./16-high-availability.md) 协议）|
+| 重连 | SSE Last-Event-ID（[§15 §五](./15-high-availability.md) 协议）|
 | 离线降级 | `--daemon-or-local` flag：daemon 不可达自动 fallback 到本地子进程模式 |
 
 ## 二、3 类拓扑详细对比
@@ -528,7 +528,7 @@ Storage: bcrypt(token_secret, cost=12)
 
 ### 5.4 Sticky Cookie HMAC
 
-[§16 §九.2](./16-high-availability.md) 已述：
+[§15 §九.2](./15-high-availability.md) 已述：
 
 ```
 qwen-aff cookie = base64( HMAC-SHA256(sessionId, server-secret) )
@@ -786,7 +786,7 @@ CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork r
 
 [§13](./13-tui-compatibility.md) 讨论了 TUI 在单进程 vs daemon 下的兼容性，**Local-Local 拓扑（§13 主题）**已覆盖；**本章补充 Remote-Remote 拓扑**。
 
-| 维度 | §13 Local | §17 Remote |
+| 维度 | §13 Local | §16 Remote |
 |---|---|---|
 | Ink 组件 | 共用 | 共用 |
 | HttpAcpAdapter | 同 host fast path | 跨 host RPC + TLS |
@@ -795,7 +795,7 @@ CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork r
 | Local echo | 不需要 | **必需** |
 | 离线降级 | 通常不需要（同机不会断）| **必需** |
 
-§13 + §17 合起来构成完整的 TUI 部署矩阵。
+§13 + §16 合起来构成完整的 TUI 部署矩阵。
 
 ## 十一、与 VSCode Remote-SSH 的对比借鉴
 
@@ -945,7 +945,7 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 | §6 多 client fan-out + first responder | Remote 多端协作的核心 |
 | §11 多租户 + sandbox | Remote 是多租户的常见部署 |
 | §12 越权防御 | Remote 加固：cookie HMAC + mTLS + IP allowlist |
-| §16 HA | Remote SSE 重连协议（Last-Event-ID）必需 |
+| §15 HA | Remote SSE 重连协议（Last-Event-ID）必需 |
 
 ## 十六、Stage 1-6 各阶段 Remote 支持矩阵
 
@@ -960,8 +960,8 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 
 ## 十七、一句话总结
 
-**Qwen daemon CLI 远端连接 = HTTP/SSE+TLS+Bearer token 设计天然支持，推荐拓扑 C（workspace 与 daemon 同机），通过 Client Capability 反向 RPC 协议（5 类：editor/clipboard/browser/notification/file_picker）让 daemon 可"调起"本地 editor 等本机依赖。NAT 穿透 Cloudflare Tunnel / Tailscale / SSH reverse tunnel 三选一。Local echo 抹平 keystroke RTT，LLM streaming 50ms 几乎无感。SSE Last-Event-ID 自动重连让笔记本网络抖动无感（继承 §16 协议）。`--daemon-or-local` flag 支持离线降级到本地子进程模式。External Phase 4 SaaS 部署模式默认就是 Remote-Remote。与 VSCode Remote-SSH 设计哲学一致但更进一步：多 client 共 session 的 live collaboration 是 Remote 模式下的杀手级特性。**
+**Qwen daemon CLI 远端连接 = HTTP/SSE+TLS+Bearer token 设计天然支持，推荐拓扑 C（workspace 与 daemon 同机），通过 Client Capability 反向 RPC 协议（5 类：editor/clipboard/browser/notification/file_picker）让 daemon 可"调起"本地 editor 等本机依赖。NAT 穿透 Cloudflare Tunnel / Tailscale / SSH reverse tunnel 三选一。Local echo 抹平 keystroke RTT，LLM streaming 50ms 几乎无感。SSE Last-Event-ID 自动重连让笔记本网络抖动无感（继承 §15 协议）。`--daemon-or-local` flag 支持离线降级到本地子进程模式。External Phase 4 SaaS 部署模式默认就是 Remote-Remote。与 VSCode Remote-SSH 设计哲学一致但更进一步：多 client 共 session 的 live collaboration 是 Remote 模式下的杀手级特性。**
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：多端协调策略 →](./18-client-coordination.md)
+[← 返回 README](./README.md) · [下一篇：多端协调策略 →](./17-client-coordination.md)

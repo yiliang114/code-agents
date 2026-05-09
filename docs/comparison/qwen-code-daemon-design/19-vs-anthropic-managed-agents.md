@@ -1,6 +1,6 @@
-# 20 — 与 Anthropic Managed Agents 对比（External Reference Architecture）
+# 19 — 与 Anthropic Managed Agents 对比（External Reference Architecture）
 
-> [← 上一篇：长跑稳定性](./19-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./21-single-vs-multi-session-design.md)
+> [← 上一篇：长跑稳定性](./18-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./20-single-vs-multi-session-design.md)
 
 > **⚠️ 整章是 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)，不在 qwen-code 主线**——qwen-code 主线只交付 daemon building block（Stage 1/1.5/2），不直接对标 Anthropic Managed Agents（云 SaaS 平台）。本章对比的是**基于 qwen-code daemon + 完整 External Reference Architecture 包装出来的"Managed Qwen Agents"产品** vs Anthropic Managed Agents 云服务。
 >
@@ -8,7 +8,7 @@
 
 > **免责声明**：本对比基于 Anthropic 公开文档（截至 2026 Q1），Managed Agents 是闭源服务，具体实现细节、定价、内置工具列表可能已变更。本系列是 codeagents 项目的设计提案，与 Anthropic / Qwen 团队均无关联。
 
-> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§22 §七 SaaS Phase 1-4](./22-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
+> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§21 §七 SaaS Phase 1-4](./21-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
 
 ## 一、TL;DR
 
@@ -93,8 +93,8 @@ Anthropic Managed Agents
 | Streaming | SSE | SSE + 可选 WebSocket（[§04](./04-http-api.md)）|
 | 多 client 共 session | 设计上单 client | **默认多 client live collaboration（决策 §1+§6）**|
 | Channel 多样性 | SDK only（开发者自包 IM）| ACP / SDK / WebUI / IDE / IM 内建（[§02 channels 包](./02-existing-assets.md)）|
-| Reverse RPC（capability）| 标准 Anthropic 不太支持 | **Client Capability 协议**（[§17 §三](./17-remote-cli-mode.md)）|
-| 远端 / Local | Local SDK → 远端 API | 全 3 类拓扑（[§17 §二](./17-remote-cli-mode.md)）|
+| Reverse RPC（capability）| 标准 Anthropic 不太支持 | **Client Capability 协议**（[§16 §三](./16-remote-cli-mode.md)）|
+| 远端 / Local | Local SDK → 远端 API | 全 3 类拓扑（[§16 §二](./16-remote-cli-mode.md)）|
 
 ### 3.2 Agent Runtime 层
 
@@ -102,10 +102,10 @@ Anthropic Managed Agents
 |---|---|---|
 | 进程模型 | Anthropic 内部 worker pool（推测 per-session container/process）| **1 Daemon Instance = 1 Session**（OS 进程边界天然隔离；[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）|
 | Session 共享语义 | per call 独立 / 持久化跨 call | sessionScope 由 External orchestrator 路由（'single' 多 client 共享 daemon / 'thread' / 'user'，[§03 §1](./03-architectural-decisions.md#1-session-是否跨-client-共享)）|
-| Session 状态管理 | Anthropic 管理（黑盒）| 主线：每 daemon JSONL transcript；External SaaS：+ orchestrator 层 SQLite/Postgres 聚合（[§15](./15-persistence-and-storage.md)）|
+| Session 状态管理 | Anthropic 管理（黑盒）| 主线：每 daemon JSONL transcript；External SaaS：+ orchestrator 层 SQLite/Postgres 聚合（[§21 持久化栈](./21-orchestrator-multi-tenancy.md#八引入-sqlite-的边界external-phase-1-orchestrator-层)）|
 | 长跑 / Background | ✓ async tasks API | ✓ 4 kinds（agent/shell/monitor/dream）+ 跨 client 可见（[§subagent-display](../subagent-display-deep-dive.md)）|
 | 进程隔离 | Anthropic 内部决定 | OS 进程边界（决策 §2）+ External Phase 2-3 sandbox（[§11](./11-multi-tenancy-and-sandbox.md)）|
-| HA / SLO | Anthropic 99.9%+ | 主线：daemon crash 重启 + transcript fork-resume（PR#3739/3889）；External SaaS：99.9% 设计（[§16](./16-high-availability.md)）|
+| HA / SLO | Anthropic 99.9%+ | 主线：daemon crash 重启 + transcript fork-resume（PR#3739/3889）；External SaaS：99.9% 设计（[§15](./15-high-availability.md)）|
 
 ### 3.3 Tool 层
 
@@ -132,7 +132,7 @@ Anthropic Managed Agents
 
 | 维度 | Anthropic | Qwen daemon |
 |---|---|---|
-| Session 状态 | managed 黑盒 | JSONL transcript + SQLite/Postgres meta（[§15](./15-persistence-and-storage.md)）|
+| Session 状态 | managed 黑盒 | JSONL transcript + SQLite/Postgres meta（[§21 持久化栈](./21-orchestrator-multi-tenancy.md#八引入-sqlite-的边界external-phase-1-orchestrator-层)）|
 | Audit log | Anthropic console（受限查看）| 用户完全访问（SQLite 或 Postgres）|
 | 数据驻留 | US / EU 选项 | 任意 region / 私有云 / 离线 |
 | 数据加密 | Anthropic 管 | 用户 KMS / TDE 自管 |
@@ -191,7 +191,7 @@ GET /v1/session/{sid}/events?Last-Event-ID=evt-N
   → SSE stream（可重连）
   
 POST /v1/session/{sid}/capability/{cap-id}/response
-  → reverse RPC response（[§17 §三](./17-remote-cli-mode.md)）
+  → reverse RPC response（[§16 §三](./16-remote-cli-mode.md)）
 
 GET /v1/session/{sid}/subscribers
   → 多 client 列表
@@ -201,7 +201,7 @@ GET /v1/session/{sid}/subscribers
 - HTTP + SSE + 可选 WebSocket
 - 复用 ACP NDJSON schema（标准、开源）
 - Bearer token 认证
-- Multi-client 设计（[§18](./18-client-coordination.md)）
+- Multi-client 设计（[§17](./17-client-coordination.md)）
 - Reverse RPC capability protocol
 
 ### 5.3 关键协议差异
@@ -210,8 +210,8 @@ GET /v1/session/{sid}/subscribers
 |---|---|---|
 | Schema 来源 | 私有 | 标准 ACP（开源 [@agentclientprotocol/sdk](https://www.npmjs.com/package/@agentclientprotocol/sdk)）|
 | Multi-client per session | ❌ | ✓ |
-| Last-Event-ID 重连 | partial（standard SSE）| ✓ + transcript-first 重建（[§16 §五](./16-high-availability.md)）|
-| Reverse RPC | 不支持 | ✓ Client Capability（[§17](./17-remote-cli-mode.md)）|
+| Last-Event-ID 重连 | partial（standard SSE）| ✓ + transcript-first 重建（[§15 §五](./15-high-availability.md)）|
+| Reverse RPC | 不支持 | ✓ Client Capability（[§16](./16-remote-cli-mode.md)）|
 | Schema 演进 | Anthropic 主导 | ACP 社区共识 + Qwen 贡献 |
 | OpenAPI 自动生成 | ❌（推测）| ✓ 可选（External Phase 1+）|
 
@@ -286,7 +286,7 @@ GET /v1/session/{sid}/subscribers
 **推荐**：Qwen daemon + External Phase 4 SaaS SaaS
 
 **原因**：
-- 多租户 HA 架构齐备（[§16](./16-high-availability.md)）
+- 多租户 HA 架构齐备（[§15](./15-high-availability.md)）
 - 多 LLM provider 路由灵活
 - 可对客户提供"Managed Qwen Agents"服务
 
@@ -308,7 +308,7 @@ GET /v1/session/{sid}/subscribers
 ```
 Managed Qwen Agents (External Reference Architecture 完整实施 + 商业层)
 ├─ Qwen daemon building block (开源核心，主线 Stage 1/1.5/2)
-├─ External Phase 1-4 实施（[§22](./22-orchestrator-multi-tenancy.md) + [§16](./16-high-availability.md) + [§11](./11-multi-tenancy-and-sandbox.md)）
+├─ External Phase 1-4 实施（[§21](./21-orchestrator-multi-tenancy.md) + [§15](./15-high-availability.md) + [§11](./11-multi-tenancy-and-sandbox.md)）
 ├─ Web Console
 │   - Tenant 管理 / agent 定义 / session 浏览 / billing
 ├─ 计量统计
@@ -417,9 +417,9 @@ Provider 信任:
 | Stage 1 (qwen serve daemon, PR#3889) | qwen-code 主线 | 基础 daemon + ACP NDJSON over HTTP+SSE + bearer auth | 单 dev tool；远不及 Managed |
 | Stage 1.5 (Mode A) | qwen-code 主线 | + CLI + HttpServer 同进程 | 同上 |
 | Stage 2 (daemon 完善) | qwen-code 主线 | + mDNS / OpenAPI / WebSocket bidi / 多 token / metrics | 已具备 SDK 单 client 完整体验 |
-| External Phase 1 (Orchestrator + 多租户 ACL) | External Reference | + qwen-coordinator + Tenant + quota（[§22](./22-orchestrator-multi-tenancy.md)）| 接近 Anthropic Managed multi-tenant |
+| External Phase 1 (Orchestrator + 多租户 ACL) | External Reference | + qwen-coordinator + Tenant + quota（[§21](./21-orchestrator-multi-tenancy.md)）| 接近 Anthropic Managed multi-tenant |
 | External Phase 2-3 (sandbox) | External Reference | + 5 种 sandbox（[§11](./11-multi-tenancy-and-sandbox.md)）| 沙箱选择上超过 Anthropic（更灵活）|
-| External Phase 4 (SaaS HA) | External Reference | + Postgres + S3 + Redis + HA（[§16](./16-high-availability.md)）| **架构上完全对标 Anthropic Managed** |
+| External Phase 4 (SaaS HA) | External Reference | + Postgres + S3 + Redis + HA（[§15](./15-high-availability.md)）| **架构上完全对标 Anthropic Managed** |
 | 加商业层 | 商业产品 | + Console + Billing + Marketplace + 客服 | **产品上完全对标 Anthropic Managed** |
 
 **External Reference Architecture 完整实施 + 商业层 = 完整的 Managed Qwen Agents 产品**。
@@ -433,8 +433,8 @@ Provider 信任:
 | §5 Permission flow 4-mode | Anthropic permission 隐藏在内部；Qwen 显式可控 |
 | §6 多 client + first responder | Anthropic 不支持；Qwen 独有 |
 | §11 5 种 sandbox | Anthropic 1 种 managed sandbox；Qwen 灵活 |
-| §16 HA + sticky session | 商业层 Managed Qwen Agents 的基础 |
-| §17 Capability reverse RPC | Anthropic 不支持；Qwen 独有 |
+| §15 HA + sticky session | 商业层 Managed Qwen Agents 的基础 |
+| §16 Capability reverse RPC | Anthropic 不支持；Qwen 独有 |
 
 ## 十四、何时选哪个：决策树
 
@@ -511,7 +511,7 @@ Enterprise   → Qwen daemon 私有部署
 | Sandbox 选择 | 1（managed）| Linux namespace（v2.1.98+）| 无 | 5 种 |
 | 离线 | ❌ | ✓ | ✓ | ✓ |
 | 开源 | ❌ | ❌ | ✓ MIT | ✓ Apache-2.0 |
-| HA / SaaS 设计 | Anthropic | N/A | minimal | ✓ External Phase 4 ([§16](./16-high-availability.md))|
+| HA / SaaS 设计 | Anthropic | N/A | minimal | ✓ External Phase 4 ([§15](./15-high-availability.md))|
 | 中国合规 | ❌ | ❌ | ✓ self-host | ✓ DashScope + self-host |
 
 ## 十七、一句话总结
@@ -529,4 +529,4 @@ Anthropic Managed Agents 与 Qwen daemon 是**两种互补哲学**：
 
 ---
 
-[← 上一篇：长跑稳定性](./19-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)
+[← 上一篇：长跑稳定性](./18-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./20-single-vs-multi-session-design.md) · [回到 README](./README.md)

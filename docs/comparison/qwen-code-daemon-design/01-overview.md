@@ -24,7 +24,7 @@ Qwen Code 当前的程序化访问形态：
                                    │ Orchestrator（External 实施）  │
                                    │ - sessionScope routing        │
                                    │ - daemon instance discovery   │
-                                   │ ⚠️ 项目范围外（参考 §21/§22）  │
+                                   │ ⚠️ 项目范围外（参考 §20/§21）  │
                                    └──────────────┬───────────────┘
                                                   │ spawn / route
                                                   ↓
@@ -59,7 +59,7 @@ Mode B: daemon instance 无 TUI 全 HTTP（qwen serve）
 | daemon 不再 spawn CLI | core 直接 import | 同样 |
 | 多 session 模型 | `Map<directory, InstanceContext>`（同进程 N session）| **1 daemon = 1 session**（多 session 由 External orchestrator spawn 多 daemon，不在 qwen-code 主线）|
 | `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | 同样但无需 ALS Instance ctx —— daemon 进程本身就是 session ctx（详见 [05-进程模型](./05-process-model.md)）|
-| 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§15](./15-persistence-and-storage.md)）|
+| 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§21 持久化栈](./21-orchestrator-multi-tenancy.md#八引入-sqlite-的边界external-phase-1-orchestrator-层)）|
 
 ### 2.2 Qwen 独有的 3 条特色
 
@@ -111,7 +111,7 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 **核心原则**：
 - 每个 daemon 进程**只承载唯一一个 session**——daemon 内无 multi-session 路由
 - **Mode A（CLI + HttpServer）/ Mode B（Headless Daemon）双部署模式**（[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）—— 区别仅在 daemon 进程是否同时承载本地 TUI
-- **多 session 由 External orchestrator spawn 多 daemon 实例**（`qwen-coordinator` 角色）—— **不在 qwen-code 主线路线图**，由商业平台 / k8s operator / 云厂商基于 daemon building block 实现，参考 [§21 设计对比](./21-single-vs-multi-session-design.md) / [§22 多租户配额](./22-orchestrator-multi-tenancy.md) / [§04 §8.2 orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture)
+- **多 session 由 External orchestrator spawn 多 daemon 实例**（`qwen-coordinator` 角色）—— **不在 qwen-code 主线路线图**，由商业平台 / k8s operator / 云厂商基于 daemon building block 实现，参考 [§20 设计对比](./20-single-vs-multi-session-design.md) / [§21 多租户配额](./21-orchestrator-multi-tenancy.md) / [§04 §8.2 orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture)
 
 ### 3.1 单 Daemon Instance 内部架构（Mode A / Mode B 共用）
 
@@ -161,7 +161,7 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 
 ### 3.2 多 session 场景：External Orchestrator + 多 Daemon Instances
 
-> **⚠️ 此节描述的 Orchestrator 不在 qwen-code 主线路线图**——是给外部集成方（商业平台 / k8s operator / 云厂商）的设计参考蓝图。qwen-code 主线（Stage 1/1.5/2）只交付 daemon building block；下面的多 session 拓扑由外部基于 [§04 §8.2 Orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture) 实现。详见 [§21 设计对比](./21-single-vs-multi-session-design.md) + [§22 多租户配额](./22-orchestrator-multi-tenancy.md) + [§08 External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)。
+> **⚠️ 此节描述的 Orchestrator 不在 qwen-code 主线路线图**——是给外部集成方（商业平台 / k8s operator / 云厂商）的设计参考蓝图。qwen-code 主线（Stage 1/1.5/2）只交付 daemon building block；下面的多 session 拓扑由外部基于 [§04 §8.2 Orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture) 实现。详见 [§20 设计对比](./20-single-vs-multi-session-design.md) + [§21 多租户配额](./21-orchestrator-multi-tenancy.md) + [§08 External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)。
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
