@@ -742,6 +742,97 @@ dual-output 和 Mode A 是**互补**关系：
 
 dual-output 的 `events.jsonl` 格式与 Mode A SSE 流的事件 schema 高度同源（都是 ACP 事件），**未来可考虑 dual-output 升级为"file 端口 + HTTP 端口"双输出**——保留文件路径给老用法，HTTP 端口给新用法，零迁移成本。
 
+## 十一·七、Mode B 不渲染 TUI 是否减少 daemon 资源消耗
+
+> 问题：daemon 不启 TUI（[§03 §7 Mode B](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)），把渲染交给远端 TUI / Web client，是否减少 qwen-code 对 CPU / 内存的消耗？
+
+**简答：daemon 端节省 ~30% memory + ~5-15% streaming CPU + 200-500ms cold start，但总系统消耗不变——UI 工作转移到 client 端**。
+
+### 11.7.1 TUI 渲染在 daemon 端的资源消耗
+
+Qwen Code TUI 基于 Ink + React，在 daemon 进程中运行时持续消耗：
+
+| 消耗项 | 估算 |
+|---|---|
+| Ink + React + chalk + theme 模块加载 | ~10-15MB heap |
+| React component tree（components / contexts）| ~5-10MB |
+| Ink internal state（virtual DOM / reconciler）| ~5-10MB |
+| **Memory 小计** | **~20-35MB**（占 daemon baseline 30-50MB 的 ~50%）|
+| 每 token 触发 React reconcile + ANSI patch 输出 | streaming 期间持续 CPU |
+| stdin keypress 监听 + readline | 少量持续 |
+| 终端宽度检测 / resize handler | 少量 |
+
+### 11.7.2 Mode A vs Mode B 资源对比
+
+| 维度 | Mode A（CLI + HttpServer）| Mode B（Headless）|
+|---|---|---|
+| **Memory baseline** | ~50-60MB | **~30-40MB**（省 Ink/React/theme）|
+| **Streaming CPU** | 高——每 token reconcile + ANSI patch + HTTP fan-out | **低**——每 token 只 JSON.stringify + HTTP fan-out |
+| **Module 加载时间** | ~1-3s（TUI 模块大）| **~0.8-2s** |
+| **Cold start latency** | ~1-3s | **~0.8-2s**（省 200-500ms）|
+| **stdin 监听** | ✅（耗 fd + I/O loop tick）| ❌ |
+| **Idle CPU** | 极低（event loop sleeping）| 极低（同）|
+
+**Mode B 在 daemon 端节省**：
+- Memory ~20-30MB（占 Mode A daemon baseline 的 ~30-40%）
+- Streaming CPU ~5-15%（具体取决于 LLM token 速率）
+- Cold start 200-500ms
+
+### 11.7.3 关键 caveat：总系统消耗不变
+
+```
+Mode A:  daemon (50-60MB, 含 TUI) + 0 client
+         系统消耗：50-60MB + TUI CPU
+
+Mode B:  daemon (30-40MB) + Web/远端 TUI client (50-100MB)
+         系统消耗：80-140MB + UI CPU（在 client 端）
+```
+
+**UI 渲染的工作没消失，只是转移到 client 端**。Mode B 的 daemon 进程更瘦，但整个系统（daemon + client）总消耗反而**更高**——因为 client 端独立有自己的 V8 / 浏览器引擎。
+
+### 11.7.4 真正"省"的场景
+
+Mode B 节省 daemon 端资源**有实际意义**的场景：
+
+| 场景 | 为什么 Mode B 更省 |
+|---|---|
+| **服务器 / 容器部署** | daemon 跑在受限内存配额（如 k8s pod 256MB limit）；client 在用户机器，内存不属于 daemon 配额 |
+| **多 daemon instance**（Mode B 多 session）| N 个 daemon 各省 20-30MB → N=50 时省 1-1.5GB |
+| **无人值守 daemon**（idle 长跑）| client 不连时 daemon 也在跑；省 TUI 内存 = 长期净节省 |
+| **远端 client**（手机 / 浏览器 / IDE）| client 端 UI 必然存在；让 daemon 跑 TUI 是浪费 |
+| **Cold start 敏感**（serverless / FaaS）| 启动时 200-500ms 差距重要 |
+
+### 11.7.5 Mode A 不亏的场景
+
+| 场景 | 为什么 Mode A 不亏 |
+|---|---|
+| **本地单用户 + 偶尔远端协作** | TUI 已经要跑（用户在终端看），多挂个 HTTP server 几乎免费（HTTP fan-out 的 CPU 远小于 TUI 渲染本身）|
+| **演示 / 测试 / 调试** | 同时看 CLI + Web 视图最方便 |
+| **client 数量少 / 间歇性接入** | Mode A 不需要永远跑 client，只有连上时才用 |
+
+### 11.7.6 与资源池化（[§21](./21-future-multi-session-migration.md) 路径 A）的协同
+
+Mode B 多 session 部署时：
+
+```
+没池化：N daemon × 30-40MB = 1.5-2GB（N=50）
+池化后：用户级 LSP/MCP/cache daemon 共享 → 单 daemon ~10-15MB
+       N=50 时：50 × 12MB + 共享 50MB = 650MB（节省 ~70%）
+```
+
+**Mode B + 资源池化**是大规模 SaaS 的最省资源路径——daemon 进程只跑 LLM client + session state + HTTP server，所有"昂贵 daemon"（LSP / MCP / cache）走用户级共享。
+
+### 11.7.7 推荐
+
+| 用户 / 场景 | 推荐 |
+|---|---|
+| 本地单用户终端工作 | Mode A（`qwen --serve`），TUI 已经在跑，HTTP 几乎免费 |
+| 服务器 / 容器 / 远端 daemon | Mode B（`qwen serve`），节省 daemon 端 ~30% memory |
+| 大规模 SaaS（100+ session/机）| Mode B + [§21 路径 A](./21-future-multi-session-migration.md#四路径-a资源池化推荐-23w) 资源池化 |
+| 受限内存配额（k8s limit）| Mode B（必选）|
+
+**结论**：Mode B 节省 daemon 端 ~30% memory + 200-500ms cold start，是 **daemon 端的局部优化**，不是系统级节省。真正价值在于：daemon 端资源紧张 / 部署在远端 / 多 session 实例化时，让 daemon 进程更瘦、cold start 更快、能跑更多实例。
+
 ---
 
 ## 十二、一句话总结
