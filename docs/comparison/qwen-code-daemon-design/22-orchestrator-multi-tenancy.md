@@ -1,6 +1,6 @@
-# 23 — Orchestrator 多租户与配额
+# 22 — Orchestrator 多租户与配额
 
-> [← 上一篇：单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md) · [回到 README](./README.md)
+> [← 上一篇：单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)
 
 > [§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 Daemon Instance = 1 Session" 模型下，daemon 进程不感知租户——multi-tenancy 概念全部在 orchestrator 层。本章设计 orchestrator 的 Tenant 抽象、AuthN/AuthZ、配额引擎、审计日志、SaaS 路线图。Shell sandbox 见 [§11](./11-multi-tenancy-and-sandbox.md)。
 
@@ -1105,4 +1105,4 @@ orchestrator 是 SaaS 部署的关键路径——挂了所有用户无法 spawn 
 
 ---
 
-[← 上一篇：单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md) · [回到 README](./README.md)
+[← 上一篇：单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)

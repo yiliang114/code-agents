@@ -2,7 +2,7 @@
 
 > [← 上一篇：权限 / 认证](./07-permission-auth.md) · [下一篇：与 OpenCode 详细对比 →](./09-comparison-with-opencode.md)
 
-> Qwen Code 项目本身只承诺 **"daemon building block"** —— 把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何外部 client / 编排器消费的服务。多 session orchestrator / 多租户 / SaaS 部署等"平台层"由外部实现（商业平台 / k8s operator / 云厂商定制），项目提供 [§22](./22-single-vs-multi-session-design.md) / [§23](./23-orchestrator-multi-tenancy.md) / [§04 §8.2](./04-http-api.md#82-新增-orchestrator-层-apistage-2) 作为参考架构蓝图。
+> Qwen Code 项目本身只承诺 **"daemon building block"** —— 把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何外部 client / 编排器消费的服务。多 session orchestrator / 多租户 / SaaS 部署等"平台层"由外部实现（商业平台 / k8s operator / 云厂商定制），项目提供 [§21](./21-single-vs-multi-session-design.md) / [§22](./22-orchestrator-multi-tenancy.md) / [§04 §8.2](./04-http-api.md#82-新增-orchestrator-层-apistage-2) 作为参考架构蓝图。
 
 ## 总览
 
@@ -15,10 +15,10 @@ qwen-code 主线（~3 周内 feature complete）：
 ────────── qwen-code daemon feature complete ──────────
 
 External Reference Architecture（外部 / 商业层，参考实现）：
-├─ Orchestrator (multi-daemon spawn / route / cleanup)        → §22 / §04 §8.2 设计参考
-├─ Multi-tenancy (Tenant / OIDC / Quota / Audit)              → §23 设计参考
+├─ Orchestrator (multi-daemon spawn / route / cleanup)        → §21 / §04 §8.2 设计参考
+├─ Multi-tenancy (Tenant / OIDC / Quota / Audit)              → §22 设计参考
 ├─ Shell sandbox (NoSandbox / OS user / Namespace / Container) → §11 设计参考
-└─ SaaS deployment (k8s / Postgres / Redis / S3)              → §16 / §23 §七 设计参考
+└─ SaaS deployment (k8s / Postgres / Redis / S3)              → §16 / §22 §七 设计参考
 ```
 
 **核心判断**：qwen-code 是 building block，不是 SaaS 平台。Stage 1 + Stage 1.5 + Stage 2 完成后 daemon 协议表面 100% 稳定，外部集成方（如阿里云 DashScope / 自建团队 / 用户）可基于此自由实现 orchestrator + 多租户 + SaaS。这与 OpenCode（端到端 SaaS 路线）的设计哲学相反——后者绑定平台决策，前者保持 Unix 风格的可组合性。
@@ -163,8 +163,8 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | `POST /file/read` / `/file/write` | **External / Stage 2 可选**（agent 已有 fs，daemon-only file API 仅给远端 client 用）|
 | Mobile / browser UI | **External**（参考 [§17 远端 CLI 模式](./17-remote-cli-mode.md)；PR#3929-3931 平行 stack 已有 mobile UI 参考）|
 | Pairing token / LAN URL | **External**（参考 PR#3929-3931）|
-| Orchestrator (multi-daemon spawn / route / cleanup) | **External**（参考 [§04 §8.2](./04-http-api.md#82-新增-orchestrator-层-apistage-2) + [§22](./22-single-vs-multi-session-design.md) + [§23](./23-orchestrator-multi-tenancy.md)）|
-| Multi-tenancy / OIDC / Quota / Audit | **External**（参考 [§23](./23-orchestrator-multi-tenancy.md)）|
+| Orchestrator (multi-daemon spawn / route / cleanup) | **External**（参考 [§04 §8.2](./04-http-api.md#82-新增-orchestrator-层-apistage-2) + [§21](./21-single-vs-multi-session-design.md) + [§22](./22-orchestrator-multi-tenancy.md)）|
+| Multi-tenancy / OIDC / Quota / Audit | **External**（参考 [§22](./22-orchestrator-multi-tenancy.md)）|
 | Shell sandbox（OS user / namespace / container / remote）| **External**（参考 [§11](./11-multi-tenancy-and-sandbox.md)）|
 
 #### 7️⃣ Stage 1 主线 HA 与稳定性已覆盖范围
@@ -285,19 +285,19 @@ IM bot       ─────│  - Mode B (headless)      │
 | Cross-daemon aggregate API（"我所有 task"）| ~2d | [§04 §8.2 `/aggregate`](./04-http-api.md#82-新增-orchestrator-层-apistage-2) |
 | **合计参考** | **~1.5-2 周 / 1 人** | |
 
-详见 [§22 单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md) 的决策树。
+详见 [§21 单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) 的决策树。
 
 ### Multi-tenancy + OIDC + Quota + Audit
 
 | 组件 | 工作量参考 | 设计文档 |
 |---|---|---|
-| Tenant 抽象 + Workspace ACL | ~3-5d | [§23 §三 Tenant 抽象](./23-orchestrator-multi-tenancy.md) |
-| AuthN 4 模式（Bearer / OIDC / mTLS / cookie）| ~5-7d | [§23 §四](./23-orchestrator-multi-tenancy.md#四authentication--authorization) |
-| Quota engine（Redis sliding-window + reservation）| ~5-7d | [§23 §五](./23-orchestrator-multi-tenancy.md#五per-tenant-quota-引擎) |
-| Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）| ~3-5d | [§23 §六](./23-orchestrator-multi-tenancy.md#六audit-log) |
+| Tenant 抽象 + Workspace ACL | ~3-5d | [§22 §三 Tenant 抽象](./22-orchestrator-multi-tenancy.md) |
+| AuthN 4 模式（Bearer / OIDC / mTLS / cookie）| ~5-7d | [§22 §四](./22-orchestrator-multi-tenancy.md#四authentication--authorization) |
+| Quota engine（Redis sliding-window + reservation）| ~5-7d | [§22 §五](./22-orchestrator-multi-tenancy.md#五per-tenant-quota-引擎) |
+| Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）| ~3-5d | [§22 §六](./22-orchestrator-multi-tenancy.md#六audit-log) |
 | **合计参考** | **~3-4 周 / 1-2 人** | |
 
-详见 [§23 Orchestrator 多租户与配额](./23-orchestrator-multi-tenancy.md)。
+详见 [§22 Orchestrator 多租户与配额](./22-orchestrator-multi-tenancy.md)。
 
 ### Shell Sandbox
 

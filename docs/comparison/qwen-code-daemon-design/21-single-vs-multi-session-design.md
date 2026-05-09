@@ -1,6 +1,6 @@
-# 22 — 单 Session vs 多 Session 设计优缺点深度对比
+# 21 — 单 Session vs 多 Session 设计优缺点深度对比
 
-> [下一篇：Orchestrator 多租户与配额 →](./23-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+> [下一篇：Orchestrator 多租户与配额 →](./22-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
 
 > 系统对比"1 Daemon Instance = 1 Session"（当前架构）与"单 daemon 多 session"（OpenCode 模式）两种设计的 tradeoff。**本章回答"为什么选这个"——为选型决策提供数据**；扩展到多 session 不在 qwen-code 主线设计目标（决策已定，本章解释为什么选 1 daemon = 1 session）。
 
@@ -17,7 +17,7 @@
 | **Crash 半径** | 1 session | 整 daemon |
 | **Subagent isolation** | 自动成立 | 5 PR 套路 |
 | **大规模 SaaS（100+ session/机）** | 需资源池化 | 原生支持 |
-| **Pivot 后默认** | ✅ | ❌ 仅大规模 SaaS 必需时投（External Reference Architecture）|
+| **当前默认** | ✅ | ❌ 仅大规模 SaaS 必需时投（External Reference Architecture）|
 
 **实务建议**：单 session 模式覆盖 95% 真实场景；多 session 模式仅在大客户压测必需时投。
 
@@ -102,7 +102,7 @@ N 个 cold session 启动总成本：
 - N = 10-50 时多 session 优势显现
 - N ≥ 50 时多 session 优势**非常显著**——是大规模 SaaS 选多 session 的核心理由
 
-**Pivot 后默认假设**：N < 50（个人 / 团队 / 中等 SaaS）—— 单 session 经济性可接受；触发条件出现后再投 External SaaS 资源池化路径。
+**默认假设**：N < 50（个人 / 团队 / 中等 SaaS）—— 单 session 经济性可接受；触发条件出现后再投 External SaaS 资源池化路径。
 
 ### 3.4 隔离失败的代价对比
 
@@ -154,7 +154,7 @@ N 个 cold session 启动总成本：
 
 **OpenCode 已实现多 session daemon ~半年**——经验和坑都踩过，但他们的 codebase 是 Effect-first，不能直接拷代码。
 
-**结论**：保持单 session 模式 = 与已落地代码 0 改造成本对齐；改为多 session = ~2-3 月重构（详见 扩展到 multi-session daemon（如果未来需要））。
+**结论**：单 session 模式 = 与 PR#3889 0 改造成本对齐。多 session 模式不在主线。
 
 ## 四、何时选哪个：决策树
 
@@ -214,11 +214,9 @@ qwen serve（HTTP front）
    └─ child N：...
 ```
 
-**Pivot 后 retrofit 命名**：
-- `qwen serve` HTTP front → **Orchestrator**
-- `qwen --acp` child → **Daemon Instance**（绑唯一 session）
-
-→ Pivot **不改架构方向**，只改命名 + 决策书面化。
+**命名约定**：
+- `qwen serve` HTTP front = **Orchestrator**（多 daemon spawn / route / cleanup，External Reference Architecture）
+- `qwen --acp` child = **Daemon Instance**（绑唯一 session，主线 building block）
 
 ### 5.2 OpenCode multi-session model
 
@@ -263,10 +261,10 @@ OpenCode daemon 进程
 - **单 session：复杂度在 orchestrator 层 + 资源池化层**——新模块，问题域清晰，可独立演进
 - **多 session：复杂度散在 daemon 内部**——与 core 业务交织，每次新加 feature 都要考虑 isolation
 
-**Pivot 后默认单 session**：因为（1）N < 50 时经济性可接受；（2）PR#3889 已落地；（3）OS 进程边界免费提供隔离；（4）触发条件多数项目永远不出现。
+**默认单 session**：因为（1）N < 50 时经济性可接受；（2）PR#3889 已落地；（3）OS 进程边界免费提供隔离；（4）触发条件多数项目永远不出现。
 
 **多 session 仅在大规模 SaaS 必需时投**——届时按 External SaaS 资源池化路径演进，已实现代码不会白做。
 
 ---
 
-[下一篇：Orchestrator 多租户与配额 →](./23-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+[下一篇：Orchestrator 多租户与配额 →](./22-orchestrator-multi-tenancy.md) · [回到 README](./README.md)

@@ -399,25 +399,25 @@ GET / HTTP/1.1
 
 ---
 
-## 八、Pivot 后 API 变化总览（2026-05-09）
+## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> 决策 §2 改为 "1 Daemon Instance = 1 Session" 后，对 HTTP API 的具体影响。**总体：daemon 层 ~95% 不变；orchestrator 层是全新一套**。详见 [§03 §2](./03-architectural-decisions.md#2-状态进程模型) + [§22 单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md)。
+> 1 Daemon Instance = 1 Session 模型下（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) + [§21 设计对比](./21-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 
-### 8.1 Daemon 层 9 路由变化（基本不变）
+### 8.1 Daemon 层路由（主线）
 
-PR#3889 已实现的全部路由 wire 格式 / body schema **保留不变**，仅以下语义微调：
+PR#3889 已实现的全部路由保留 9 路由 wire 格式 / body schema 不变，单 session 模型下的语义如下：
 
-| 路由 | 单 session 后语义 | 是否破坏性 |
-|---|---|---|
-| `POST /session` | daemon spawn 时已绑定唯一 session → **返回现有 session**（替代"创建新")；幂等 | ⚠️ 语义变 / wire 不变 |
-| `POST /session/:id/prompt` | sessionId 必须 = daemon 绑定的那个，否则 `404 session_not_bound` | ⚠️ 多了校验 |
-| `POST /session/:id/cancel` | 同上 | ⚠️ |
-| `GET /session/:id/events` | 同上 | ⚠️ |
-| `POST /session/:id/permission/:reqId` | 同上 | ⚠️ |
-| `POST /session/:id/load`（resume）| 仅当 daemon 未绑 session 时可用，否则 `409 already_bound` | ⚠️ |
-| `POST /workspace`（注册）| daemon spawn 时已绑 workspace → 返回现有 | ⚠️ |
-| `GET /capabilities` | 新增 `mode` / `boundSessionId` / `deploymentMode` 字段 | ✅ 加字段不破坏 |
-| `GET /health` | 新增 `boundSession` / `idleSince` 字段 | ✅ 加字段不破坏 |
+| 路由 | 单 session 模型下语义 |
+|---|---|
+| `POST /session` | daemon spawn 时已绑定唯一 session → **返回现有 session**（幂等）|
+| `POST /session/:id/prompt` | sessionId 必须 = daemon 绑定的那个，否则 `404 session_not_bound` |
+| `POST /session/:id/cancel` | 同上 |
+| `GET /session/:id/events` | 同上 |
+| `POST /session/:id/permission/:reqId` | 同上 |
+| `POST /session/:id/load`（resume）| 仅当 daemon 未绑 session 时可用，否则 `409 already_bound` |
+| `POST /workspace`（注册）| daemon spawn 时已绑 workspace → 返回现有 |
+| `GET /capabilities` | 含 `mode` / `boundSessionId` / `deploymentMode` 字段 |
+| `GET /health` | 含 `boundSession` / `idleSince` 字段 |
 
 **关键设计决策：保留 sessionId 在 URL**——做 client-side 校验，防止 client 拿错 daemon URL 时静默写到错误 session。**不要**改成 sessionId 隐式（看似清爽但失去 fail-fast 防御）。
 
@@ -510,14 +510,13 @@ Client（SDK / WebUI / IDE）通过 `mode === 'single-session-daemon'` 决定：
 - 不再调 `POST /session` 多次创建（会返回现有 / 409）
 - 看到 daemon URL 时直接用，不需要 multi-session router
 
-### 8.4 Client SDK 行为变化
+### 8.4 Client SDK 接入策略
 
-| Client 行为 | Pivot 前 | Pivot 后 |
+| Client 行为 | 单机 / Mode A | 多 session / Mode B + orchestrator |
 |---|---|---|
-| **创建 session** | `POST daemonUrl/session` 直接创建 | **优先调 orchestrator**：`POST /coordinator/sessions` 拿 daemonUrl + token |
-| **连接已有 session** | 已知 sessionId → `daemonUrl/session/:id/events` | 已知 sessionId → 先 `GET /coordinator/sessions/:id/route` 拿 daemonUrl，再连 |
-| **单机 / Mode A 简单场景** | N/A | 跳过 orchestrator，直连 daemon（`coordinatorUrl` 未配置）|
-| **多 client 同 session** | 同 daemonUrl 多次 attach | **同 daemonUrl 多次 attach**（不变）|
+| **创建 session** | `POST daemonUrl/session` 直接创建（幂等返回现有）| **调 orchestrator**：`POST /coordinator/sessions` 拿 daemonUrl + token |
+| **连接已有 session** | 已知 daemonUrl → `daemonUrl/session/:id/events` | 已知 sessionId → `GET /coordinator/sessions/:id/route` 拿 daemonUrl，再连 |
+| **多 client 同 session** | 同 daemonUrl 多次 attach（live collaboration）| 同 daemonUrl 多次 attach |
 
 **SDK 加 `coordinatorUrl` 配置项**：
 - 未配置 → 直连 daemon（兼容 PR#3889 现有用法）
@@ -542,16 +541,16 @@ const session = await client.createSession({ workspaceUri, scope: 'single' })
 // SDK 内部已连接到正确的 daemon URL
 ```
 
-### 8.5 向后兼容策略
+### 8.5 兼容性保证
 
-| 兼容点 | 做法 |
+| 项 | 设计 |
 |---|---|
-| 现有 PR#3889 SDK / WebUI 直连 daemon | ✅ 100% 兼容（所有路由保留）|
-| Pivot 前规划的 `POST /session` 多次创建 | ❌ 第二次返回 409 / 现有 session ID；client 应改走 orchestrator |
-| `POST /coordinator/*` 路由 | 🆕 新加，老 client 不会调到（不影响兼容性）|
-| `GET /capabilities` 新字段 | ✅ 字段加法不破坏 schema（老 client 忽略未知字段）|
-| sessionId 在 URL 中 | ✅ 保留作 fail-fast 校验，不去掉 |
-| daemon API 版本号 | 保持 `daemon: "1"` 不需 bump（wire 兼容）|
+| PR#3889 SDK / WebUI 直连 daemon | ✅ 所有路由保留 |
+| `POST /session` 多次调用 | 幂等返回当前绑定的 session（多 session 走 orchestrator）|
+| `POST /coordinator/*` 路由 | External Reference Architecture，与 daemon 层正交 |
+| `GET /capabilities` 字段 | 字段加法策略，老 client 忽略未知字段 |
+| sessionId 在 URL 中 | 保留作 fail-fast 校验 |
+| daemon API 版本号 | `daemon: "1"`（wire 稳定）|
 
 ### 8.6 错误码增量
 

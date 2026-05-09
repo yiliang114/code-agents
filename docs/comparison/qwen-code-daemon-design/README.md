@@ -15,13 +15,13 @@
 
 两种模式都遵循"1 daemon instance = 1 session"，区别仅在 daemon instance 是否同时承载本地 TUI 客户端。TUI 是 client #0（in-process EventBus），与 HTTP 远端 client 共享同一份事件流（[§03 §6](./03-architectural-decisions.md#6-多-client-并发请求) fan-out）。
 
-**为什么选这个架构**：进程级隔离免费、crash 半径小、subagent isolation 自动成立、与 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) child-process-per-session 实现一致。代价是 cold start ~1-3s/session、内存 ~30-50MB × N session——单机 N < 50 场景可接受。详见 [§22 单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md)。
+**为什么选这个架构**：进程级隔离免费、crash 半径小、subagent isolation 自动成立、与 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) child-process-per-session 实现一致。代价是 cold start ~1-3s/session、内存 ~30-50MB × N session——单机 N < 50 场景可接受。详见 [§21 单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md)。
 
-**项目 scope**：qwen-code 只承诺 daemon building block（Stage 1 / 1.5 / 2，~3 周内 feature complete）。多 session orchestrator / 多租户 / 沙箱 / SaaS 部署等"平台层"作为 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图) 由外部实现，详见 [§22](./22-single-vs-multi-session-design.md) / [§23](./23-orchestrator-multi-tenancy.md) / [§11](./11-multi-tenancy-and-sandbox.md) / [§16](./16-high-availability.md) 设计参考。
+**项目 scope**：qwen-code 只承诺 daemon building block（Stage 1 / 1.5 / 2，~3 周内 feature complete）。多 session orchestrator / 多租户 / 沙箱 / SaaS 部署等"平台层"作为 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图) 由外部实现，详见 [§21](./21-single-vs-multi-session-design.md) / [§22](./22-orchestrator-multi-tenancy.md) / [§11](./11-multi-tenancy-and-sandbox.md) / [§16](./16-high-availability.md) 设计参考。
 
 > **关于 Stage 编号约定**：本系列文档中的 Stage 编号有两个语境：
 > - **qwen-code 主线路线图**（[§08](./08-roadmap.md)）：Stage 1 / 1.5 / 2，三档锁定，~3 周内 feature complete
-> - **External Reference Architecture 实施 Phase**（[§23 §七](./23-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)）：Phase 1-4 SaaS 实施
+> - **External Reference Architecture 实施 Phase**（[§22 §七](./22-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)）：Phase 1-4 SaaS 实施
 > - **平台层章节内"Stage 3 / 4 / 5 / 6"标签**（§15 / §16 / §17 / §18 / §19 / §20 / §14 等中出现）：作为外部 SaaS 演进阶段的非正式渐进标签，与上面 External Phase 对应（不属于 qwen-code 主线 Stage）
 >
 > 简记：**主线 Stage 1/1.5/2 = qwen-code 项目路线图；其他 Stage 编号 = External Reference 演进阶段**。
@@ -37,7 +37,7 @@
 | 🚀 **快速理解** | ~30 min | §01 → §03 → §08 → §09 | 评估方案是否值得做 |
 | 🔧 **MVP 实施** | ~2 h | §01 → §03 → §04 → §05 → §06 → §07 → §08 | 准备开 PR 写代码 |
 | 📖 **完整设计** | ~6 h | Part I → II → III → IV → V → VI 顺序 | 全面理解 |
-| 🔒 **安全 / 多租户专题** | ~2 h | §11 → §23 → §12 → §16 → §18 | 企业部署评估 |
+| 🔒 **安全 / 多租户专题** | ~2 h | §11 → §22 → §12 → §16 → §18 | 企业部署评估 |
 | 🌐 **远端 / 协作专题** | ~2 h | §13 → §17 → §18 | 客户端体验设计 |
 | 💾 **数据架构专题** | ~1 h | §14 → §15 → §16 §三-§九 | 持久化 / HA 设计 |
 
@@ -84,7 +84,7 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 | # | 文档 | 一句话 |
 |---|---|---|
 | 14 | [实体模型与层级关系](./14-entity-model.md) | **5 层 hierarchy**（Tenant → Workspace → Session → Background Task → Tool Execution）+ 横切层（Client subscription）+ 认证侧 sidebar（External User / Token：不算 hierarchy）+ 关系矩阵 + 资源所有权层级表 + 生命周期表 + ER 图 |
-| 15 | [持久层（daemon-side）](./15-persistence-and-storage.md) | **qwen-code 主线 daemon 是纯 JSON / JSONL 文件栈**（无 SQLite / 无 ORM）—— per-daemon transcript JSONL（PR#3739 transcript-first）+ settings/credentials JSON + skills 内存索引。**Orchestrator 持久化（SQLite/Postgres + drizzle-orm + 8 表 schema）已全量迁到 §23** |
+| 15 | [持久层（daemon-side）](./15-persistence-and-storage.md) | **qwen-code 主线 daemon 是纯 JSON / JSONL 文件栈**（无 SQLite / 无 ORM）—— per-daemon transcript JSONL（PR#3739 transcript-first）+ settings/credentials JSON + skills 内存索引。**Orchestrator 持久化（SQLite/Postgres + drizzle-orm + 8 表 schema）已全量迁到 §22** |
 
 ### Part V — 平台层能力（External Reference Architecture）
 
@@ -93,7 +93,7 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 | # | 文档 | 一句话 |
 |---|---|---|
 | 11 | [Shell 沙箱与远程执行](./11-multi-tenancy-and-sandbox.md) | `ShellSandbox` interface + 4 种本地沙箱（NoSandbox / OS user / Linux namespace / Container）+ **远程 sandbox**（SSH / gRPC / k8s Job / containerd over TCP 4 种实现 + 工作流同步 / stdout 流式 / 取消 / 网络容错 / 延迟 5 大挑战）+ Monitor tool 走相同接口 + 与 Claude Code v2.1.98 SCRIPT_CAPS 对齐 |
-| 23 | [Orchestrator 多租户 + 持久化栈](./23-orchestrator-multi-tenancy.md) | **multi-tenancy 在 orchestrator 层** —— Tenant 抽象 / AuthN 4 模式（Bearer / OIDC / mTLS / cookie）/ AuthZ workspace 映射 / Quota engine（Redis 原子 + reservation 模式）/ Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）+ **持久化栈完整设计**（SQLite 边界 / drizzle-orm 选型 / 8 张核心表 schema / Storage Adapter 抽象 / External Phase 4 多 daemon 共享 / 迁移 / 安全 / 性能基准）|
+| 22 | [Orchestrator 多租户 + 持久化栈](./22-orchestrator-multi-tenancy.md) | **multi-tenancy 在 orchestrator 层** —— Tenant 抽象 / AuthN 4 模式（Bearer / OIDC / mTLS / cookie）/ AuthZ workspace 映射 / Quota engine（Redis 原子 + reservation 模式）/ Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）+ **持久化栈完整设计**（SQLite 边界 / drizzle-orm 选型 / 8 张核心表 schema / Storage Adapter 抽象 / External Phase 4 多 daemon 共享 / 迁移 / 安全 / 性能基准）|
 | 12 | [多租户水平越权防御](./12-horizontal-privilege-defense.md) | **5 层防御纵深 + 17 个攻击向量 + 24+ 测试用例** —— Auth/ACL / Filesystem / Cache/State / Sandbox / Side-channel & DoS 五层 + OWASP Top 10 映射 |
 | 16 | [HA 高可用与故障恢复](./16-high-availability.md) | **5 层 HA 架构**（Edge DNS → Ingress sticky → StatefulSet pod N≥3 → Postgres Patroni + Redis Sentinel + S3 多 AZ）+ SSE Last-Event-ID 重连协议 + LLM streaming 中断 7 类场景 + 90s graceful drain + 15 项 Chaos 测试 + 99.9% SLO |
 | 19 | [长跑稳定性与可观测性](./19-stability-and-longevity.md) | **接受"重启不可避免"** —— Node.js 长跑 7 类风险（heap / GC / fd / zombie / exception / native crash / ALS 链表）+ 多租户加剧 5 类 + qwen daemon 10 个具体泄漏点（含修复代码）+ **9 项稳定性模式**（TTL / bounded / quota / circuit breaker / memory threshold restart / heap dump / liveness / native supervisor / worker isolation）+ 6 类 native module 风险 + 22 项 Prometheus 指标 + 30 天 Soak/Chaos 测试矩阵 + Bun vs Node.js 长跑实测 |
@@ -104,10 +104,10 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 08 | [路线图](./08-roadmap.md) | qwen-code 主线 ~3 周内 feature complete：Stage 1（~1 周 ✅ Mode B headless PR#3889）/ Stage 1.5（~4d Mode A）/ Stage 2（~1-2 周 mDNS+OpenAPI+WebSocket+多 token+metrics）。**Orchestrator / 多租户 / 沙箱 / SaaS 部署作为 External Reference Architecture**（参考设计 §22 / §23 / §11 / §16），由外部商业平台 / k8s operator 实现 |
+| 08 | [路线图](./08-roadmap.md) | qwen-code 主线 ~3 周内 feature complete：Stage 1（~1 周 ✅ Mode B headless PR#3889）/ Stage 1.5（~4d Mode A）/ Stage 2（~1-2 周 mDNS+OpenAPI+WebSocket+多 token+metrics）。**Orchestrator / 多租户 / 沙箱 / SaaS 部署作为 External Reference Architecture**（参考设计 §21 / §22 / §11 / §16），由外部商业平台 / k8s operator 实现 |
 | 09 | [与 OpenCode 详细对比](./09-comparison-with-opencode.md) | 路由 / 技术栈 / 设计哲学逐项对照 |
 | 20 | [与 Anthropic Managed Agents 对比](./20-vs-anthropic-managed-agents.md) | **5 层架构对照**（client / agent runtime / tool / sandbox / persistence）+ **内置工具映射** + **协议层差异**（Anthropic 私有 vs ACP 标准）+ **双向 migration path**（Anthropic→Qwen / Qwen→Anthropic 兼容 API）+ **6 类客户场景推荐** + **决策树 6 问选型** + **3 种混合部署模式** + **"Managed Qwen Agents" 产品蓝图**（基于 External Reference Architecture 完整实施 (External Phase 1-4) 包装，6 月可建）|
-| 22 | [单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md) | **22 维对比矩阵 + 6 项关键 tradeoff 深度分析**（隔离昂贵性 / cold start 平方根 / 内存 baseline 建模 / 隔离失败代价 / 复杂度守恒原理 / PR#3889 现实约束）+ **决策树 N≤5/50/100/500/500+** + 作为选型决策入口（不在主线扩展多 session 模型）|
+| 21 | [单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md) | **22 维对比矩阵 + 6 项关键 tradeoff 深度分析**（隔离昂贵性 / cold start 平方根 / 内存 baseline 建模 / 隔离失败代价 / 复杂度守恒原理 / PR#3889 现实约束）+ **决策树 N≤5/50/100/500/500+** + 作为选型决策入口（不在主线扩展多 session 模型）|
 
 ## 一句话 TL;DR
 
@@ -144,7 +144,7 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 | 多 client 并发请求 | [§03 决策](./03-architectural-decisions.md) §6 FIFO + fan-out + first responder + [§18 多端协调](./18-client-coordination.md) |
 | 实体层级 | [§14 实体模型](./14-entity-model.md) 5 层 hierarchy + 认证侧 |
 | 持久化 | [§15 持久层](./15-persistence-and-storage.md) JSON → SQLite → Postgres 演进 |
-| 多租户 / 沙箱 | [§11 Shell 沙箱](./11-multi-tenancy-and-sandbox.md) + [§23 Orchestrator 多租户](./23-orchestrator-multi-tenancy.md) + [§12 越权防御](./12-horizontal-privilege-defense.md) |
+| 多租户 / 沙箱 | [§11 Shell 沙箱](./11-multi-tenancy-and-sandbox.md) + [§22 Orchestrator 多租户](./22-orchestrator-multi-tenancy.md) + [§12 越权防御](./12-horizontal-privilege-defense.md) |
 | HA / SaaS 部署 | [§16 高可用](./16-high-availability.md) |
 | 远端 CLI / 协作 | [§17 远端 CLI](./17-remote-cli-mode.md) + [§18 多端协调](./18-client-coordination.md) |
 

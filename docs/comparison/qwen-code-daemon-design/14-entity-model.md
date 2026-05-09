@@ -86,7 +86,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 **关系**：
 - 1 tenant 拥有 N token（每 token 一对一属于本 tenant）
-- 1 tenant 拥有 N workspace（[§23 §三 WorkspaceAccess](./23-orchestrator-multi-tenancy.md) 不跨 tenant 共享 workspace）
+- 1 tenant 拥有 N workspace（[§22 §三 WorkspaceAccess](./22-orchestrator-multi-tenancy.md) 不跨 tenant 共享 workspace）
 
 **External Phase 1 加入此层** —— Stage 1-3 单租户模式下相当于"虚拟单 tenant"。
 
@@ -107,7 +107,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | Directory 物理路径 | absolute path，安全校验通过 realpath（§12 §3.2）|
 
 **关系**：
-- 1 tenant 拥有 N workspace（Tenant 在 [§23](./23-orchestrator-multi-tenancy.md) External orchestrator 层）
+- 1 tenant 拥有 N workspace（Tenant 在 [§22](./22-orchestrator-multi-tenancy.md) External orchestrator 层）
 - **跨 tenant 不共享 workspace**——同一物理 directory 在不同 tenant 下是不同 workspace 实例（独立 LSP / MCP / settings）
 - **1 daemon = 1 workspace = 1 session**（决策 §2）；多 session 通过 orchestrator spawn 多 daemon 实现，每 daemon 自己的 workspace 绑定
 
@@ -186,7 +186,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 |---|---|---|
 | Token ↔ Tenant | N:1 | 一 token 仅属一 tenant（认证凭证，不是 hierarchy）|
 | Tenant ↔ Workspace | 1:N | tenant 拥有多 workspace |
-| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | [§23 §三 WorkspaceAccess](./23-orchestrator-multi-tenancy.md) + 同 directory 在不同 tenant 下是不同 workspace 实例 |
+| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | [§22 §三 WorkspaceAccess](./22-orchestrator-multi-tenancy.md) + 同 directory 在不同 tenant 下是不同 workspace 实例 |
 | **Daemon Instance ↔ Workspace** | 1:1 | 决策 §2：每 daemon 启动时绑定唯一 workspace |
 | **Daemon Instance ↔ Session** | 1:1 | 决策 §2：每 daemon 承载唯一 session（≡ Daemon Instance）|
 | Workspace ↔ Session | 1:N（through orchestrator）| 同 workspace 多 session = orchestrator spawn 多 daemon，每 daemon 自己 1 session |
@@ -202,8 +202,8 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | 资源 | 所有者层级 | 引用 / PR |
 |---|---|---|
 | Token | Tenant（External orchestrator）| §07 |
-| Quota tracker | **Tenant**（在 orchestrator）| [§23 §五](./23-orchestrator-multi-tenancy.md#五per-tenant-quota-引擎) |
-| Audit log | **Tenant**（在 orchestrator）| [§23 §六](./23-orchestrator-multi-tenancy.md#六audit-log) |
+| Quota tracker | **Tenant**（在 orchestrator）| [§22 §五](./22-orchestrator-multi-tenancy.md#五per-tenant-quota-引擎) |
+| Audit log | **Tenant**（在 orchestrator）| [§22 §六](./22-orchestrator-multi-tenancy.md#六audit-log) |
 | Sandbox factory | **Daemon Instance** | [§11 §四](./11-multi-tenancy-and-sandbox.md#四sandbox-选择逻辑) |
 | LSP server | **Daemon Instance**（per-daemon · 在 1 daemon = 1 workspace 模型下等价 per-workspace）| §06 §3 |
 | MCP server | **Daemon Instance**（per-daemon · 决策 §3）| §06 §1 |
@@ -262,7 +262,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 ## 七、与决策 §1 sessionScope 的协调
 
-> 在 1 daemon = 1 workspace = 1 session 模型下，sessionScope 决策**移到 External orchestrator 层**（[§23](./23-orchestrator-multi-tenancy.md)），由 orchestrator 决定如何把 session 请求路由到 daemon 实例：
+> 在 1 daemon = 1 workspace = 1 session 模型下，sessionScope 决策**移到 External orchestrator 层**（[§22](./22-orchestrator-multi-tenancy.md)），由 orchestrator 决定如何把 session 请求路由到 daemon 实例：
 
 ```
 sessionScope: 'single' (默认)
@@ -384,7 +384,7 @@ Session (runtime SetSessionConfigOptionRequest)
 | §05 | 不需要 ALS Instance ctx（daemon 进程本身就是 session ctx）| tool call 执行上下文 = daemon-global |
 | §11 §二 | ShellSandbox interface | Tool call 层调用 |
 | §11 §五 | 远程 sandbox（daemon 与 shell 不同机）| External Phase 3+ |
-| §23 | Tenant 抽象 + AuthN/AuthZ + Quota + Audit | Orchestrator 层 |
+| §22 | Tenant 抽象 + AuthN/AuthZ + Quota + Audit | Orchestrator 层 |
 | §12 | 17 个攻击向量 + 5 层防御 | 跨 tenant 硬约束 + 同 session 隔离 |
 | §13 | TUI 多 client 共 session | Layer 3 多订阅者 |
 
@@ -413,7 +413,7 @@ Tenant alice
       └─ Web UI Client                 ┘
 ```
 
-### 11.3 多租户 SaaS（External Reference / [§23](./23-orchestrator-multi-tenancy.md)）
+### 11.3 多租户 SaaS（External Reference / [§22](./22-orchestrator-multi-tenancy.md)）
 
 ```
 Tenant alice                       Tenant bob

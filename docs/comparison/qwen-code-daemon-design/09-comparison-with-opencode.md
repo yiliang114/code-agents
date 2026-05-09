@@ -2,7 +2,7 @@
 
 > [← 上一篇：3 阶段路线图](./08-roadmap.md) · [下一篇：协议兼容性 →](./10-protocol-compatibility.md)
 
-> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§22 单 vs 多 Session 设计深度对比](./22-single-vs-multi-session-design.md)。
+> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§21 单 vs 多 Session 设计深度对比](./21-single-vs-multi-session-design.md)。
 
 ## 一、设计哲学对比
 

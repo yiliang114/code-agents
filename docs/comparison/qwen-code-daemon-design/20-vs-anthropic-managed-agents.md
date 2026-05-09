@@ -1,6 +1,6 @@
 # 20 — 与 Anthropic Managed Agents 对比（External Reference Architecture）
 
-> [← 上一篇：长跑稳定性](./19-stability-and-longevity.md) 
+> [← 上一篇：长跑稳定性](./19-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./21-single-vs-multi-session-design.md)
 
 > **⚠️ 整章是 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)，不在 qwen-code 主线**——qwen-code 主线只交付 daemon building block（Stage 1/1.5/2），不直接对标 Anthropic Managed Agents（云 SaaS 平台）。本章对比的是**基于 qwen-code daemon + 完整 External Reference Architecture 包装出来的"Managed Qwen Agents"产品** vs Anthropic Managed Agents 云服务。
 >
@@ -8,7 +8,7 @@
 
 > **免责声明**：本对比基于 Anthropic 公开文档（截至 2026 Q1），Managed Agents 是闭源服务，具体实现细节、定价、内置工具列表可能已变更。本系列是 codeagents 项目的设计提案，与 Anthropic / Qwen 团队均无关联。
 
-> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§23 §七 SaaS Phase 1-4](./23-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
+> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§22 §七 SaaS Phase 1-4](./22-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
 
 ## 一、TL;DR
 
@@ -308,7 +308,7 @@ GET /v1/session/{sid}/subscribers
 ```
 Managed Qwen Agents (External Reference Architecture 完整实施 + 商业层)
 ├─ Qwen daemon building block (开源核心，主线 Stage 1/1.5/2)
-├─ External Phase 1-4 实施（[§23](./23-orchestrator-multi-tenancy.md) + [§16](./16-high-availability.md) + [§11](./11-multi-tenancy-and-sandbox.md)）
+├─ External Phase 1-4 实施（[§22](./22-orchestrator-multi-tenancy.md) + [§16](./16-high-availability.md) + [§11](./11-multi-tenancy-and-sandbox.md)）
 ├─ Web Console
 │   - Tenant 管理 / agent 定义 / session 浏览 / billing
 ├─ 计量统计
@@ -417,7 +417,7 @@ Provider 信任:
 | Stage 1 (qwen serve daemon, PR#3889) | qwen-code 主线 | 基础 daemon + ACP NDJSON over HTTP+SSE + bearer auth | 单 dev tool；远不及 Managed |
 | Stage 1.5 (Mode A) | qwen-code 主线 | + CLI + HttpServer 同进程 | 同上 |
 | Stage 2 (daemon 完善) | qwen-code 主线 | + mDNS / OpenAPI / WebSocket bidi / 多 token / metrics | 已具备 SDK 单 client 完整体验 |
-| External Phase 1 (Orchestrator + 多租户 ACL) | External Reference | + qwen-coordinator + Tenant + quota（[§23](./23-orchestrator-multi-tenancy.md)）| 接近 Anthropic Managed multi-tenant |
+| External Phase 1 (Orchestrator + 多租户 ACL) | External Reference | + qwen-coordinator + Tenant + quota（[§22](./22-orchestrator-multi-tenancy.md)）| 接近 Anthropic Managed multi-tenant |
 | External Phase 2-3 (sandbox) | External Reference | + 5 种 sandbox（[§11](./11-multi-tenancy-and-sandbox.md)）| 沙箱选择上超过 Anthropic（更灵活）|
 | External Phase 4 (SaaS HA) | External Reference | + Postgres + S3 + Redis + HA（[§16](./16-high-availability.md)）| **架构上完全对标 Anthropic Managed** |
 | 加商业层 | 商业产品 | + Console + Billing + Marketplace + 客服 | **产品上完全对标 Anthropic Managed** |
@@ -529,4 +529,4 @@ Anthropic Managed Agents 与 Qwen daemon 是**两种互补哲学**：
 
 ---
 
-[← 上一篇：长跑稳定性](./19-stability-and-longevity.md)  · [回到 README](./README.md)
+[← 上一篇：长跑稳定性](./19-stability-and-longevity.md) · [下一篇：单 vs 多 Session 设计深度对比 →](./21-single-vs-multi-session-design.md) · [回到 README](./README.md)

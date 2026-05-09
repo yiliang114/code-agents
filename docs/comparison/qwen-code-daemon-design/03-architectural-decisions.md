@@ -183,7 +183,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 | 实现复杂度 | **低**（每 daemon 自给自足）| 高（cross-session 状态管理）|
 | 适用规模 | **个人 / 小团队 / 中等 SaaS** | 大规模 SaaS（共享更经济）|
 
-适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§22 设计对比](./22-single-vs-multi-session-design.md)）。
+适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§21 设计对比](./21-single-vs-multi-session-design.md)）。
 
 ### 必要的工程约束
 
@@ -212,9 +212,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 
 ### 决策（最终）
 
-**per-daemon MCP state**——每个 daemon instance 持有自己的一套 MCP client 集（在 1 daemon = 1 session 模型下，等价于 per-workspace 等价于 per-session）。**不跨 daemon 实例共享**。
-
-> 注：早期设计（pivot 前的 multi-session 模型）曾区分 "daemon 全局 fingerprint pool 跨 workspace" vs "per-workspace MCP state"。pivot 到 1 daemon = 1 session 后，三者（per-daemon / per-workspace / per-session）合并为同一概念——每 daemon 进程一组 MCP children，daemon 退出全部清理。
+**per-daemon MCP state**——每个 daemon instance 持有自己的一套 MCP client 集，daemon 退出时全部清理。**不跨 daemon 实例共享**。1 daemon = 1 session 模型下进程边界天然就是 MCP children 的生命周期边界。
 
 ### 共享语义
 
@@ -339,7 +337,7 @@ class DaemonInstance {
 | §1 session 'thread' 模式（多租户）| 每 client 独立 session | **隔离 cache**（绝对不能跨 session 共享）|
 | §3 MCP per-workspace | workspace 边界 | FileReadCache **更窄**——session 边界 |
 
-FileReadCache 与 MCP 在当前 1 daemon = 1 session 模型下都是 **per-daemon**——pivot 前 multi-session daemon 模型下 FileReadCache 是 per-session 私有（更激进），MCP 是 per-workspace 多 session 共享。pivot 后两者合并；下面说明保留作 pivot 前设计推演记录。
+FileReadCache 与 MCP 在 1 daemon = 1 session 模型下都是 **per-daemon**——daemon 进程边界天然就是 cache / MCP children 的生命周期边界。
 
 ### 实现要点
 
