@@ -1,12 +1,14 @@
-# 20 — 与 Anthropic Managed Agents 对比
+# 20 — 与 Anthropic Managed Agents 对比（External Reference Architecture）
 
 > [← 上一篇：长跑稳定性](./19-stability-and-longevity.md) · [下一篇：未来 multi-session 迁移成本 →](./21-future-multi-session-migration.md)
 
-> Qwen daemon 自托管设计 vs Anthropic 云托管 Managed Agents 平台。两种互补哲学的对照、特性映射、双向 migration path、"Managed Qwen Agents" 反向构建蓝图。
+> **⚠️ 整章是 [External Reference Architecture](./08-roadmap.md#external-reference-architecture参考实现非项目路线图)，不在 qwen-code 主线**——qwen-code 主线只交付 daemon building block（Stage 1/1.5/2），不直接对标 Anthropic Managed Agents（云 SaaS 平台）。本章对比的是**基于 qwen-code daemon + 完整 External Reference Architecture 包装出来的"Managed Qwen Agents"产品** vs Anthropic Managed Agents 云服务。
+>
+> 主线 daemon 用户对此章不感兴趣可跳过。本章对**商业平台开发方**（如阿里云 / 第三方 SaaS 厂商基于 qwen-code 包装产品）有参考价值。
 
 > **免责声明**：本对比基于 Anthropic 公开文档（截至 2026 Q1），Managed Agents 是闭源服务，具体实现细节、定价、内置工具列表可能已变更。本系列是 codeagents 项目的设计提案，与 Anthropic / Qwen 团队均无关联。
 
-> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。Stage 6 SaaS 路径：daemon instance per-pod + orchestrator 路由，与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
+> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 Qwen daemon "1 Daemon Instance = 1 Session"模型（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§23 §七 SaaS Phase 1-4](./23-orchestrator-multi-tenancy.md#七saas-实施-4-个-phaseexternal-reference)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
 
 ## 一、TL;DR
 
@@ -17,7 +19,7 @@
 | **模型** | Claude only | 任意 provider（DashScope / Claude / OpenAI / 自训练）|
 | **运维负担** | 0（Anthropic 托管）| 高（用户自管 k8s / Postgres）|
 | **数据驻留** | Anthropic 数据中心（US/EU 受限选项）| 用户决定（任何 region / 私有云 / 离线）|
-| **部署时间** | 几分钟 | 几天-几周（Stage 1）→ 几月（Stage 6）|
+| **部署时间** | 几分钟 | 主线 ~3 周（Stage 1/1.5/2 daemon GA）→ External Phase 1-4 ~3-6 月（多租户 + sandbox + SaaS）|
 | **适用** | 快速 MVP / 不想运维 | 高合规 / 离线 / 多 provider / 大规模 |
 | **混合可行** | ✓ Qwen daemon 可调用 Anthropic API | ✓ |
 | **核心差异** | 控制权换便利 | 便利换控制权 |
@@ -267,7 +269,7 @@ Phase 4: 切流（1-2 周）
 **构建路径**：
 
 ```
-Qwen daemon Stage 6
+Qwen daemon + External Phase 4 SaaS
        │
        ├─ HTTP route adapter
        │   /v1/agents/{id}/sessions/...   ← Anthropic API shape
@@ -342,7 +344,7 @@ app.post('/v1/agents/:id/sessions/:sid/messages', async (c) => {
 
 ### 8.3 金融 / 医疗合规
 
-**推荐**：Qwen daemon Stage 4-5（多租户 + sandbox）
+**推荐**：Qwen daemon + External Phase 1-2（多租户 + sandbox）
 
 **原因**：
 - 数据完全自主必需
@@ -352,7 +354,7 @@ app.post('/v1/agents/:id/sessions/:sid/messages', async (c) => {
 
 ### 8.4 政府 / 国防
 
-**推荐**：Qwen daemon Stage 4-5 air-gapped
+**推荐**：Qwen daemon + External Phase 1-2 air-gapped
 
 **原因**：
 - 必须离线
@@ -361,7 +363,7 @@ app.post('/v1/agents/:id/sessions/:sid/messages', async (c) => {
 
 ### 8.5 大规模 SaaS（数千用户）
 
-**推荐**：Qwen daemon Stage 6 SaaS
+**推荐**：Qwen daemon + External Phase 4 SaaS SaaS
 
 **原因**：
 - 多租户 HA 架构齐备（[§16](./16-high-availability.md)）
@@ -379,13 +381,14 @@ app.post('/v1/agents/:id/sessions/:sid/messages', async (c) => {
 
 ## 九、"Managed Qwen Agents" 产品蓝图
 
-阿里云 / 第三方厂商基于 Qwen daemon Stage 6 包装 SaaS 产品，对标 Anthropic Managed Agents：
+阿里云 / 第三方厂商基于 qwen-code daemon building block + 完整 External Reference Architecture（Orchestrator / 多租户 / Sandbox / SaaS deployment）包装 SaaS 产品，对标 Anthropic Managed Agents：
 
 ### 9.1 产品组成
 
 ```
-Managed Qwen Agents (Stage 6 + 商业层)
-├─ Qwen daemon Stage 6 (开源核心，[§16](./16-high-availability.md))
+Managed Qwen Agents (External Reference Architecture 完整实施 + 商业层)
+├─ Qwen daemon building block (开源核心，主线 Stage 1/1.5/2)
+├─ External Phase 1-4 实施（[§23](./23-orchestrator-multi-tenancy.md) + [§16](./16-high-availability.md) + [§11](./11-multi-tenancy-and-sandbox.md)）
 ├─ Web Console
 │   - Tenant 管理 / agent 定义 / session 浏览 / billing
 ├─ 计量统计
@@ -424,7 +427,7 @@ Managed Qwen Agents (Stage 6 + 商业层)
 | 销售 / 市场 | 持续 |
 | **总计** | **~6 月 + 持续运营** |
 
-**架构本身（Qwen daemon Stage 6）**已经就位，缺的全是商业产品层。
+**架构本身（qwen-code daemon building block + External Reference Architecture 完整设计已就位）**——daemon 主线 ~3 周，External Phase 1-4 ~3-6 月，缺的是商业产品层（Console / Marketplace / 客服 / 合规）。
 
 ### 9.4 阿里云的天然优势
 
@@ -487,19 +490,19 @@ Provider 信任:
 **自托管 = 你知道防御具体怎么做 + 可审计**；
 **Managed = 你信任 Anthropic 做得好 + 可不操心**。
 
-## 十二、Stage-wise: Qwen daemon 何时能挑战 Anthropic Managed
+## 十二、Stage / Phase 演进: 何时能挑战 Anthropic Managed
 
-| Qwen daemon Stage | 能力 | vs Anthropic Managed |
-|---|---|---|
-| Stage 1 (HTTP-bridge) | 基础 daemon | 单 dev tool；远不及 Managed |
-| Stage 2 (原生 daemon) | 多 session | 接近 Anthropic SDK 单 client 体验 |
-| Stage 3 (完整 daemon) | + Permission flow + 多 client | 已超 Anthropic SDK，但缺 multi-tenant SaaS |
-| Stage 4 (多租户 ACL) | + Tenant + quota | 接近 Anthropic Managed multi-tenant |
-| Stage 5 (sandbox) | + 5 种 sandbox | 沙箱选择上超过 Anthropic（更灵活）|
-| Stage 6 (SaaS HA) | + Postgres + S3 + Redis + HA | **架构上完全对标 Anthropic Managed** |
-| 加商业层 | + Console + Billing + Marketplace + 客服 | **产品上完全对标 Anthropic Managed** |
+| 阶段 | 范畴 | 能力 | vs Anthropic Managed |
+|---|---|---|---|
+| Stage 1 (qwen serve daemon, PR#3889) | qwen-code 主线 | 基础 daemon + ACP NDJSON over HTTP+SSE + bearer auth | 单 dev tool；远不及 Managed |
+| Stage 1.5 (Mode A) | qwen-code 主线 | + CLI + HttpServer 同进程 | 同上 |
+| Stage 2 (daemon 完善) | qwen-code 主线 | + mDNS / OpenAPI / WebSocket bidi / 多 token / metrics | 已具备 SDK 单 client 完整体验 |
+| External Phase 1 (Orchestrator + 多租户 ACL) | External Reference | + qwen-coordinator + Tenant + quota（[§23](./23-orchestrator-multi-tenancy.md)）| 接近 Anthropic Managed multi-tenant |
+| External Phase 2-3 (sandbox) | External Reference | + 5 种 sandbox（[§11](./11-multi-tenancy-and-sandbox.md)）| 沙箱选择上超过 Anthropic（更灵活）|
+| External Phase 4 (SaaS HA) | External Reference | + Postgres + S3 + Redis + HA（[§16](./16-high-availability.md)）| **架构上完全对标 Anthropic Managed** |
+| 加商业层 | 商业产品 | + Console + Billing + Marketplace + 客服 | **产品上完全对标 Anthropic Managed** |
 
-**Stage 6 + 商业层 = 完整的 Managed Qwen Agents 产品**。
+**External Reference Architecture 完整实施 + 商业层 = 完整的 Managed Qwen Agents 产品**。
 
 ## 十三、与决策的协同
 
@@ -583,12 +586,12 @@ Enterprise   → Qwen daemon 私有部署
 |---|---|---|---|---|
 | 形态 | 云 SaaS | CLI | self-host daemon | self-host daemon |
 | 模型 | Claude only | Claude only | 任意 | 任意 |
-| 多租户 | ✓ | ❌ | ❌ | ✓ Stage 4+ |
+| 多租户 | ✓ | ❌ | ❌ | ✓ External Phase 1+ |
 | Multi-client per session | ❌ | N/A | ❌ | ✓ |
 | Sandbox 选择 | 1（managed）| Linux namespace（v2.1.98+）| 无 | 5 种 |
 | 离线 | ❌ | ✓ | ✓ | ✓ |
 | 开源 | ❌ | ❌ | ✓ MIT | ✓ Apache-2.0 |
-| HA / SaaS 设计 | Anthropic | N/A | minimal | ✓ Stage 6 |
+| HA / SaaS 设计 | Anthropic | N/A | minimal | ✓ External Phase 4 ([§16](./16-high-availability.md))|
 | 中国合规 | ❌ | ❌ | ✓ self-host | ✓ DashScope + self-host |
 
 ## 十七、一句话总结
@@ -600,7 +603,7 @@ Anthropic Managed Agents 与 Qwen daemon 是**两种互补哲学**：
 
 **架构维度对照高度相似**（multi-tenant / sandbox / persistence / HA / MCP 都有），但实现位置和默认值完全不同。**混合模式可行**：Qwen daemon 自托管作 router + Anthropic API 作 provider；或不同 tier 用不同方案。
 
-**Qwen daemon Stage 6 + 商业层**（Console / Marketplace / 客服 / 合规）= 完整 "Managed Qwen Agents" 产品对标 Anthropic Managed Agents——架构 6 个月就位（已设计完成），商业层 6 个月可建。阿里云有天然优势包装这个产品（DashScope / 钉钉飞书 / 中国合规 / 中文生态）。
+**Qwen daemon building block + External Reference Architecture 完整实施（Phase 1-4）+ 商业层**（Console / Marketplace / 客服 / 合规）= 完整 "Managed Qwen Agents" 产品对标 Anthropic Managed Agents——daemon 主线 ~3 周（Stage 1/1.5/2），External Phase 1-4 ~3-6 月，商业层另需 ~6 月。阿里云有天然优势包装这个产品（DashScope / 钉钉飞书 / 中国合规 / 中文生态）。
 
 **全场景覆盖**：决策树 6 问选型 + 6 类客户场景推荐 + 3 种混合部署模式。
 
