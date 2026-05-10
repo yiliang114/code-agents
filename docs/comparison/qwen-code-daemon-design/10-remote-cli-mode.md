@@ -4,12 +4,14 @@
 
 > **远端 client 接入流程**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
 >
-> - **Multi-client per daemon 是核心价值**——CLI / WebUI / IM bot 连同一 daemon = 共享同一 session
-> - **远端 client 直连 daemon instance**——少一跳（不需要"daemon 内 session 路由"）
-> - **Client capability 反向 RPC / NAT 穿透 / TLS / mTLS / Bearer token** 全部不变
-> - **Discovery 协议**：client 启动时先问 orchestrator "我应该连哪个 daemon"，orchestrator 负责把 sessionId 映射到 daemon URL
+> - **Multi-client per daemon 是核心价值**——CLI / WebUI / IM bot 连同一 daemon URL = 共享同一 session
+> - **远端 client 直连 daemon instance**——已知 daemonUrl 时不需要中间路由
+> - **Client capability 反向 RPC / NAT 穿透 / TLS / mTLS / Bearer token** 是 External Reference Architecture 范畴的设计（PR#3889 / Stage 2 不实现，仅本章作为外部集成方蓝图描述）
+> - **Discovery / 跨 daemon 路由**：多 daemon 部署下 client 通过 [§14 Orchestrator](./14-orchestrator-multi-tenancy.md) `POST /coordinator/sessions/:id/route` 解析 sessionId → daemonUrl，再直连
 
 > CLI 连接远端 daemon 的完整设计：3 类拓扑取舍、Client Capability 反向 RPC 协议（让 daemon 调起本地 editor/clipboard/browser）、TLS/mTLS auth 链、NAT 穿透方案、Local echo 性能优化、离线降级。
+
+> **本章 scope**：以下大部分内容（Client Capability 反向 RPC 协议 / mTLS / Sticky cookie HMAC / NAT 穿透方案 / Local echo / 离线降级）属 **External Reference Architecture** 范畴——Stage 1 PR#3889 仅实现"远端 client 直连 daemon URL + Bearer token + SSE 重连"基础链路；本章其余设计供外部集成方（商业平台 / k8s operator / 云厂商）参考。
 
 ## 一、TL;DR
 
@@ -29,14 +31,14 @@
 
 ```
 Laptop / Workstation
-├─ qwen CLI ──────HTTP──────→ qwen daemon (127.0.0.1:8080)
+├─ qwen CLI ──────HTTP──────→ qwen daemon (127.0.0.1:<port>)
 ├─ Workspace /work/repo
 └─ Editor / clipboard / browser
 ```
 
 **适用**：
 - 单人开发（最常见）
-- Stage 1-3 默认部署
+- Stage 1 / 1.5 / 2 默认部署
 - 同 host 多 client（CLI 1 + CLI 2 + IDE 同 session，[§09](./09-tui-compatibility.md)）
 
 **特点**：
@@ -67,7 +69,7 @@ Laptop                            Cloud / Workstation
 | daemon 主动 git clone | repo 必须在 git remote | dirty/uncommitted 修改丢失 |
 | 双向同步（Mutagen continuous）| 持续同步 | 冲突 / 复杂运维 |
 
-**结论**：拓扑 B **不主流支持**，文档明确标记为 unsupported（如真要用，走拓扑 C 的"假装本地"workflow，把开发整个搬到远端机器）。
+**结论**：拓扑 B **不主流支持**，文档明确标记为 unsupported（如真要用，建议走拓扑 C（开发环境整体迁移到远端 daemon 同机））。
 
 ### 2.3 拓扑 C — Remote-Remote（**推荐**）
 
@@ -84,10 +86,10 @@ Editor / clipboard / browser ←─── via SSE event ─────
 ```
 
 **适用**：
-- External Phase 4 SaaS（云端 dev container）
+- External Phase 3+ SaaS（云端 dev container）
 - GitHub Codespaces / Coder 风格 cloud workspace
 - 工程师笔记本性能弱 / 跨机器开发
-- 团队共享 dev environment（同一 daemon 多人接入不同 session）
+- 团队共享 dev environment（多人接入同一 daemon = 同一 session live collaboration；多 session 由 orchestrator spawn 多 daemon 实例，[§14](./14-orchestrator-multi-tenancy.md)）
 
 **特点**：
 - daemon 端有完整 workspace 视图
@@ -104,7 +106,7 @@ Editor / clipboard / browser ←─── via SSE event ─────
 | 沙箱 / 子进程 | 简单 | 极复杂 | 简单 |
 | 网络要求 | 无 | 高 | 中 |
 | 适用人群 | 单人 | 特殊 | SaaS / 团队 |
-| 官方支持 | ✓ Stage 1+ | ✗ | ✓ External Phase 1+ |
+| 官方支持 | ✓ Stage 1+ | ✗ | ✓ Stage 1+ 基础 Remote / External Phase 3+ SaaS 部署 |
 
 ## 三、Client Capability Request 协议
 
@@ -186,14 +188,18 @@ Authorization: Bearer ...
 Content-Type: application/json
 
 {
-  "client_capabilities": {
-    "open_editor": true,
-    "clipboard": true,
-    "open_browser": true,
-    "notification": false,      // 终端环境无桌面通知
-    "file_picker": false        // CLI 不支持 GUI file picker
+  "meta": { "workspaceId": "ws-abc" },
+  "clientCapabilities": {        // ACP camelCase（§03 §二 复用 ACP zod schema）
+    "fs": { "readTextFile": true },
+    "remote": {
+      "openEditor": true,
+      "clipboard": true,
+      "openBrowser": true,
+      "notification": false,      // 终端环境无桌面通知
+      "filePicker": false         // CLI 不支持 GUI file picker
+    }
   },
-  "client_info": {
+  "clientInfo": {
     "name": "qwen-cli",
     "version": "1.0.0",
     "platform": "linux",
@@ -202,7 +208,9 @@ Content-Type: application/json
 }
 ```
 
-daemon 在 emit capability_request 前检查 `client_capabilities`，不支持的 capability 走 `fallback` 策略。
+daemon 在 emit capability_request 前检查 `clientCapabilities.remote`，不支持的 capability 走 `fallback` 策略。
+
+> **注**：本章 capability 协议是 [External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图) 设计——[§06 Stage 2 worklist](./06-roadmap.md#stage-2daemon-完善1-2-周) 不含此项；外部集成方决定 ACP `clientCapabilities` extension 的 schema 命名空间（本节示例用 `clientCapabilities.remote`）。
 
 ## 四、5 类 Capability 详细设计
 
@@ -241,9 +249,9 @@ async function handleOpenEditor(params: OpenEditorParams) {
 }
 ```
 
-**Fallback `return_inline`**：daemon 改用内置 multi-line input box（TUI 内部 vim-emulation，[Ink + ink-text-input]）。
+**Fallback `return_inline`**：daemon 改用内置 multi-line input box（TUI 内部 multi-line edit primitive（Ink + `ink-text-input` 包））。
 
-**对比单进程模式**（同 host）：daemon 直接 spawn editor in pty —— 拓扑 A 的方式；远端模式必须走反向 RPC。
+**对比单进程模式**（同 host）：daemon 直接在本机 spawn editor 子进程（PTY）—— 拓扑 A 的方式；远端拓扑 C 必须走反向 RPC 让 CLI 端 spawn。
 
 ### 4.2 `clipboard`
 
@@ -477,7 +485,7 @@ async function handleFilePicker(params: FilePickerParams) {
    └─ Initial: GET /session/sess-abc/events
    ↓
 6. daemon 验证：
-   ├─ Token SHA-256 hash + timingSafeEqual 比对（[§05](./05-permission-auth.md)）
+   ├─ Token SHA-256 hash + timingSafeEqual 比对（[§05 §二 Bearer Token](./05-permission-auth.md#二layer-1传输层-bearer-token)）
    ├─ Tenant lookup
    ├─ Workspace allowlist check
    └─ Session 存在性 + 所属 tenant 匹配
@@ -487,7 +495,7 @@ async function handleFilePicker(params: FilePickerParams) {
 
 ### 5.2 Bearer Token 设计
 
-参考 [§05 §1](./05-permission-auth.md)：
+参考 [§05 §二 Bearer Token](./05-permission-auth.md#二layer-1传输层-bearer-token)：
 
 ```
 Token format: qwen_<env>_<tenant_id>_<random_64bytes_base32>
@@ -544,8 +552,8 @@ HttpOnly + Secure + SameSite=Strict
 |---|---|---|
 | Bearer token | 默认 | Stage 1+ |
 | + TLS server cert | 默认 | Stage 1+ |
-| + mTLS client cert | 加固 | External Phase 2-3+ 企业 |
-| + IP allowlist | 加固 | External Phase 2-3+ 企业 |
+| + mTLS client cert | 加固 | External Phase 1+ 企业（多租户 auth）|
+| + IP allowlist | 加固 | External Phase 1+ 企业（多租户 auth）|
 | + Time-based OTP（capability_request 二次确认）| 高敏感 | 可选 |
 
 ## 六、NAT 穿透方案
@@ -613,7 +621,7 @@ spec:
     http: ...
 ```
 
-**External Phase 4 SaaS 默认**。
+**External Phase 3+ SaaS 默认**。
 
 ### 6.5 方案选择决策
 
@@ -621,7 +629,7 @@ spec:
 |---|---|
 | 个人 / 单人开发 / 家庭 NAS daemon | Tailscale |
 | 团队 / 公司内网 daemon | Cloudflare Tunnel / Tailscale |
-| External Phase 4 SaaS（公网 daemon）| Ingress + Let's Encrypt |
+| External Phase 3+ SaaS（公网 daemon）| Ingress + Let's Encrypt |
 | 临时测试 / 演示 | Cloudflare quick tunnel |
 | 安全要求高 | mTLS + Tailscale + IP allowlist |
 
@@ -781,7 +789,7 @@ CLI 可缓存少量数据本地：
 
 ### 9.3 与 transcript-first 重建协调
 
-CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork resume 重建 session（如果命中其他 pod）→ 拉 events from Last-Event-ID + 1 → 客户端 UI 无缝续接。
+CLI 重连时传 `Last-Event-ID`：daemon 用 PR#3739 transcript-first fork resume 重建 session 状态 → 从 `Last-Event-ID + 1` 拉 missed events → 客户端 UI 无缝续接。多 pod failover（External Phase 3 HA）下 sticky cookie 把 client 路由到含其 sessionId 的 pod；主线 1 daemon = 1 session 不涉及多 pod。
 
 ## 十、与 §09 TUI 兼容性的关系
 
@@ -879,7 +887,7 @@ $ qwen profile add team \
 $ qwen --profile team chat
 ```
 
-### 12.3 External Phase 4 SaaS
+### 12.3 External Phase 3+ SaaS（公网 daemon）
 
 ```bash
 # === 用户首次登录 ===
@@ -928,7 +936,7 @@ CLI 端的 capability handler 应该**明确显示意图给用户**。
 
 ### 14.2 防止跨 tenant 嗅探
 
-CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId 匹配。daemon 端 routing bug 不应导致跨 session 数据泄漏。
+CLI 端必须验证收到的 SSE event `sessionId` 与自己订阅的 sessionId 匹配（ACP camelCase）。daemon 端 routing bug 不应导致跨 session 数据泄漏。
 
 ### 14.3 Token 安全
 
@@ -942,11 +950,11 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 | 决策 | Remote 模式影响 |
 |---|---|
 | §1 sessionScope='single' | Remote 模式下尤其有价值，跨设备共 session |
-| §3 MCP per-workspace | MCP 在 daemon 端 spawn，看到的是 daemon 端 fs（拓扑 C 正确） |
-| §4 FileReadCache per-session | session-private 跨设备共享时仍正确（cache 在 daemon 端）|
+| §3 MCP per-daemon | MCP 在 daemon 端 spawn，看到的是 daemon 端 fs（拓扑 C 正确） |
+| §4 FileReadCache per-daemon | 1d=1s 模型下等同 per-session；跨设备多 client 共享同一 daemon cache 仍正确 |
 | §5 Permission 第 4 mode 'daemon-http' | Remote 是 daemon-http 的常见使用场景 |
 | §6 多 client fan-out + first responder | Remote 多端协作的核心 |
-| §05 越权防御 | Remote 加固：cookie HMAC + mTLS + IP allowlist |
+| §05 auth + permission | Remote 加固：bearer + mTLS + IP allowlist + sticky cookie HMAC |
 | External SaaS HA | Remote SSE 重连协议（Last-Event-ID）必需 |
 
 ## 十六、各阶段 Remote 支持矩阵
@@ -955,14 +963,15 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 |---|---|---|---|---|
 | Stage 1 (Mode B headless, PR#3889) | ✓（默认 loopback；--host 0.0.0.0 + --token 启用 remote）| ✗ | ✗ | bearer + Host allowlist + 0.0.0.0 拒启动默认 |
 | Stage 1.5 (Mode A) | ✓ 同上 | ✗ | ✗ | TUI + HttpServer 同进程 |
-| Stage 2 (daemon 完善) | ✓ | ✓ 全 5 类 | ✓ | + WebSocket bidi + mDNS + 多 token |
+| Stage 2 (daemon 完善) | ✓ | ⚠️ 部分（外部 RPC 协议不在 §06 Stage 2 worklist；External 范畴）| ✓ | + WebSocket bidi + mDNS + 多 token |
 | External Phase 1 (orchestrator + 多租户)| ✓ | ✓ | ✓ | + tenant 隔离 |
-| External Phase 2-3 (sandbox) | ✓ | ✓ | ✓ | + sandbox 在 daemon 端 |
-| External Phase 4 (SaaS HA) | ✓✓ 主部署模式 | ✓ | mTLS + Cloudflare | SaaS 部署默认就是 Remote |
+| External Phase 2 (sandbox) | ✓ | ✓ | ✓ | + sandbox 在 daemon 端 |
+| External Phase 3 (HA) | ✓✓ 主部署模式 | ✓ | mTLS + Cloudflare | multi-pod sticky + SSE 跨 pod 重连 |
+| External Phase 4 (multi-region) | ✓✓ 跨地域部署 | ✓ | mTLS + 多 region anycast | cross-geo scheduling |
 
 ## 十七、一句话总结
 
-**Qwen daemon CLI 远端连接 = HTTP/SSE+TLS+Bearer token 设计天然支持，推荐拓扑 C（workspace 与 daemon 同机），通过 Client Capability 反向 RPC 协议（5 类：editor/clipboard/browser/notification/file_picker）让 daemon 可"调起"本地 editor 等本机依赖。NAT 穿透 Cloudflare Tunnel / Tailscale / SSH reverse tunnel 三选一。Local echo 抹平 keystroke RTT，LLM streaming 50ms 几乎无感。SSE Last-Event-ID 自动重连让笔记本网络抖动无感（继承 External SaaS HA 协议）。`--daemon-or-local` flag 支持离线降级到本地子进程模式。External Phase 4 SaaS 部署模式默认就是 Remote-Remote。与 VSCode Remote-SSH 设计哲学一致但更进一步：多 client 共 session 的 live collaboration 是 Remote 模式下的杀手级特性。**
+**Qwen daemon CLI 远端连接 = HTTP/SSE+TLS+Bearer token 设计天然支持，推荐拓扑 C（workspace 与 daemon 同机），通过 Client Capability 反向 RPC 协议（5 类：editor/clipboard/browser/notification/file_picker）让 daemon 可"调起"本地 editor 等本机依赖。NAT 穿透 Cloudflare Tunnel / Tailscale / SSH reverse tunnel 三选一。Local echo 抹平 keystroke RTT，LLM streaming 50ms 几乎无感。SSE Last-Event-ID 自动重连让笔记本网络抖动无感（PR#3889 已实现，详见 §03 §三）。`--daemon-or-local` flag 支持离线降级到本地子进程模式。External Phase 3+ SaaS 部署默认就是 Remote-Remote。与 VSCode Remote-SSH 设计哲学一致但更进一步：多 client 共 session 的 live collaboration 是 Remote 模式下的杀手级特性。**
 
 ---
 
