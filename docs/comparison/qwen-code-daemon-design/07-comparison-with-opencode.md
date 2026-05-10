@@ -1,8 +1,8 @@
-# 08 — 与 OpenCode 详细对比
+# 07 — 与 OpenCode 详细对比
 
-> [← 上一篇：3 阶段路线图](./07-roadmap.md) · [下一篇：协议兼容性 →](./09-protocol-compatibility.md)
+> [← 上一篇：3 阶段路线图](./06-roadmap.md) · [下一篇：协议兼容性 →](./08-protocol-compatibility.md)
 
-> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§16 单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md)。
+> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§15 单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md)。
 
 ## 一、设计哲学对比
 
@@ -85,7 +85,7 @@
 | Schema 验证 | Effect Schema | **zod**（与现有 ACP 一致）|
 | 上下文传播 | Effect `Context.Service` | **`AsyncLocalStorage` 直接** |
 | 服务发现 | mDNS Bonjour（默认开启）| Stage 2 可选（默认关）|
-| 持久化 | SQLite via drizzle-orm | JSON+JSONL → External Phase 1 SQLite（[§17 持久化栈](./17-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
+| 持久化 | SQLite via drizzle-orm | JSON+JSONL → External Phase 1 SQLite（[§16 持久化栈](./16-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
 | 鉴权 | `OPENCODE_SERVER_PASSWORD` env | bearer token + PR#3723 |
 
 ## 四、API 命名对比
@@ -218,7 +218,7 @@ const q = query({ transport: new HttpTransport({
 | **进程模型分歧** | 5. **1 daemon = 1 session**（OpenCode 是单进程多 session）—— OS 进程边界免费 + 避开应用层 ALS / Effect-TS 复杂度 |
 | 默认安全策略 | 5. 默认 0.0.0.0 + 无 token = 拒绝启动 |
 
-**Qwen daemon 不是"OpenCode 的复刻"，而是"借鉴 OpenCode 验证过的进程模型 + 复用 Qwen 自家的 ACP / Channels / PR#3723 / Background tasks 等成熟资产"** —— 这正是 [02 现有资产盘点](./02-existing-assets.md) 表明的 ~75% 复用率的来源。
+**Qwen daemon 不是"OpenCode 的复刻"，而是"借鉴 OpenCode 验证过的进程模型 + 复用 Qwen 自家的 ACP / Channels / PR#3723 / Background tasks 等成熟资产"** —— 这正是  表明的 ~75% 复用率的来源。
 
 ---
 

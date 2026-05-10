@@ -1,6 +1,6 @@
-# 17 — Orchestrator 多租户与配额（External Reference Architecture）
+# 16 — Orchestrator 多租户与配额（External Reference Architecture）
 
-> [← 上一篇：单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md) · [回到 README](./README.md)
+> [← 上一篇：单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md) · [回到 README](./README.md)
 
 > **不在 qwen-code 主线 scope**——本章是给 qwen-code 开发者的"大致方向"指引：当外部商业平台 / k8s operator / 云厂商基于 qwen-code daemon building block 搭 SaaS 时，**orchestrator 层**应该长什么样。
 >
@@ -13,7 +13,7 @@
 | **Daemon Instance**（主线）| 1 session 状态 + tool 执行 + Shell sandbox | qwen-code 项目 |
 | **Orchestrator**（External）| spawn / route daemon、AuthN/AuthZ、quota、audit、持久化 | 外部商业平台 |
 
-**核心思想**：[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session" 模型把租户复杂度从 daemon 内挤出到 orchestrator 层——daemon 进程不感知租户，每个 daemon 只服务一个 tenant 的一个 session，进程级隔离自然成立。
+**核心思想**：[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session" 模型把租户复杂度从 daemon 内挤出到 orchestrator 层——daemon 进程不感知租户，每个 daemon 只服务一个 tenant 的一个 session，进程级隔离自然成立。
 
 **Daemon 主线持久化基线（对比基线）**：每 daemon 一份 transcript JSONL（PR#3739）+ `~/.qwen/settings.json` / skills / OAuth credentials 启动加载、运行时只读。**0 RDBMS 依赖**——并发写 / audit 查询 / quota 原子 / hash lookup 这些 RDBMS 痛点在 1 daemon = 1 session 模型下天然不出现。下面 SQLite/Postgres/drizzle-orm 全部是 orchestrator 层关切。
 
@@ -70,7 +70,7 @@ orchestrator 需要 RDBMS 是因为它有 daemon 主线没有的痛点：
 | Phase | 工作量 | 内容 |
 |---|---|---|
 | **Phase 1** | ~3-4w | Tenant 抽象 + AuthN（Bearer/OIDC）+ Quota engine + Audit log + SQLite |
-| **Phase 2** | ~2-3w | Sandbox（OS user / Linux namespace / Container，[§10](./10-multi-tenancy-and-sandbox.md)）|
+| **Phase 2** | ~2-3w | Sandbox（OS user / Linux namespace / Container，[§09](./09-multi-tenancy-and-sandbox.md)）|
 | **Phase 3** | ~2-3w | HA（multi-pod sticky / Postgres Patroni / Redis Sentinel / SSE Last-Event-ID 跨 pod 重连）|
 | **Phase 4** | ~3-4w | Multi-region / cross-geo + cross-daemon shared state via Redis pub/sub |
 
@@ -97,4 +97,4 @@ orchestrator 需要 RDBMS 是因为它有 daemon 主线没有的痛点：
 
 ---
 
-[← 上一篇：单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md) · [回到 README](./README.md)
+[← 上一篇：单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md) · [回到 README](./README.md)

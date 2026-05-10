@@ -1,8 +1,8 @@
-# 06 — 权限流与认证
+# 05 — 权限流与认证
 
-> **🚀 Stage 1 实现状态**（2026-05-07）：本章 Bearer token / Host allowlist / 0.0.0.0 拒绝默认 + first-responder permission vote 全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` auth scaffold + `6ee655f0a` permission vote + `ad0e6ec06` timing-safe SHA-256+timingSafeEqual + 401 uniform）。Stage 1 实测加了原 §06 才有的 side-channel 防御（401 在 no-header/bad-scheme/wrong-token 三情况返回完全一致）。详见 [§07 Stage 1 实现 audit](./07-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
+> **🚀 Stage 1 实现状态**（2026-05-07）：本章 Bearer token / Host allowlist / 0.0.0.0 拒绝默认 + first-responder permission vote 全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` auth scaffold + `6ee655f0a` permission vote + `ad0e6ec06` timing-safe SHA-256+timingSafeEqual + 401 uniform）。Stage 1 实测加了原 §05 才有的 side-channel 防御（401 在 no-header/bad-scheme/wrong-token 三情况返回完全一致）。详见 [§06 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
-> **双部署模式认证默认值**（[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）：
+> **双部署模式认证默认值**（[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）：
 >
 > | 维度 | Mode A（`qwen --serve`）| Mode B（`qwen serve`）|
 > |---|---|---|
@@ -13,9 +13,9 @@
 >
 > 本章详细的 Bearer token 生命周期、permission flow、first-responder vote 等机制 **两种模式完全一致**——只是 Mode A 默认关掉 bearer（loopback 信任）但仍可显式 `--token` 启用。
 >
-> Permission decisions cache 是 per-daemon（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"模型下自然成立）；first-responder vote 仍是 per-daemon 内逻辑（同一 daemon 多 client 抢答 permission_request）。
+> Permission decisions cache 是 per-daemon（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"模型下自然成立）；first-responder vote 仍是 per-daemon 内逻辑（同一 daemon 多 client 抢答 permission_request）。
 
-> [← 上一篇：进程模型与工作目录隔离](./05-process-model.md) · [下一篇：3 阶段路线图 →](./07-roadmap.md)
+> [← 上一篇：进程模型与工作目录隔离](./04-process-model.md) · [下一篇：3 阶段路线图 →](./06-roadmap.md)
 
 > 设计原则：**双层权限**——传输层 bearer token 阻止未授权访问，应用层复用 PR#3723 已合并的 `evaluatePermissionFlow()` 把 daemon 加为第 4 种 execution mode。
 
@@ -96,7 +96,7 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 
 **Stage 1 不支持**——单 token = 单用户（所有 client 用同一 token）。
 
-**Stage 2 加多 token**：[§07 Stage 2](./07-roadmap.md#stage-2daemon-完善1-2-周) daemon 完善阶段加 `tokens.json` 多 token + 每 token 绑定 user-id + workspace allowlist：
+**Stage 2 加多 token**：[§06 Stage 2](./06-roadmap.md#stage-2daemon-完善1-2-周) daemon 完善阶段加 `tokens.json` 多 token + 每 token 绑定 user-id + workspace allowlist：
 
 ```json
 {
@@ -159,7 +159,7 @@ function handleAskInDaemonHttp(
 
 ### 3.2 跨 client 审批语义（核心 UX 设计）
 
-[决策 §1](./03-architectural-decisions.md#1-session-是否跨-client-共享) 默认 `single` scope（同 workspace 多 client 共享 session）+ [决策 §6](./03-architectural-decisions.md#6-多-client-并发请求)（事件 fan-out + 任何 client 应答 permission）—— 这给 daemon 带来一个独有的 UX 优势：**审批可以从最舒适的 client 上做**。
+[决策 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) 默认 `single` scope（同 workspace 多 client 共享 session）+ [决策 §6](./02-architectural-decisions.md#6-多-client-并发请求)（事件 fan-out + 任何 client 应答 permission）—— 这给 daemon 带来一个独有的 UX 优势：**审批可以从最舒适的 client 上做**。
 
 **典型场景**：
 
@@ -184,7 +184,7 @@ function handleAskInDaemonHttp(
 | B：仅 primary client 能审批 | 需要"主控端 + 观察端"角色概念 → 增加 client 类型 ✗ 用户额外管理负担 |
 | C：majority vote | 多人协作场景才有意义；单用户多 client 反而不便 |
 
-主线选 A；B（primary client）作为外部多用户企业部署的可选 UX 增强（[§17](./17-orchestrator-multi-tenancy.md) External Reference）。
+主线选 A；B（primary client）作为外部多用户企业部署的可选 UX 增强（[§16](./16-orchestrator-multi-tenancy.md) External Reference）。
 
 ### 3.3 审批响应 schema
 
@@ -316,4 +316,4 @@ daemon 落地前必须确认：
 
 ---
 
-下一篇：[08-3 阶段路线图 →](./07-roadmap.md)
+下一篇：[08-3 阶段路线图 →](./06-roadmap.md)

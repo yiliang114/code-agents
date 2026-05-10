@@ -1,6 +1,6 @@
-# 16 — 单 Session vs 多 Session 设计优缺点深度对比
+# 15 — 单 Session vs 多 Session 设计优缺点深度对比
 
-> [下一篇：Orchestrator 多租户与配额 →](./17-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+> [下一篇：Orchestrator 多租户与配额 →](./16-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
 
 > 系统对比"1 Daemon Instance = 1 Session"（当前架构）与"单 daemon 多 session"（OpenCode 模式）两种设计的 tradeoff。**本章回答"为什么选这个"——为选型决策提供数据**；扩展到多 session 不在 qwen-code 主线设计目标（决策已定，本章解释为什么选 1 daemon = 1 session）。
 
@@ -241,18 +241,18 @@ OpenCode daemon 进程
 | Cold start | ~10ms | ~1-3s |
 | Crash 半径 | 整 daemon | 1 session |
 
-详见 [§08 与 OpenCode 详细对比](./08-comparison-with-opencode.md)。
+详见 [§07 与 OpenCode 详细对比](./07-comparison-with-opencode.md)。
 
 
 ## 七、与各章节协同
 
 | 章节 | 协同点 |
 |---|---|
-| [§03 §2 状态进程模型](./03-architectural-decisions.md#2-状态进程模型) | 单 session 决策的来源 |
-| [§08 与 OpenCode 详细对比](./08-comparison-with-opencode.md) | 多 session 模式的现实参考 |
+| [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型) | 单 session 决策的来源 |
+| [§07 与 OpenCode 详细对比](./07-comparison-with-opencode.md) | 多 session 模式的现实参考 |
 |  | 多 session 的 17 攻击向量证据 |
 |  | 多 session 的 9 稳定性模式负担 |
-| [§15 vs Anthropic Managed Agents](./15-vs-anthropic-managed-agents.md) | Anthropic 的 per-session container 与 Qwen 单 session 模型架构相似 |
+| [§14 vs Anthropic Managed Agents](./14-vs-anthropic-managed-agents.md) | Anthropic 的 per-session container 与 Qwen 单 session 模型架构相似 |
 
 ## 八、一句话总结
 
@@ -267,4 +267,4 @@ OpenCode daemon 进程
 
 ---
 
-[下一篇：Orchestrator 多租户与配额 →](./17-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
+[下一篇：Orchestrator 多租户与配额 →](./16-orchestrator-multi-tenancy.md) · [回到 README](./README.md)

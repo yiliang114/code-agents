@@ -1,10 +1,10 @@
-# 09 — SDK / ACP 协议兼容性（单进程 vs Daemon）
+# 08 — SDK / ACP 协议兼容性（单进程 vs Daemon）
 
-> [← 上一篇：与 OpenCode 详细对比](./08-comparison-with-opencode.md) · [下一篇：多租户与沙箱 →](./10-multi-tenancy-and-sandbox.md)
+> [← 上一篇：与 OpenCode 详细对比](./07-comparison-with-opencode.md) · [下一篇：多租户与沙箱 →](./09-multi-tenancy-and-sandbox.md)
 
 > 单进程模式（当前 `qwen --acp` stdio NDJSON）与 Daemon 模式（设计中 `qwen serve` HTTP）的协议兼容性分析。**结论：Schema 层完全兼容、Wire 层不兼容、SDK 抽象层用户代码 0 改动**。
 
-> **双部署模式 wire 一致性**：[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) Mode A（`qwen --serve`）与 Mode B（`qwen serve`）跑同一套 Express HTTP + ACP NDJSON over SSE，本章 4 层兼容性矩阵两种部署都成立。SDK 客户端可选择是否经过 orchestrator 路由（多 daemon instance 场景），orchestrator 也走同套 wire。
+> **双部署模式 wire 一致性**：[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) Mode A（`qwen --serve`）与 Mode B（`qwen serve`）跑同一套 Express HTTP + ACP NDJSON over SSE，本章 4 层兼容性矩阵两种部署都成立。SDK 客户端可选择是否经过 orchestrator 路由（多 daemon instance 场景），orchestrator 也走同套 wire。
 
 ## 一、TL;DR — 4 层兼容性矩阵
 
@@ -280,7 +280,7 @@ SDK Client → HTTP → daemon (in-process)
 | 权限审批 UX | TUI dialog（同步）| SSE event + 任意 client 应答（决策 §6 fan-out + first responder）|
 | 资源（LSP/MCP）| 每次 spawn 重新加载 | daemon 内复用（决策 §3 per-daemon MCP）|
 | 故障半径 | 一个 query 崩溃只死自己 | 一个 session 崩溃可能影响其他 session（共进程 — 决策 §2）|
-| Working directory | 子进程 spawn 时 OS 级 cwd | AsyncLocalStorage 应用层 cwd（[05-进程模型](./05-process-model.md)）|
+| Working directory | 子进程 spawn 时 OS 级 cwd | AsyncLocalStorage 应用层 cwd（[05-进程模型](./04-process-model.md)）|
 
 ## 七、不兼容点的 Adapter 责任
 

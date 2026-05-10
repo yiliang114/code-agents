@@ -1,6 +1,6 @@
 # 01 — 架构总览
 
-> [← 返回 README](./README.md) · [下一篇：现有资产盘点 →](./02-existing-assets.md)
+> [← 返回 README](./README.md) · [下一篇：架构决策 →](./02-architectural-decisions.md)
 
 ## 一、daemon 模型 vs Qwen 当前的 subprocess 模型
 
@@ -24,7 +24,7 @@ Qwen Code 当前的程序化访问形态：
                                    │ Orchestrator（External 实施）  │
                                    │ - sessionScope routing        │
                                    │ - daemon instance discovery   │
-                                   │ ⚠️ 项目范围外（参考 §16/§17）  │
+                                   │ ⚠️ 项目范围外（参考 §15/§16）  │
                                    └──────────────┬───────────────┘
                                                   │ spawn / route
                                                   ↓
@@ -58,8 +58,8 @@ Mode B: daemon instance 无 TUI 全 HTTP（qwen serve）
 |---|---|---|
 | daemon 不再 spawn CLI | core 直接 import | 同样 |
 | 多 session 模型 | `Map<directory, InstanceContext>`（同进程 N session）| **1 daemon = 1 session**（多 session 由 External orchestrator spawn 多 daemon，不在 qwen-code 主线）|
-| `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | 同样但无需 ALS Instance ctx —— daemon 进程本身就是 session ctx（详见 [05-进程模型](./05-process-model.md)）|
-| 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§17 持久化栈](./17-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
+| `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | 同样但无需 ALS Instance ctx —— daemon 进程本身就是 session ctx（详见 [05-进程模型](./04-process-model.md)）|
+| 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§16 持久化栈](./16-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
 
 ### 2.2 Qwen 独有的 3 条特色
 
@@ -78,7 +78,7 @@ POST /session/:id/prompt       body: PromptRequest
 POST /session/:id/model        body: SetSessionModelRequest
 ```
 
-详见 [04-HTTP API 设计](./04-http-api.md)。
+详见 [04-HTTP API 设计](./03-http-api.md)。
 
 **好处**：协议层 0 设计成本（ACP 已经把 session 生命周期、permission 流、cancel、resume、fork 验证过），唯一新增的是传输层桥接。
 
@@ -104,14 +104,14 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 | **传输层 bearer token** | 阻止未授权访问 daemon | env var + middleware（参考 OpenCode）|
 | **应用层 permission flow** | 工具调用是否需要审批 / domain allowlist | **直接复用 PR#3723 的 `evaluatePermissionFlow()`** —— Interactive / Non-Interactive / ACP 三模式已合并，daemon 是第 4 种 |
 
-详见 [07-权限/认证](./06-permission-auth.md)。
+详见 [07-权限/认证](./05-permission-auth.md)。
 
 ## 三、整体架构图
 
 **核心原则**：
 - 每个 daemon 进程**只承载唯一一个 session**——daemon 内无 multi-session 路由
-- **Mode A（CLI + HttpServer）/ Mode B（Headless Daemon）双部署模式**（[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）—— 区别仅在 daemon 进程是否同时承载本地 TUI
-- **多 session 由 External orchestrator spawn 多 daemon 实例**（`qwen-coordinator` 角色）—— **不在 qwen-code 主线路线图**，由商业平台 / k8s operator / 云厂商基于 daemon building block 实现，参考 [§16 设计对比](./16-single-vs-multi-session-design.md) / [§17 多租户配额](./17-orchestrator-multi-tenancy.md) / [§04 §8.2 orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture)
+- **Mode A（CLI + HttpServer）/ Mode B（Headless Daemon）双部署模式**（[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）—— 区别仅在 daemon 进程是否同时承载本地 TUI
+- **多 session 由 External orchestrator spawn 多 daemon 实例**（`qwen-coordinator` 角色）—— **不在 qwen-code 主线路线图**，由商业平台 / k8s operator / 云厂商基于 daemon building block 实现，参考 [§15 设计对比](./15-single-vs-multi-session-design.md) / [§16 多租户配额](./16-orchestrator-multi-tenancy.md) / [§03 §8.2 orchestrator API](./03-http-api.md#82-orchestrator-层-apiexternal-reference-architecture)
 
 ### 3.1 单 Daemon Instance 内部架构（Mode A / Mode B 共用）
 
@@ -161,7 +161,7 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 
 ### 3.2 多 session 场景：External Orchestrator + 多 Daemon Instances
 
-> **⚠️ 此节描述的 Orchestrator 不在 qwen-code 主线路线图**——是给外部集成方（商业平台 / k8s operator / 云厂商）的设计参考蓝图。qwen-code 主线（Stage 1/1.5/2）只交付 daemon building block；下面的多 session 拓扑由外部基于 [§04 §8.2 Orchestrator API](./04-http-api.md#82-orchestrator-层-apiexternal-reference-architecture) 实现。详见 [§16 设计对比](./16-single-vs-multi-session-design.md) + [§17 多租户配额](./17-orchestrator-multi-tenancy.md) + [§07 External Reference Architecture](./07-roadmap.md#external-reference-architecture参考实现非项目路线图)。
+> **⚠️ 此节描述的 Orchestrator 不在 qwen-code 主线路线图**——是给外部集成方（商业平台 / k8s operator / 云厂商）的设计参考蓝图。qwen-code 主线（Stage 1/1.5/2）只交付 daemon building block；下面的多 session 拓扑由外部基于 [§03 §8.2 Orchestrator API](./03-http-api.md#82-orchestrator-层-apiexternal-reference-architecture) 实现。详见 [§15 设计对比](./15-single-vs-multi-session-design.md) + [§16 多租户配额](./16-orchestrator-multi-tenancy.md) + [§06 External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图)。
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -203,13 +203,13 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 
 | # | 决策 | 选择 | 详细 |
 |---|---|---|---|
-| 1 | session 是否跨 client 共享 | **默认共享同一 daemon instance**；scope 由 External orchestrator 路由 | [03 §1](./03-architectural-decisions.md#1-session-是否跨-client-共享) |
-| 2 | 状态进程模型 | **1 Daemon Instance = 1 Session**（与 PR#3889 child-process-per-session 模型一致） | [03 §2](./03-architectural-decisions.md#2-状态进程模型) |
-| 3 | MCP server 生命周期 | **per-daemon MCP state** + PR#3818 in-flight coalesce + 30s 健康检查 | §03 |
-| 4 | FileReadCache 共享 | **per-daemon** + PR#3717 实现 + PR#3774 prior-read 守卫 + PR#3810 5 路径 invalidation | §03 §4 |
-| 5 | Permission flow | **复用 PR#3723，daemon 是第 4 种 mode + 任何 client 都能应答** | [07](./06-permission-auth.md) |
-| 6 | 多 client 并发请求 | **同 session prompt 串行 + 事件 fan-out 多 client 协作观察** | [03 §6](./03-architectural-decisions.md#6-多-client-并发请求) |
-| 7 | 部署模式 | **Mode A（CLI + HttpServer）+ Mode B（Headless Daemon + HttpServer）双模式** | [03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) |
+| 1 | session 是否跨 client 共享 | **默认共享同一 daemon instance**；scope 由 External orchestrator 路由 | [03 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) |
+| 2 | 状态进程模型 | **1 Daemon Instance = 1 Session**（与 PR#3889 child-process-per-session 模型一致） | [03 §2](./02-architectural-decisions.md#2-状态进程模型) |
+| 3 | MCP server 生命周期 | **per-daemon MCP state** + PR#3818 in-flight coalesce + 30s 健康检查 | §02 |
+| 4 | FileReadCache 共享 | **per-daemon** + PR#3717 实现 + PR#3774 prior-read 守卫 + PR#3810 5 路径 invalidation | §02 §4 |
+| 5 | Permission flow | **复用 PR#3723，daemon 是第 4 种 mode + 任何 client 都能应答** | [07](./05-permission-auth.md) |
+| 6 | 多 client 并发请求 | **同 session prompt 串行 + 事件 fan-out 多 client 协作观察** | [03 §6](./02-architectural-decisions.md#6-多-client-并发请求) |
+| 7 | 部署模式 | **Mode A（CLI + HttpServer）+ Mode B（Headless Daemon + HttpServer）双模式** | [03 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) |
 
 ## 五、最终用户体验
 
@@ -270,8 +270,8 @@ Channels（IM / Telegram / 微信）用法：保持不变（ChannelAdapter → A
 | **session 跨 client 共享** | 否（每 SDK call 独立 session）| **是（默认 single + 事件 fan-out + 跨 client审批）**——live collaboration 模型 |
 | **WebSocket** | Bun 原生 | 同款 + SSE 兜底 |
 
-详见 [09-与 OpenCode 详细对比](./08-comparison-with-opencode.md)。
+详见 [09-与 OpenCode 详细对比](./07-comparison-with-opencode.md)。
 
 ---
 
-下一篇：[02-现有资产盘点 →](./02-existing-assets.md)
+下一篇：[02-架构决策 →](./02-architectural-decisions.md)

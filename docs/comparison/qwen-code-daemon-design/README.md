@@ -13,20 +13,20 @@
 | **Mode A: CLI + HttpServer** | `qwen --serve [--port N]` | ✅ 本地渲染 | 单用户在终端 + WebUI / IDE / IM bot 同时接入 |
 | **Mode B: Headless Daemon + HttpServer** | `qwen serve [--port N]` | ❌ | 服务器 / 容器 / 远端机器 |
 
-两种模式都遵循"1 daemon instance = 1 session"，区别仅在 daemon instance 是否同时承载本地 TUI 客户端。TUI 是 client #0（in-process EventBus），与 HTTP 远端 client 共享同一份事件流（[§03 §6](./03-architectural-decisions.md#6-多-client-并发请求) fan-out）。
+两种模式都遵循"1 daemon instance = 1 session"，区别仅在 daemon instance 是否同时承载本地 TUI 客户端。TUI 是 client #0（in-process EventBus），与 HTTP 远端 client 共享同一份事件流（[§02 §6](./02-architectural-decisions.md#6-多-client-并发请求) fan-out）。
 
-**为什么选这个架构**：进程级隔离免费、crash 半径小、subagent isolation 自动成立、与 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) child-process-per-session 实现一致。代价是 cold start ~1-3s/session、内存 ~30-50MB × N session——单机 N < 50 场景可接受。详见 [§16 单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md)。
+**为什么选这个架构**：进程级隔离免费、crash 半径小、subagent isolation 自动成立、与 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) child-process-per-session 实现一致。代价是 cold start ~1-3s/session、内存 ~30-50MB × N session——单机 N < 50 场景可接受。详见 [§15 单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md)。
 
-**项目 scope**：qwen-code 只承诺 daemon building block（Stage 1 / 1.5 / 2，~3 周内 feature complete）。多 session orchestrator / 多租户 / 沙箱 / SaaS 部署等"平台层"作为 [External Reference Architecture](./07-roadmap.md#external-reference-architecture参考实现非项目路线图) 由外部实现，详见 [§16](./16-single-vs-multi-session-design.md) / [§17](./17-orchestrator-multi-tenancy.md) / [§10](./10-multi-tenancy-and-sandbox.md) /  设计参考。
+**项目 scope**：qwen-code 只承诺 daemon building block（Stage 1 / 1.5 / 2，~3 周内 feature complete）。多 session orchestrator / 多租户 / 沙箱 / SaaS 部署等"平台层"作为 [External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图) 由外部实现，详见 [§15](./15-single-vs-multi-session-design.md) / [§16](./16-orchestrator-multi-tenancy.md) / [§09](./09-multi-tenancy-and-sandbox.md) /  设计参考。
 
 > **关于 Stage 编号约定**：本系列文档中的 Stage 编号有两个语境：
-> - **qwen-code 主线路线图**（[§07](./07-roadmap.md)）：Stage 1 / 1.5 / 2，三档锁定，~3 周内 feature complete
-> - **External Reference Architecture 实施 Phase**（[§17](./17-orchestrator-multi-tenancy.md#五4-个-phase演进路径)）：Phase 1-4 SaaS 实施
-> - **平台层章节内"Stage 3 / 4 / 5 / 6"标签**（§17 / External SaaS HA / §13 / §14 /  / §15 / §12 等中出现）：作为外部 SaaS 演进阶段的非正式渐进标签，与上面 External Phase 对应（不属于 qwen-code 主线 Stage）
+> - **qwen-code 主线路线图**（[§06](./06-roadmap.md)）：Stage 1 / 1.5 / 2，三档锁定，~3 周内 feature complete
+> - **External Reference Architecture 实施 Phase**（[§16](./16-orchestrator-multi-tenancy.md#五4-个-phase演进路径)）：Phase 1-4 SaaS 实施
+> - **平台层章节内"Stage 3 / 4 / 5 / 6"标签**（§16 / External SaaS HA / §12 / §13 /  / §14 / §11 等中出现）：作为外部 SaaS 演进阶段的非正式渐进标签，与上面 External Phase 对应（不属于 qwen-code 主线 Stage）
 >
 > 简记：**主线 Stage 1/1.5/2 = qwen-code 项目路线图；其他 Stage 编号 = External Reference 演进阶段**。
 
-> **🚀 Stage 1 GA-ready**（更新 2026-05-09）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— OPEN，**+8883/-4 / 32 commits**（多轮 multi-model self-audit + reviewer rounds + Stage 1 docs 补全）。明确引用 [issue #3803](https://github.com/QwenLM/qwen-code/issues/3803)（本系列对应 issue），**~95% 设计决策 1:1 落地** + **文档 100% 补全**——Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe compare / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags 全部已实现；commit `27a164c` 补全用户 quickstart + HTTP 协议 reference + SDK ts 示例 591 行 docs。详见 [§07 路线图 Stage 1 实现 audit](./07-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
+> **🚀 Stage 1 GA-ready**（更新 2026-05-09）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— OPEN，**+8883/-4 / 32 commits**（多轮 multi-model self-audit + reviewer rounds + Stage 1 docs 补全）。明确引用 [issue #3803](https://github.com/QwenLM/qwen-code/issues/3803)（本系列对应 issue），**~95% 设计决策 1:1 落地** + **文档 100% 补全**——Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe compare / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags 全部已实现；commit `27a164c` 补全用户 quickstart + HTTP 协议 reference + SDK ts 示例 591 行 docs。详见 [§06 路线图 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 >
 > 平行推进的 [PR#3929/3930/3931](https://github.com/QwenLM/qwen-code/pull/3929) `qwen remote-control` 3-stack（不同作者，独立开发）走 stream-json + dual-output + mobile UI 路线，不引用 issue #3803——是 daemon-design **平行参照而非实现**，未来或在 Stage 1.5/2 与 PR#3889 协调融合（mobile UI / pairing token / LAN URL 移植到 daemon）。
 
@@ -34,12 +34,12 @@
 
 | 路径 | 时间 | 文档 | 适合 |
 |---|---|---|---|
-| 🚀 **快速理解** | ~30 min | §01 → §03 → §07 → §08 | 评估方案是否值得做 |
-| 🔧 **MVP 实施** | ~2 h | §01 → §03 → §04 → §05 → §03 → §06 → §07 | 准备开 PR 写代码 |
+| 🚀 **快速理解** | ~30 min | §01 → §02 → §06 → §07 | 评估方案是否值得做 |
+| 🔧 **MVP 实施** | ~2 h | §01 → §02 → §03 → §04 → §02 → §05 → §06 | 准备开 PR 写代码 |
 | 📖 **完整设计** | ~6 h | Part I → II → III → IV → V → VI 顺序 | 全面理解 |
-| 🔒 **安全 / 多租户专题** | ~2 h | §10 → §17 → §06 → External SaaS HA → §14 | 企业部署评估 |
-| 🌐 **远端 / 协作专题** | ~2 h | §11 → §13 → §14 | 客户端体验设计 |
-| 💾 **数据架构专题** | ~1 h | §12 → §17 → External SaaS HA §三-§九 | 持久化 / HA 设计 |
+| 🔒 **安全 / 多租户专题** | ~2 h | §09 → §16 → §05 → External SaaS HA → §13 | 企业部署评估 |
+| 🌐 **远端 / 协作专题** | ~2 h | §10 → §12 → §13 | 客户端体验设计 |
+| 💾 **数据架构专题** | ~1 h | §11 → §16 → External SaaS HA §三-§九 | 持久化 / HA 设计 |
 
 ## 文档结构
 
@@ -52,8 +52,7 @@
 | # | 文档 | 一句话 |
 |---|---|---|
 | 01 | [架构总览](./01-overview.md) | daemon 模型本质 + 与 subprocess 模型对比 + 与 OpenCode 设计差异概述 |
-| 02 | [现有资产盘点](./02-existing-assets.md) | Qwen Code 中 7 项可复用基础设施（ACP agent 838 行 / Channels / WebUI / SDK Transport 等）+ 复用度评估 |
-| 03 | [6 个架构决策](./03-architectural-decisions.md) | session 共享语义 / 状态进程模型 / MCP 生命周期 / FileReadCache / Permission flow / 多 client 并发——所有后续设计的基石 |
+| 02 | [6 个架构决策](./02-architectural-decisions.md) | session 共享语义 / 状态进程模型 / MCP 生命周期 / FileReadCache / Permission flow / 多 client 并发——所有后续设计的基石 |
 
 ### Part II — 协议与运行时
 
@@ -61,10 +60,10 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 04 | [HTTP API 设计](./04-http-api.md) | 路由结构、请求/响应 schema（复用 ACP zod schema）、WebSocket / SSE 事件 |
-| 05 | [进程模型与工作目录隔离](./05-process-model.md) | AsyncLocalStorage 上下文传播、子进程 spawn 边界、`process.cwd()` 不变性 |
-| 06 | [权限流与认证](./06-permission-auth.md) | bearer token 鉴权 + user permission flow（PR#3723 共享 L3→L4 复用）+ 跨 client 审批 UX |
-| 09 | [SDK / ACP 协议兼容性](./09-protocol-compatibility.md) | 单进程 vs Daemon 4 层兼容性矩阵 + 双向 RPC 同步→异步处理 + 用户代码 0 改动证明 |
+| 03 | [HTTP API 设计](./03-http-api.md) | 路由结构、请求/响应 schema（复用 ACP zod schema）、WebSocket / SSE 事件 |
+| 04 | [进程模型与工作目录隔离](./04-process-model.md) | AsyncLocalStorage 上下文传播、子进程 spawn 边界、`process.cwd()` 不变性 |
+| 05 | [权限流与认证](./05-permission-auth.md) | bearer token 鉴权 + user permission flow（PR#3723 共享 L3→L4 复用）+ 跨 client 审批 UX |
+| 08 | [SDK / ACP 协议兼容性](./08-protocol-compatibility.md) | 单进程 vs Daemon 4 层兼容性矩阵 + 双向 RPC 同步→异步处理 + 用户代码 0 改动证明 |
 
 ### Part III — 客户端形态
 
@@ -72,9 +71,9 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 11 | [TUI 单进程 vs Daemon 兼容性](./11-tui-compatibility.md) | 4 层兼容性矩阵（显示层 100% / 状态层 100% / 数据源层替换 / 本地依赖 5 类 fallback）+ 多 TUI 共 session + 同 host fast path vs 跨 host RPC + 12 项兼容性测试 |
-| 13 | [远端 CLI 模式与 Client Capability 协议](./13-remote-cli-mode.md) | 3 类拓扑（Local-Local / Local-Remote 不推荐 / **Remote-Remote 推荐**）+ Client Capability 反向 RPC 协议 + 5 类 capability + TLS/mTLS auth + NAT 穿透 + Local echo + VSCode Remote-SSH 对比 |
-| 14 | [多端协调策略](./14-client-coordination.md) | 不限同类型 client 数量（保 collaboration 哲学）+ 6 类 client kind 分桶上限 + liveness（30s heartbeat / 90s 超时 / TCP RST 即时剔除）+ active typer 协调 + 显式 takeover + 可选 exclusive_per_type 模式 + IM bot 一对多用户 |
+| 10 | [TUI 单进程 vs Daemon 兼容性](./10-tui-compatibility.md) | 4 层兼容性矩阵（显示层 100% / 状态层 100% / 数据源层替换 / 本地依赖 5 类 fallback）+ 多 TUI 共 session + 同 host fast path vs 跨 host RPC + 12 项兼容性测试 |
+| 12 | [远端 CLI 模式与 Client Capability 协议](./12-remote-cli-mode.md) | 3 类拓扑（Local-Local / Local-Remote 不推荐 / **Remote-Remote 推荐**）+ Client Capability 反向 RPC 协议 + 5 类 capability + TLS/mTLS auth + NAT 穿透 + Local echo + VSCode Remote-SSH 对比 |
+| 13 | [多端协调策略](./13-client-coordination.md) | 不限同类型 client 数量（保 collaboration 哲学）+ 6 类 client kind 分桶上限 + liveness（30s heartbeat / 90s 超时 / TCP RST 即时剔除）+ active typer 协调 + 显式 takeover + 可选 exclusive_per_type 模式 + IM bot 一对多用户 |
 
 ### Part IV — 数据与状态
 
@@ -82,16 +81,16 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 12 | [实体模型与层级关系](./12-entity-model.md) | **5 层 hierarchy**（Tenant → Workspace → Session → Background Task → Tool Execution）+ 横切层（Client subscription）+ 认证侧 sidebar（External User / Token：不算 hierarchy）+ 关系矩阵 + 资源所有权层级表 + 生命周期表 + ER 图 |
+| 11 | [实体模型与层级关系](./11-entity-model.md) | **5 层 hierarchy**（Tenant → Workspace → Session → Background Task → Tool Execution）+ 横切层（Client subscription）+ 认证侧 sidebar（External User / Token：不算 hierarchy）+ 关系矩阵 + 资源所有权层级表 + 生命周期表 + ER 图 |
 
 ### Part V — 平台层能力（External Reference Architecture）
 
-> **注**：以下能力**不在 qwen-code 主线路线图**中（[§07](./07-roadmap.md)），是给外部集成方（商业平台 / k8s operator / 云厂商定制）的设计参考蓝图。qwen-code daemon protocol surface 在 [Stage 2](./07-roadmap.md#stage-2daemon-完善1-2-周) 锁定后，下面这些能力可基于此自由实现。
+> **注**：以下能力**不在 qwen-code 主线路线图**中（[§06](./06-roadmap.md)），是给外部集成方（商业平台 / k8s operator / 云厂商定制）的设计参考蓝图。qwen-code daemon protocol surface 在 [Stage 2](./06-roadmap.md#stage-2daemon-完善1-2-周) 锁定后，下面这些能力可基于此自由实现。
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 10 | [Shell 沙箱与远程执行](./10-multi-tenancy-and-sandbox.md) | `ShellSandbox` interface + 4 种本地沙箱（NoSandbox / OS user / Linux namespace / Container）+ **远程 sandbox**（SSH / gRPC / k8s Job / containerd over TCP 4 种实现 + 工作流同步 / stdout 流式 / 取消 / 网络容错 / 延迟 5 大挑战）+ Monitor tool 走相同接口 + 与 Claude Code v2.1.98 SCRIPT_CAPS 对齐 |
-| 17 | [Orchestrator 多租户与配额](./17-orchestrator-multi-tenancy.md) | **External Reference Architecture，给 qwen-code 开发者的"大致方向"指引** —— Layer 模型 + orchestrator 4 件事（AuthN / AuthZ / Quota / Audit）+ 持久化栈渐进路径（SQLite → Postgres + Redis + drizzle）+ 4 个 Phase 演进 ~10-14w 完整 SaaS 蓝图 |
+| 09 | [Shell 沙箱与远程执行](./09-multi-tenancy-and-sandbox.md) | `ShellSandbox` interface + 4 种本地沙箱（NoSandbox / OS user / Linux namespace / Container）+ **远程 sandbox**（SSH / gRPC / k8s Job / containerd over TCP 4 种实现 + 工作流同步 / stdout 流式 / 取消 / 网络容错 / 延迟 5 大挑战）+ Monitor tool 走相同接口 + 与 Claude Code v2.1.98 SCRIPT_CAPS 对齐 |
+| 16 | [Orchestrator 多租户与配额](./16-orchestrator-multi-tenancy.md) | **External Reference Architecture，给 qwen-code 开发者的"大致方向"指引** —— Layer 模型 + orchestrator 4 件事（AuthN / AuthZ / Quota / Audit）+ 持久化栈渐进路径（SQLite → Postgres + Redis + drizzle）+ 4 个 Phase 演进 ~10-14w 完整 SaaS 蓝图 |
 
 ### Part VI — 路线图与外部对比
 
@@ -99,10 +98,10 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 | # | 文档 | 一句话 |
 |---|---|---|
-| 07 | [路线图](./07-roadmap.md) | qwen-code 主线 ~3 周内 feature complete：Stage 1（~1 周 ✅ Mode B headless PR#3889）/ Stage 1.5（~4d Mode A）/ Stage 2（~1-2 周 mDNS+OpenAPI+WebSocket+多 token+metrics）。**Orchestrator / 多租户 / 沙箱 / SaaS 部署作为 External Reference Architecture**（参考设计 §16 / §17 / §10 / External SaaS HA），由外部商业平台 / k8s operator 实现 |
-| 08 | [与 OpenCode 详细对比](./08-comparison-with-opencode.md) | 路由 / 技术栈 / 设计哲学逐项对照 |
-| 15 | [与 Anthropic Managed Agents 对比](./15-vs-anthropic-managed-agents.md) | **5 层架构对照**（client / agent runtime / tool / sandbox / persistence）+ **内置工具映射** + **协议层差异**（Anthropic 私有 vs ACP 标准）+ **双向 migration path**（Anthropic→Qwen / Qwen→Anthropic 兼容 API）+ **6 类客户场景推荐** + **决策树 6 问选型** + **3 种混合部署模式** + **"Managed Qwen Agents" 产品蓝图**（基于 External Reference Architecture 完整实施 (External Phase 1-4) 包装，6 月可建）|
-| 16 | [单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md) | **22 维对比矩阵 + 6 项关键 tradeoff 深度分析**（隔离昂贵性 / cold start 平方根 / 内存 baseline 建模 / 隔离失败代价 / 复杂度守恒原理 / PR#3889 现实约束）+ **决策树 N≤5/50/100/500/500+** + 作为选型决策入口（不在主线扩展多 session 模型）|
+| 06 | [路线图](./06-roadmap.md) | qwen-code 主线 ~3 周内 feature complete：Stage 1（~1 周 ✅ Mode B headless PR#3889）/ Stage 1.5（~4d Mode A）/ Stage 2（~1-2 周 mDNS+OpenAPI+WebSocket+多 token+metrics）。**Orchestrator / 多租户 / 沙箱 / SaaS 部署作为 External Reference Architecture**（参考设计 §15 / §16 / §09 / External SaaS HA），由外部商业平台 / k8s operator 实现 |
+| 07 | [与 OpenCode 详细对比](./07-comparison-with-opencode.md) | 路由 / 技术栈 / 设计哲学逐项对照 |
+| 14 | [与 Anthropic Managed Agents 对比](./14-vs-anthropic-managed-agents.md) | **5 层架构对照**（client / agent runtime / tool / sandbox / persistence）+ **内置工具映射** + **协议层差异**（Anthropic 私有 vs ACP 标准）+ **双向 migration path**（Anthropic→Qwen / Qwen→Anthropic 兼容 API）+ **6 类客户场景推荐** + **决策树 6 问选型** + **3 种混合部署模式** + **"Managed Qwen Agents" 产品蓝图**（基于 External Reference Architecture 完整实施 (External Phase 1-4) 包装，6 月可建）|
+| 15 | [单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md) | **22 维对比矩阵 + 6 项关键 tradeoff 深度分析**（隔离昂贵性 / cold start 平方根 / 内存 baseline 建模 / 隔离失败代价 / 复杂度守恒原理 / PR#3889 现实约束）+ **决策树 N≤5/50/100/500/500+** + 作为选型决策入口（不在主线扩展多 session 模型）|
 
 ## 一句话 TL;DR
 
@@ -118,7 +117,7 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 - daemon 内部不再 spawn CLI 子进程；core 通过 import 加载到 daemon 进程内
 - **1 Daemon Instance = 1 Session = 1 Workspace**——daemon 进程级隔离，无 multi-session 路由层；多 session 由外部 orchestrator spawn 多 daemon 实现
 - LSP / MCP server / PTY 才是真正的子进程（per-daemon · 不跨 daemon 共享）
-- 持久化：每 daemon 自己的 transcript JSONL；外部 orchestrator 可选 SQLite/Postgres 做 cross-daemon 聚合（详见 [§17 持久化栈](./17-orchestrator-multi-tenancy.md#四持久化栈大致方向)）
+- 持久化：每 daemon 自己的 transcript JSONL；外部 orchestrator 可选 SQLite/Postgres 做 cross-daemon 聚合（详见 [§16 持久化栈](./16-orchestrator-multi-tenancy.md#四持久化栈大致方向)）
 
 **与 OpenCode 不同的地方**：
 - **进程模型分歧**：OpenCode 走 single-process multi-session；qwen-code 走 multi-process single-session（OS 进程边界天然 isolation，避开应用层 ALS / Effect-TS / per-session resource managers 复杂度）
@@ -131,17 +130,17 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 
 | 上游决策点（[SDK/ACP/Daemon Deep-Dive §七](../sdk-acp-daemon-architecture-deep-dive.md#七qwen-code-引入-daemon-的工作量评估)）| 本系列对应 |
 |---|---|
-| Session 共享语义 | [§03 决策](./03-architectural-decisions.md) §1 默认 'single' scope |
-| 状态进程模型 | [§03 决策](./03-architectural-decisions.md) §2 + [§05 进程模型](./05-process-model.md) |
-| MCP server 生命周期 | [§03 决策](./03-architectural-decisions.md) §3 per-workspace + §03 §1 |
-| FileReadCache 共享 | [§03 决策](./03-architectural-decisions.md) §4 session-private + §03 §2 |
-| Permission flow | [§03 决策](./03-architectural-decisions.md) §5 + [§06 权限/认证](./06-permission-auth.md) |
-| 多 client 并发请求 | [§03 决策](./03-architectural-decisions.md) §6 FIFO + fan-out + first responder + [§14 多端协调](./14-client-coordination.md) |
-| 实体层级 | [§12 实体模型](./12-entity-model.md) 5 层 hierarchy + 认证侧 |
-| 持久化 | [§17 持久化栈](./17-orchestrator-multi-tenancy.md)（持久层） JSON → SQLite → Postgres 演进 |
-| 多租户 / 沙箱 | [§10 Shell 沙箱](./10-multi-tenancy-and-sandbox.md) + [§17 Orchestrator 多租户](./17-orchestrator-multi-tenancy.md) +  |
+| Session 共享语义 | [§02 决策](./02-architectural-decisions.md) §1 默认 'single' scope |
+| 状态进程模型 | [§02 决策](./02-architectural-decisions.md) §2 + [§04 进程模型](./04-process-model.md) |
+| MCP server 生命周期 | [§02 决策](./02-architectural-decisions.md) §3 per-workspace + §02 §1 |
+| FileReadCache 共享 | [§02 决策](./02-architectural-decisions.md) §4 session-private + §02 §2 |
+| Permission flow | [§02 决策](./02-architectural-decisions.md) §5 + [§05 权限/认证](./05-permission-auth.md) |
+| 多 client 并发请求 | [§02 决策](./02-architectural-decisions.md) §6 FIFO + fan-out + first responder + [§13 多端协调](./13-client-coordination.md) |
+| 实体层级 | [§11 实体模型](./11-entity-model.md) 5 层 hierarchy + 认证侧 |
+| 持久化 | [§16 持久化栈](./16-orchestrator-multi-tenancy.md)（持久层） JSON → SQLite → Postgres 演进 |
+| 多租户 / 沙箱 | [§09 Shell 沙箱](./09-multi-tenancy-and-sandbox.md) + [§16 Orchestrator 多租户](./16-orchestrator-multi-tenancy.md) +  |
 | HA / SaaS 部署 |  |
-| 远端 CLI / 协作 | [§13 远端 CLI](./13-remote-cli-mode.md) + [§14 多端协调](./14-client-coordination.md) |
+| 远端 CLI / 协作 | [§12 远端 CLI](./12-remote-cli-mode.md) + [§13 多端协调](./13-client-coordination.md) |
 
 ## 与已合并 PR 的关系
 
@@ -151,7 +150,7 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 |---|---|---|
 | **PR#3717** ✓ | FileReadCache（session-scoped + `(dev,ino)` key）| daemon 模式下天然支持跨 client 共享 |
 | **PR#3739** ✓ | Background agent resume + transcript-first fork resume | daemon 重启 / failover 后 session 可恢复（ SSE 重连协议的隐藏基础设施）|
-| **PR#3723** ✓ | 共享 L3→L4 permission flow | Interactive / Non-Interactive / ACP 三模式权限决策合一，daemon 是第 4 种（[§06](./06-permission-auth.md)）|
+| **PR#3723** ✓ | 共享 L3→L4 permission flow | Interactive / Non-Interactive / ACP 三模式权限决策合一，daemon 是第 4 种（[§05](./05-permission-auth.md)）|
 | **PR#3642** ✓ | `/tasks` + managed background shell pool | 跨 session 任务调度框架（[§subagent-display](../subagent-display-deep-dive.md)）|
 | **PR#3810** ✓ | FileReadCache invalidation 5 路径修复 | 长 session 正确性保障 |
 
@@ -161,10 +160,10 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 
 | 阶段 | 文档 | 主题 |
 |---|---|---|
-| 第一轮 | §01-§08 | 基础架构 + 协议 + 路线图 + OpenCode 对比 |
-| 第二轮 | §09 | 协议兼容性补强（SDK/ACP 单进程 vs Daemon）|
-| 第三轮 | §10-§11 | 多租户 + 沙箱 + 越权防御 + TUI 兼容性 |
-| 第四轮 | §12-External SaaS HA | 实体模型 + 持久层 + HA |
-| 第五轮 | §13-§14 | 远端 CLI + 多端协调（client capability 协议）|
+| 第一轮 | §01-§07 | 基础架构 + 协议 + 路线图 + OpenCode 对比 |
+| 第二轮 | §08 | 协议兼容性补强（SDK/ACP 单进程 vs Daemon）|
+| 第三轮 | §09-§10 | 多租户 + 沙箱 + 越权防御 + TUI 兼容性 |
+| 第四轮 | §11-External SaaS HA | 实体模型 + 持久层 + HA |
+| 第五轮 | §12-§13 | 远端 CLI + 多端协调（client capability 协议）|
 
 > **免责声明**：本系列是 codeagents 项目的设计提案，不代表 Qwen Code 团队官方路线图。所有"工作量估算"是基于源码可见复用度的推测，实际开发可能因团队优先级、API 稳定性要求等变化。

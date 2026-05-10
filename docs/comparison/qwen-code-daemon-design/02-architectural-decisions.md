@@ -1,6 +1,6 @@
-# 03 — 7 个架构决策
+# 02 — 7 个架构决策
 
-> [← 上一篇：现有资产盘点](./02-existing-assets.md) · [下一篇：HTTP API 设计 →](./04-http-api.md)
+> [← 上一篇：架构总览](./01-overview.md) · [下一篇：HTTP API 设计 →](./03-http-api.md)
 
 > [SDK / ACP / Daemon 架构 Deep-Dive §七.3](../sdk-acp-daemon-architecture-deep-dive.md#73-真正的难点架构决策) 列出"真正的难点是几个架构决策——而不是代码量"。本文为每个决策点给出明确选择 + 理由。
 
@@ -44,7 +44,7 @@ scope 概念**移到 orchestrator 层**（不是 daemon 内部）：
 | Client A 等待 permission（SSE permission_request）| **任何 client（A 或 B）都能 POST /permission/:requestId 应答** |
 | Client A 关闭浏览器 / SDK 退出 | daemon instance 不影响（进程仍存活）；其他 client 继续观察 |
 | Client B 通过 LoadSession 加载历史 | 从该 daemon 的本地 transcript JSONL 重建 |
-| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（[§17](./17-orchestrator-multi-tenancy.md)）|
+| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（[§16](./16-orchestrator-multi-tenancy.md)）|
 
 这是 **"live collaboration" 模型** —— 与 Google Docs 多人编辑一个文档同构。协作发生在 daemon 进程内，没有跨 session 路由开销。
 
@@ -183,7 +183,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 | 实现复杂度 | **低**（每 daemon 自给自足）| 高（cross-session 状态管理）|
 | 适用规模 | **个人 / 小团队 / 中等 SaaS** | 大规模 SaaS（共享更经济）|
 
-适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§16 设计对比](./16-single-vs-multi-session-design.md)）。
+适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§15 设计对比](./15-single-vs-multi-session-design.md)）。
 
 ### 必要的工程约束
 
@@ -202,7 +202,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 - crash recovery：orchestrator 检测 daemon 崩溃 → 重新 spawn → 新 daemon 用 PR#3739 transcript-first fork resume 重建
 - 多 client 仍 attach 到同 daemon（multi-client per daemon）
 
-进程模型详解见 [05-进程模型](./05-process-model.md)。
+进程模型详解见 [05-进程模型](./04-process-model.md)。
 
 ---
 
@@ -441,7 +441,7 @@ async function executeTool(tool: Tool, ctx: Context) {
 }
 ```
 
-详见 [07-权限/认证](./06-permission-auth.md)。
+详见 [07-权限/认证](./05-permission-auth.md)。
 
 ---
 
@@ -620,12 +620,12 @@ class PermissionRequestHandler {
 |---|---|---|
 | **入口命令** | `qwen --serve [--port N]`（CLI flag） | `qwen serve [--port N]`（独立 subcommand） |
 | **HTTP server 启动时机** | TUI 初始化后 + Core 初始化后 + listen on port | 启动即 listen on port |
-| **TUI in-process bus** | 复用 §11 BackgroundTaskViewContext / SessionContext shape，订阅 EventBus 而非 SSE | 无 |
+| **TUI in-process bus** | 复用 §10 BackgroundTaskViewContext / SessionContext shape，订阅 EventBus 而非 SSE | 无 |
 | **Token / 认证** | 默认 `auth: none`（loopback only）+ 显式 `--token` 启用 | 默认 `auth: bearer`（生成 token + 写 `~/.qwen/serve/token`）|
 | **CORS / Origin lock** | 默认 loopback only（`127.0.0.1`）| 配置驱动 |
 | **进程退出** | TUI Ctrl+C → graceful drain HTTP → close port → exit | SIGTERM → graceful drain → close port → exit |
 | **重启 / 持久** | 不适用（用户在终端）| systemd / pm2 / Docker auto-restart |
-| **mDNS 广播**（§13） | 可选 `--discoverable` flag | 可选配置 `discovery.mdns: true` |
+| **mDNS 广播**（§12） | 可选 `--discoverable` flag | 可选配置 `discovery.mdns: true` |
 
 ### Mode A 的 TUI ↔ Core 通讯
 
@@ -698,4 +698,4 @@ PR#3889 已经实现 Mode B 的 ~95%。Mode A 的工作量增量：
 
 ---
 
-下一篇：[04-HTTP API 设计 →](./04-http-api.md)
+下一篇：[04-HTTP API 设计 →](./03-http-api.md)

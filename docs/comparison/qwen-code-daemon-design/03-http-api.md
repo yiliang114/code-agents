@@ -1,14 +1,14 @@
-# 04 — HTTP API 设计
+# 03 — HTTP API 设计
 
-> **🚀 Stage 1 实现状态**（2026-05-07）：本章 9 路由全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` scaffold + `ca996ecb5` prompt/cancel + `41aa95094` SSE EventBus + `6ee655f0a` permission + `a8ce5e08d` workspace/model）。详见 [§07 Stage 1 实现 audit](./07-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
+> **🚀 Stage 1 实现状态**（2026-05-07）：本章 9 路由全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` scaffold + `ca996ecb5` prompt/cancel + `41aa95094` SSE EventBus + `6ee655f0a` permission + `a8ce5e08d` workspace/model）。详见 [§06 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
-> **API 模型要点**（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
+> **API 模型要点**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
 >
 > - **`POST /session`**：daemon instance 启动时绑定唯一 session，幂等（已绑定时返回现有，第二次创建返回 409）
 > - **多 session 操作在 orchestrator 层**：`POST /coordinator/sessions/{id}/route` 等聚合 API 由 orchestrator 提供；详见本章 §八
-> - **Mode A vs Mode B**（[§03 §7](./03-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）：两种部署模式的 HTTP API **完全一致**（Mode A 多挂个 in-process TUI subscriber 不影响 wire）
+> - **Mode A vs Mode B**（[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）：两种部署模式的 HTTP API **完全一致**（Mode A 多挂个 in-process TUI subscriber 不影响 wire）
 
-> [← 上一篇：6 个架构决策](./03-architectural-decisions.md) · [下一篇：进程模型 →](./05-process-model.md)
+> [← 上一篇：6 个架构决策](./02-architectural-decisions.md) · [下一篇：进程模型 →](./04-process-model.md)
 
 > daemon HTTP 路由的核心创新：**复用 ACP NDJSON 的 zod schema** —— body 结构与 `PromptRequest` / `NewSessionRequest` 等 ACP 类型 1:1 对应。
 
@@ -440,7 +440,7 @@ GET / HTTP/1.1
 
 ## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> 1 Daemon Instance = 1 Session 模型下（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) + [§16 设计对比](./16-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
+> 1 Daemon Instance = 1 Session 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§15 设计对比](./15-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 
 ### 8.1 Daemon 层路由（主线）
 
@@ -462,7 +462,7 @@ PR#3889 已实现的全部路由保留 9 路由 wire 格式 / body schema 不变
 
 ### 8.2 Orchestrator 层 API（External Reference Architecture）
 
-> 以下 API **不在 qwen-code 主线路线图**中（[§07](./07-roadmap.md#external-reference-architecture参考实现非项目路线图)）——是给外部集成方（商业平台 / k8s operator）的设计参考蓝图。多 session 场景下 client 需要"先找到哪个 daemon、再连过去"，由 orchestrator 实现。
+> 以下 API **不在 qwen-code 主线路线图**中（[§06](./06-roadmap.md#external-reference-architecture参考实现非项目路线图)）——是给外部集成方（商业平台 / k8s operator）的设计参考蓝图。多 session 场景下 client 需要"先找到哪个 daemon、再连过去"，由 orchestrator 实现。
 
 | 路由 | 用途 | 优先级（外部实施） |
 |---|---|---|
@@ -609,4 +609,4 @@ const session = await client.createSession({ workspaceUri, scope: 'single' })
 
 ---
 
-下一篇：[05-进程模型 →](./05-process-model.md)
+下一篇：[05-进程模型 →](./04-process-model.md)

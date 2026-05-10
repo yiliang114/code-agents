@@ -1,10 +1,10 @@
-# 12 — 实体模型与层级关系
+# 11 — 实体模型与层级关系
 
-> [← 上一篇：TUI 兼容性](./11-tui-compatibility.md) · [下一篇：远端 CLI 模式 →](./13-remote-cli-mode.md)
+> [← 上一篇：TUI 兼容性](./10-tui-compatibility.md) · [下一篇：远端 CLI 模式 →](./12-remote-cli-mode.md)
 
 > 把前面 13 章散落在各处的实体（Tenant / Workspace / Session / Task / Tool / Client）汇总到一张层级图，定义它们的关系、资源所有权、生命周期、跨边界约束。
 
-> **核心实体层级**（[§03 §2](./03-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"模型下）：
+> **核心实体层级**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"模型下）：
 >
 > ```
 > Tenant → Workspace → Daemon Instance（≡ Session）→ Background Task → Tool Execution
@@ -80,13 +80,13 @@ Provider/Skill/Model registry — daemon 全局只读单例
 | Workspace allowlist | glob 模式（如 `ws-alice-*`）|
 | Quota | LLM tokens / tool calls / concurrent sessions |
 | Audit log | 本 tenant 所有操作记录（SQLite per-tenant `tenant_id` WHERE）|
-| Sandbox tier | none / os-user / namespace / container（[§10](./10-multi-tenancy-and-sandbox.md)）|
-| Default settings | tenants/&lt;id&gt;.json（§17 配置 cascade）|
+| Sandbox tier | none / os-user / namespace / container（[§09](./09-multi-tenancy-and-sandbox.md)）|
+| Default settings | tenants/&lt;id&gt;.json（§16 配置 cascade）|
 | Provider config | API keys / OAuth tokens（per-tenant）|
 
 **关系**：
 - 1 tenant 拥有 N token（每 token 一对一属于本 tenant）
-- 1 tenant 拥有 N workspace（[§17 §三 WorkspaceAccess](./17-orchestrator-multi-tenancy.md) 不跨 tenant 共享 workspace）
+- 1 tenant 拥有 N workspace（[§16 §三 WorkspaceAccess](./16-orchestrator-multi-tenancy.md) 不跨 tenant 共享 workspace）
 
 **External Phase 1 加入此层** —— Stage 1-3 单租户模式下相当于"虚拟单 tenant"。
 
@@ -98,20 +98,20 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 | 资源 | 决策依据 |
 |---|---|
-| LSP server (1 个) | per-daemon（绑定此 workspace · §03 §3）|
+| LSP server (1 个) | per-daemon（绑定此 workspace · §02 §3）|
 | MCP servers (N 个) | per-daemon（决策 §3）|
-| Auth credentials | per-daemon 隔离（§03 §6.1）—— 不同 daemon 可用不同 GitHub token |
-| `.qwen/settings.json` | workspace 层 config（§17 §配置 cascade 第 2 层）|
+| Auth credentials | per-daemon 隔离（§02 §6.1）—— 不同 daemon 可用不同 GitHub token |
+| `.qwen/settings.json` | workspace 层 config（§16 §配置 cascade 第 2 层）|
 | `permission_decisions` workspace scope | `alwaysAllow: 'Bash(npm test)'` 类决策 |
-| WorkspaceID | unguessable random（§06.1.A4）|
-| Directory 物理路径 | absolute path，安全校验通过 realpath（§06.2）|
+| WorkspaceID | unguessable random（§05.1.A4）|
+| Directory 物理路径 | absolute path，安全校验通过 realpath（§05.2）|
 
 **关系**：
-- 1 tenant 拥有 N workspace（Tenant 在 [§17](./17-orchestrator-multi-tenancy.md) External orchestrator 层）
+- 1 tenant 拥有 N workspace（Tenant 在 [§16](./16-orchestrator-multi-tenancy.md) External orchestrator 层）
 - **跨 tenant 不共享 workspace**——同一物理 directory 在不同 tenant 下是不同 workspace 实例（独立 LSP / MCP / settings）
 - **1 daemon = 1 workspace = 1 session**（决策 §2）；多 session 通过 orchestrator spawn 多 daemon 实现，每 daemon 自己的 workspace 绑定
 
-**生命周期**：Lazy 创建（第一次访问 directory 时）+ 显式 `dispose()` 销毁。详见 [§02](./02-existing-assets.md) `Instance.provide` 模式。
+**生命周期**：Lazy 创建（第一次访问 directory 时）+ 显式 `dispose()` 销毁。详见  `Instance.provide` 模式。
 
 ### Layer 3: Session（会话）
 
@@ -121,7 +121,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 | 资源 | 引用 |
 |---|---|
-| Session ID | ≥256 bit unguessable random（§06.1.A4）|
+| Session ID | ≥256 bit unguessable random（§05.1.A4）|
 | Transcript | JSONL 持久化（PR#3739 transcript-first fork resume）|
 | FileReadCache | per-daemon（决策 §4 · 在 1 daemon = 1 session 下天然 session 私有）|
 | 当前 model / mode / config | 通过 ACP `setSessionModel` / `setSessionMode` 设置 |
@@ -132,7 +132,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 **关系**：
 - 1 workspace 通常 1 session（'single' scope 默认）；可通过 `LoadSession` / fork 增加
-- 1 session 被 N client 订阅（§03 fan-out）
+- 1 session 被 N client 订阅（§02 fan-out）
 - 1 session 同时只能有 1 active prompt（FIFO 队列其余请求挂起）
 
 **生命周期**：
@@ -167,9 +167,9 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 **持有的资源**：
 - Tool 名称 + 参数（验证通过 ACP zod schema）
-- 执行上下文：daemon 进程本身就是 session ctx（决策 §2，无需 ALS Instance ctx；如未来扩展到 multi-session 才需，详见 §05 §三）
+- 执行上下文：daemon 进程本身就是 session ctx（决策 §2，无需 ALS Instance ctx；如未来扩展到 multi-session 才需，详见 §04 §三）
 - Permission flow 决策（PR#3723 复用，daemon 是第 4-5 mode）
-- Sandbox handle（如果是 shell 类工具，[§10 §二 ShellSandbox interface](./10-multi-tenancy-and-sandbox.md#二shellsandbox-抽象接口)）
+- Sandbox handle（如果是 shell 类工具，[§09 §二 ShellSandbox interface](./09-multi-tenancy-and-sandbox.md#二shellsandbox-抽象接口)）
 
 **关系**：
 - 1 session 顺序执行 N 个 tool call（不并发）
@@ -186,7 +186,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 |---|---|---|
 | Token ↔ Tenant | N:1 | 一 token 仅属一 tenant（认证凭证，不是 hierarchy）|
 | Tenant ↔ Workspace | 1:N | tenant 拥有多 workspace |
-| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | [§17 §三 WorkspaceAccess](./17-orchestrator-multi-tenancy.md) + 同 directory 在不同 tenant 下是不同 workspace 实例 |
+| **Tenant ↔ Workspace 跨 tenant 共享** | ❌ **不允许** | [§16 §三 WorkspaceAccess](./16-orchestrator-multi-tenancy.md) + 同 directory 在不同 tenant 下是不同 workspace 实例 |
 | **Daemon Instance ↔ Workspace** | 1:1 | 决策 §2：每 daemon 启动时绑定唯一 workspace |
 | **Daemon Instance ↔ Session** | 1:1 | 决策 §2：每 daemon 承载唯一 session（≡ Daemon Instance）|
 | Workspace ↔ Session | 1:N（through orchestrator）| 同 workspace 多 session = orchestrator spawn 多 daemon，每 daemon 自己 1 session |
@@ -201,22 +201,22 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 | 资源 | 所有者层级 | 引用 / PR |
 |---|---|---|
-| Token | Tenant（External orchestrator）| §06 |
-| Quota tracker | **Tenant**（在 orchestrator）| [§17](./17-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
-| Audit log | **Tenant**（在 orchestrator）| [§17](./17-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
-| Sandbox factory | **Daemon Instance** | [§10 §四](./10-multi-tenancy-and-sandbox.md#四sandbox-选择逻辑) |
-| LSP server | **Daemon Instance**（per-daemon · 在 1 daemon = 1 workspace 模型下等价 per-workspace）| §03 §3 |
-| MCP server | **Daemon Instance**（per-daemon · 决策 §3）| §03 §1 |
-| Auth credentials（API key 等）| **Daemon Instance**（绑定 workspace）| §03 §6.1 |
-| `.qwen/settings.json` | **Daemon Instance**（绑定 workspace）| [§12 §八 配置 Cascade](#八配置-cascade4-层--5-层-with-tenant) |
-| `permission_decisions` | **Daemon Instance**（per-daemon · 决策 §4）| §06 §4 / §06.3 |
-| Skill registry | **Daemon Instance** + path-conditional 激活 | §03 §5 |
-| Provider registry | **Daemon Instance** | §03 §6 |
-| Session transcript | **Daemon Instance**（JSONL · per-daemon 一份）| §05 |
-| FileReadCache | **Daemon Instance**（per-daemon · 决策 §4）| §03 §2 |
+| Token | Tenant（External orchestrator）| §05 |
+| Quota tracker | **Tenant**（在 orchestrator）| [§16](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
+| Audit log | **Tenant**（在 orchestrator）| [§16](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
+| Sandbox factory | **Daemon Instance** | [§09 §四](./09-multi-tenancy-and-sandbox.md#四sandbox-选择逻辑) |
+| LSP server | **Daemon Instance**（per-daemon · 在 1 daemon = 1 workspace 模型下等价 per-workspace）| §02 §3 |
+| MCP server | **Daemon Instance**（per-daemon · 决策 §3）| §02 §1 |
+| Auth credentials（API key 等）| **Daemon Instance**（绑定 workspace）| §02 §6.1 |
+| `.qwen/settings.json` | **Daemon Instance**（绑定 workspace）| [§11 §八 配置 Cascade](#八配置-cascade4-层--5-层-with-tenant) |
+| `permission_decisions` | **Daemon Instance**（per-daemon · 决策 §4）| §05 §4 / §05.3 |
+| Skill registry | **Daemon Instance** + path-conditional 激活 | §02 §5 |
+| Provider registry | **Daemon Instance** | §02 §6 |
+| Session transcript | **Daemon Instance**（JSONL · per-daemon 一份）| §04 |
+| FileReadCache | **Daemon Instance**（per-daemon · 决策 §4）| §02 §2 |
 | Subagent / Shell / Monitor / Dream task | **Daemon Instance** 内 task | §六.1-§六.6 (subagent-display) |
-| Tool call execution context | **Daemon Instance**（daemon 进程本身就是 session ctx，无需 ALS）| §05 |
-| Theme / TUI 设置 | **Client**（不上 daemon）| §11 §4.4 |
+| Tool call execution context | **Daemon Instance**（daemon 进程本身就是 session ctx，无需 ALS）| §04 |
+| Theme / TUI 设置 | **Client**（不上 daemon）| §10 §4.4 |
 
 ## 五、生命周期与创建/销毁
 
@@ -234,7 +234,7 @@ Provider/Skill/Model registry — daemon 全局只读单例
 
 ## 六、跨 Tenant 边界的硬约束
 
-**绝对不能跨 tenant 共享**（来自 §06 防御）：
+**绝对不能跨 tenant 共享**（来自 §05 防御）：
 
 - ✗ Auth credentials
 - ✗ API keys
@@ -257,12 +257,12 @@ Provider/Skill/Model registry — daemon 全局只读单例
 **daemon-global 只读单例**（不可变 + 跨 tenant 共享 OK）：
 
 - ✓ Provider registry（DashScope / Anthropic / OpenAI 等的能力描述）
-- ✓ Skill registry（path-conditional 激活，§03 §5）
+- ✓ Skill registry（path-conditional 激活，§02 §5）
 - ✓ Model registry（具体模型名/参数）
 
 ## 七、与决策 §1 sessionScope 的协调
 
-> 在 1 daemon = 1 workspace = 1 session 模型下，sessionScope 决策**移到 External orchestrator 层**（[§17](./17-orchestrator-multi-tenancy.md)），由 orchestrator 决定如何把 session 请求路由到 daemon 实例：
+> 在 1 daemon = 1 workspace = 1 session 模型下，sessionScope 决策**移到 External orchestrator 层**（[§16](./16-orchestrator-multi-tenancy.md)），由 orchestrator 决定如何把 session 请求路由到 daemon 实例：
 
 ```
 sessionScope: 'single' (默认)
@@ -284,7 +284,7 @@ sessionScope: 'user'
 
 ## 八、配置 Cascade（4 层 → 5 层 with Tenant）
 
-引入 Tenant 层后的完整 cascade（§17 配置文档详细展开）：
+引入 Tenant 层后的完整 cascade（§16 配置文档详细展开）：
 
 ```
 Daemon-global (/etc/qwen/daemon.json)
@@ -302,7 +302,7 @@ Session (runtime SetSessionConfigOptionRequest)
 
 ## 九、ER 图（数据库视角）
 
-简化 ER 图（详细 schema 见 [§17 持久化栈](./17-orchestrator-multi-tenancy.md)（持久层））：
+简化 ER 图（详细 schema 见 [§16 持久化栈](./16-orchestrator-multi-tenancy.md)（持久层））：
 
 ```
 ┌──────────────┐
@@ -365,7 +365,7 @@ Session (runtime SetSessionConfigOptionRequest)
 ```
 
 **注意**：
-- Transcript 不入 RDBMS（存 JSONL 文件，§17 详细说明）—— RDBMS 只存 path 引用
+- Transcript 不入 RDBMS（存 JSONL 文件，§16 详细说明）—— RDBMS 只存 path 引用
 - FileReadCache 完全在内存（per-daemon · daemon 退出释放）
 - daemon 进程本身就是 session ctx（决策 §2 · 无需 AsyncLocalStorage Instance）
 - LSP server / MCP server 子进程完全在内存（不持久化）
@@ -374,19 +374,19 @@ Session (runtime SetSessionConfigOptionRequest)
 
 | 章节 | 决策 | 对应实体层 |
 |---|---|---|
-| §03 §1 | 默认共享同一 daemon instance；scope 由 orchestrator 路由 | Daemon Instance ≡ Session |
-| §03 §2 | **1 Daemon Instance = 1 Session** | 每 daemon 一个 V8 isolate；多 daemon 由 orchestrator 管 |
-| §03 §3 | MCP per-daemon | MCP 资源所有权 = Daemon Instance |
-| §03 §4 | FileReadCache per-daemon | FileReadCache 资源所有权 = Daemon Instance |
-| §03 §5 | Permission flow 第 4-5 mode | tool call 层 + tenant + workspace 双键决策 |
-| §03 §6 | 同 daemon 串行 + fan-out 多 client | Daemon.taskQueue + subscribers Set |
-| §03 §7 | Mode A / Mode B 双部署模式 | Daemon Instance 形态：含 TUI / 不含 |
-| §05 | 不需要 ALS Instance ctx（daemon 进程本身就是 session ctx）| tool call 执行上下文 = daemon-global |
-| §10 §二 | ShellSandbox interface | Tool call 层调用 |
-| §10 §五 | 远程 sandbox（daemon 与 shell 不同机）| External Phase 3+ |
-| §17 | Tenant 抽象 + AuthN/AuthZ + Quota + Audit | Orchestrator 层 |
-| §06 | 17 个攻击向量 + 5 层防御 | 跨 tenant 硬约束 + 同 session 隔离 |
-| §11 | TUI 多 client 共 session | Layer 3 多订阅者 |
+| §02 §1 | 默认共享同一 daemon instance；scope 由 orchestrator 路由 | Daemon Instance ≡ Session |
+| §02 §2 | **1 Daemon Instance = 1 Session** | 每 daemon 一个 V8 isolate；多 daemon 由 orchestrator 管 |
+| §02 §3 | MCP per-daemon | MCP 资源所有权 = Daemon Instance |
+| §02 §4 | FileReadCache per-daemon | FileReadCache 资源所有权 = Daemon Instance |
+| §02 §5 | Permission flow 第 4-5 mode | tool call 层 + tenant + workspace 双键决策 |
+| §02 §6 | 同 daemon 串行 + fan-out 多 client | Daemon.taskQueue + subscribers Set |
+| §02 §7 | Mode A / Mode B 双部署模式 | Daemon Instance 形态：含 TUI / 不含 |
+| §04 | 不需要 ALS Instance ctx（daemon 进程本身就是 session ctx）| tool call 执行上下文 = daemon-global |
+| §09 §二 | ShellSandbox interface | Tool call 层调用 |
+| §09 §五 | 远程 sandbox（daemon 与 shell 不同机）| External Phase 3+ |
+| §16 | Tenant 抽象 + AuthN/AuthZ + Quota + Audit | Orchestrator 层 |
+| §05 | 17 个攻击向量 + 5 层防御 | 跨 tenant 硬约束 + 同 session 隔离 |
+| §10 | TUI 多 client 共 session | Layer 3 多订阅者 |
 
 ## 十一、典型场景的实体路径
 
@@ -413,7 +413,7 @@ Tenant alice
       └─ Web UI Client                 ┘
 ```
 
-### 11.3 多租户 SaaS（External Reference / [§17](./17-orchestrator-multi-tenancy.md)）
+### 11.3 多租户 SaaS（External Reference / [§16](./16-orchestrator-multi-tenancy.md)）
 
 ```
 Tenant alice                       Tenant bob
@@ -447,4 +447,4 @@ Token "alice-laptop" via SDK     ──┘     (transcript-first fork resume PR#
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：远端 CLI 模式 →](./13-remote-cli-mode.md)
+[← 返回 README](./README.md) · [下一篇：远端 CLI 模式 →](./12-remote-cli-mode.md)
