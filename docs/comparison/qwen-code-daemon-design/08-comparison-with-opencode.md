@@ -2,7 +2,7 @@
 
 > [← 上一篇：3 阶段路线图](./07-roadmap.md) · [下一篇：协议兼容性 →](./09-protocol-compatibility.md)
 
-> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§17 单 vs 多 Session 设计深度对比](./17-single-vs-multi-session-design.md)。
+> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似，但在**进程模型层面分歧**：OpenCode 走 single-process multi-session，Qwen 走 multi-process single-session（[§03 §2](./03-architectural-decisions.md#2-状态进程模型)）。代价权衡：Qwen 失去 OpenCode 的 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化。OpenCode 仍是 cross-session 资源共享场景的更优解；Qwen 模型更适合 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 已选的 child-process-per-session 路径。详见 [§16 单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md)。
 
 ## 一、设计哲学对比
 
@@ -85,7 +85,7 @@
 | Schema 验证 | Effect Schema | **zod**（与现有 ACP 一致）|
 | 上下文传播 | Effect `Context.Service` | **`AsyncLocalStorage` 直接** |
 | 服务发现 | mDNS Bonjour（默认开启）| Stage 2 可选（默认关）|
-| 持久化 | SQLite via drizzle-orm | JSON+JSONL → External Phase 1 SQLite（[§18 持久化栈](./18-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
+| 持久化 | SQLite via drizzle-orm | JSON+JSONL → External Phase 1 SQLite（[§17 持久化栈](./17-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
 | 鉴权 | `OPENCODE_SERVER_PASSWORD` env | bearer token + PR#3723 |
 
 ## 四、API 命名对比

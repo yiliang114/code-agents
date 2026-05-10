@@ -192,7 +192,7 @@ daemon 校验 + 加入 subscribers + 返回 SSE 流的 endpoint。
 
 ### 4.3 Kind 不可伪造
 
-每个 kind 的 token scope 限制（[§18 AuthZ](./18-orchestrator-multi-tenancy.md#二orchestrator-4-件事)）：
+每个 kind 的 token scope 限制（[§17 AuthZ](./17-orchestrator-multi-tenancy.md#二orchestrator-4-件事)）：
 - `webui` token 不能声明 `cli` kind（防止绕过 cli 上限）
 - `im_bot` token 不能声明 `cli` kind（防止 IM bot 当成 CLI 抢 active typer）
 - daemon 端校验 `token.allowedKinds.includes(declared_kind)`
@@ -441,7 +441,7 @@ data: {
 
 ### 7.4 审计
 
-每次 takeover 写入 [§18 audit log](./18-orchestrator-multi-tenancy.md#二orchestrator-4-件事)：
+每次 takeover 写入 [§17 audit log](./17-orchestrator-multi-tenancy.md#二orchestrator-4-件事)：
 
 ```sql
 INSERT INTO audit_log (tenant_id, timestamp, method, path, details)
@@ -812,4 +812,4 @@ T=120  之前正在编辑的 prompt 内容 lost? → 不一定
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：长跑稳定性 →](./15-stability-and-longevity.md)
+[← 返回 README](./README.md) · [下一篇：与 Anthropic Managed Agents 对比 →](./15-vs-anthropic-managed-agents.md)

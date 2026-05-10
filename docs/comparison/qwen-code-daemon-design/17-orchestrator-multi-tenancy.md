@@ -1,6 +1,6 @@
-# 18 — Orchestrator 多租户与配额（External Reference Architecture）
+# 17 — Orchestrator 多租户与配额（External Reference Architecture）
 
-> [← 上一篇：单 vs 多 Session 设计深度对比](./17-single-vs-multi-session-design.md) · [回到 README](./README.md)
+> [← 上一篇：单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md) · [回到 README](./README.md)
 
 > **不在 qwen-code 主线 scope**——本章是给 qwen-code 开发者的"大致方向"指引：当外部商业平台 / k8s operator / 云厂商基于 qwen-code daemon building block 搭 SaaS 时，**orchestrator 层**应该长什么样。
 >
@@ -97,4 +97,4 @@ orchestrator 需要 RDBMS 是因为它有 daemon 主线没有的痛点：
 
 ---
 
-[← 上一篇：单 vs 多 Session 设计深度对比](./17-single-vs-multi-session-design.md) · [回到 README](./README.md)
+[← 上一篇：单 vs 多 Session 设计深度对比](./16-single-vs-multi-session-design.md) · [回到 README](./README.md)

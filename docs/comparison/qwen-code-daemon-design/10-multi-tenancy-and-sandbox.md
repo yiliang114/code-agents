@@ -4,7 +4,7 @@
 
 > Shell 工具是 daemon 最危险的攻击面——`spawn(cmd, { cwd })` 默认跑 daemon 进程权限，多租户 / 半信任场景必须加 sandbox。本章设计 `ShellSandbox` 抽象接口 + 5 种实现方案 + 远程 sandbox（daemon 与 shell 不在同机）的完整方案。
 
-> **本章只关注 daemon 内的 sandbox 设计**。多租户 ACL / 配额 / 审计 / OIDC 等 orchestrator 层事项见 [§18 Orchestrator 多租户与配额](./18-orchestrator-multi-tenancy.md)。
+> **本章只关注 daemon 内的 sandbox 设计**。多租户 ACL / 配额 / 审计 / OIDC 等 orchestrator 层事项见 [§17 Orchestrator 多租户与配额](./17-orchestrator-multi-tenancy.md)。
 
 ## 一、TL;DR
 
@@ -500,7 +500,7 @@ token-bucket throttling、`MonitorRegistry` 等机制不变。
 **Shell 是 daemon 最危险的攻击面**——即使单 daemon = 单用户，shell 命令是 LLM 行为不可信，必须 sandbox。  
 **`ShellSandbox` interface 在 External Phase 1 上线**（4 种本地实现按 `none → os-user → namespace → container` 隔离强度递增；Monitor tool 走相同接口）。  
 **远程 sandbox 是 SaaS 关键架构**（External Phase 3）——把 shell 调度到独立 worker pool（弹性 + 合规 + 跨地理 + GPU 节点）；支持 SSH / gRPC / k8s Job / containerd over TCP 4 种实现，推荐 gRPC + Container 双隔离。  
-**多租户 ACL / 配额 / OIDC** 在 orchestrator 层（[§18](./18-orchestrator-multi-tenancy.md)），不在本章范围。
+**多租户 ACL / 配额 / OIDC** 在 orchestrator 层（[§17](./17-orchestrator-multi-tenancy.md)），不在本章范围。
 
 ---
 

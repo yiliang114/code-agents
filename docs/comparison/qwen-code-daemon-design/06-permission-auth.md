@@ -184,7 +184,7 @@ function handleAskInDaemonHttp(
 | B：仅 primary client 能审批 | 需要"主控端 + 观察端"角色概念 → 增加 client 类型 ✗ 用户额外管理负担 |
 | C：majority vote | 多人协作场景才有意义；单用户多 client 反而不便 |
 
-主线选 A；B（primary client）作为外部多用户企业部署的可选 UX 增强（[§18](./18-orchestrator-multi-tenancy.md) External Reference）。
+主线选 A；B（primary client）作为外部多用户企业部署的可选 UX 增强（[§17](./17-orchestrator-multi-tenancy.md) External Reference）。
 
 ### 3.3 审批响应 schema
 

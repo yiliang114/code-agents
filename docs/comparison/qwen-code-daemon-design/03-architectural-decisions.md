@@ -44,7 +44,7 @@ scope 概念**移到 orchestrator 层**（不是 daemon 内部）：
 | Client A 等待 permission（SSE permission_request）| **任何 client（A 或 B）都能 POST /permission/:requestId 应答** |
 | Client A 关闭浏览器 / SDK 退出 | daemon instance 不影响（进程仍存活）；其他 client 继续观察 |
 | Client B 通过 LoadSession 加载历史 | 从该 daemon 的本地 transcript JSONL 重建 |
-| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（详见 §15）|
+| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（[§17](./17-orchestrator-multi-tenancy.md)）|
 
 这是 **"live collaboration" 模型** —— 与 Google Docs 多人编辑一个文档同构。协作发生在 daemon 进程内，没有跨 session 路由开销。
 
@@ -183,7 +183,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 | 实现复杂度 | **低**（每 daemon 自给自足）| 高（cross-session 状态管理）|
 | 适用规模 | **个人 / 小团队 / 中等 SaaS** | 大规模 SaaS（共享更经济）|
 
-适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§17 设计对比](./17-single-vs-multi-session-design.md)）。
+适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§16 设计对比](./16-single-vs-multi-session-design.md)）。
 
 ### 必要的工程约束
 
