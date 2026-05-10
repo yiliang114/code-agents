@@ -20,7 +20,7 @@
 | 反向 RPC | **Client Capability Request 协议**：daemon 通过 SSE event 反向调用 CLI（editor / clipboard / browser / notification / file_picker）|
 | NAT 穿透 | Cloudflare Tunnel / Tailscale / SSH reverse tunnel |
 | 性能优化 | TUI 端 local echo 抹平 keystroke RTT；LLM streaming 50ms RTT 几乎无感 |
-| 重连 | SSE Last-Event-ID（ 协议）|
+| 重连 | SSE Last-Event-ID（[§03 §三 重连协议](./03-http-api.md#sse-last-event-id-重连协议)）|
 | 离线降级 | `--daemon-or-local` flag：daemon 不可达自动 fallback 到本地子进程模式 |
 
 ## 二、3 类拓扑详细对比
@@ -162,7 +162,7 @@ data: {
 CLI 端 POST 回 daemon：
 
 ```http
-POST /v1/session/<sid>/capability/cap-12345/response HTTP/1.1
+POST /session/<sid>/capability/cap-12345/response HTTP/1.1
 Authorization: Bearer ...
 Content-Type: application/json
 
@@ -181,7 +181,7 @@ Content-Type: application/json
 CLI 启动时声明能力：
 
 ```http
-POST /v1/session HTTP/1.1
+POST /session HTTP/1.1
 Authorization: Bearer ...
 Content-Type: application/json
 
@@ -474,10 +474,10 @@ async function handleFilePicker(params: FilePickerParams) {
    ↓
 5. HTTP/2 stream
    ├─ Authorization: Bearer <token>
-   └─ Initial: GET /v1/session/sess-abc/events
+   └─ Initial: GET /session/sess-abc/events
    ↓
 6. daemon 验证：
-   ├─ Token HMAC 比对（[§05](./05-permission-auth.md)）
+   ├─ Token SHA-256 hash + timingSafeEqual 比对（[§05](./05-permission-auth.md)）
    ├─ Tenant lookup
    ├─ Workspace allowlist check
    └─ Session 存在性 + 所属 tenant 匹配
@@ -496,8 +496,9 @@ Token format: qwen_<env>_<tenant_id>_<random_64bytes_base32>
   qwen_prod_t-alice_b7m2k9....    # 生产 tenant alice
   qwen_dev_t-bob_h3p8j2....       # 开发 tenant bob
 
-Storage: bcrypt(token_secret, cost=12)
-         daemon 仅存 hash，明文 token 仅返回一次
+Storage: SHA-256(token_secret)
+         daemon 仅存 hash，比对走 crypto.timingSafeEqual（防 side-channel）
+         明文 token 仅返回一次（PR#3889 commit `ad0e6ec06` 已实现）
 ```
 
 ### 5.3 mTLS（可选，企业级）
@@ -528,7 +529,7 @@ Storage: bcrypt(token_secret, cost=12)
 
 ### 5.4 Sticky Cookie HMAC
 
- 已述：
+跨多 pod 部署（External SaaS HA）需要 sticky session cookie 防止 cookie 篡改路由到任意 pod：
 
 ```
 qwen-aff cookie = base64( HMAC-SHA256(sessionId, server-secret) )
@@ -706,7 +707,7 @@ $ qwen --daemon https://daemon.qwen.example.com \
 ```ts
 async function tryDaemon(url: string, token: string) {
   try {
-    const resp = await fetch(`${url}/v1/health`, {
+    const resp = await fetch(`${url}/health`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(3000)
     })
@@ -736,8 +737,8 @@ CLI 可缓存少量数据本地：
 ```
 ~/.qwen/cache/
 ├─ session_history/<sid>.jsonl     # 最近 7 个 session 的 transcript snapshot
-├─ tools_manifest.json              # daemon /v1/tools 缓存
-└─ skills_index.json                # /v1/skills 缓存
+├─ tools_manifest.json              # daemon `/workspace/:id/mcp` + tools 缓存
+└─ skills_index.json                # `/workspace/:id/skills` 缓存
 ```
 
 允许离线浏览历史 session（read-only）。
@@ -822,6 +823,8 @@ CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork r
 - qwen capability 反向 RPC 抽象出 5 类，VSCode 直接是 IDE protocol（更厚）
 
 ## 十二、端到端 Setup 流程示例
+
+> **注**：以下 CLI 命令（`qwen daemon init` / `qwen tenant create` / `qwen profile add` / `qwen login`）是 External Reference Architecture 范畴的 speculative 设计示例，**不在 qwen-code 主线 Stage 1/1.5/2 范围**——展示 External 集成方可能如何包装 daemon building block。
 
 ### 12.1 个人开发者 + 家里 NAS daemon（Tailscale）
 
@@ -946,7 +949,7 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 | §05 越权防御 | Remote 加固：cookie HMAC + mTLS + IP allowlist |
 | External SaaS HA | Remote SSE 重连协议（Last-Event-ID）必需 |
 
-## 十六、Stage 1-6 各阶段 Remote 支持矩阵
+## 十六、各阶段 Remote 支持矩阵
 
 | Stage / Phase | Remote-Remote | Capability RPC | NAT 穿透 | 备注 |
 |---|---|---|---|---|

@@ -18,7 +18,7 @@
 |---|---|---|
 | Subscriber 数量 | 不限（max_subscribers=20 防滥用）| 限制可配 |
 | 同类型多个（CLI×N / WebUI×N）| ✓ 允许 | exclusive_per_type 模式拒绝 |
-| Liveness 协议 | 30s heartbeat / 90s 超时 / TCP RST 即时剔除 | 同 |
+| Liveness 协议 | **15s heartbeat**（PR#3889 实际）/ 90s 超时 / TCP RST 即时剔除 | 弱网可调 30/60s |
 | Active Typer 协调 | "X is typing..." 提示 + 5s 让出 | 同 |
 | Takeover | 显式 `--takeover` flag | 同 |
 | Exclusive 模式 | ✗ | tenant config 启用 |
@@ -45,7 +45,7 @@
 
 ### 2.3 拒绝的反模式
 
-- ❌ 全局 hard limit "1 CLI per session"（[§10 §一](./10-remote-cli-mode.md) 列出 7 个被破坏场景）
+- ❌ 全局 hard limit "1 CLI per session"——破坏决策 §1 'single' scope 多 client 共 session 的 collaboration 哲学（手机 + 电脑 + 团队成员同看 session 的核心场景）
 - ❌ 第一连接独占（违反 §1 'single' scope 哲学）
 - ❌ kick everyone on new connection（默认就是吵架）
 
@@ -110,7 +110,7 @@ unguessable 防猜测（ 同款）。
 任何 subscriber 都可以查看当前订阅列表（透明协作）：
 
 ```http
-GET /v1/session/<sid>/subscribers HTTP/1.1
+GET /session/<sid>/subscribers HTTP/1.1
 Authorization: Bearer ...
 
 Response:
@@ -165,7 +165,7 @@ Response:
 CLI 启动时 POST：
 
 ```http
-POST /v1/session/<sid>/subscribe HTTP/1.1
+POST /session/<sid>/subscribe HTTP/1.1
 Authorization: Bearer ...
 Content-Type: application/json
 
@@ -212,15 +212,15 @@ daemon 校验 + 加入 subscribers + 返回 SSE 流的 endpoint。
 
 | 间隔 | 用于 |
 |---|---|
-| **30s 标准** | 默认 client heartbeat 间隔 |
+| **15s 标准（PR#3889 实际）** | 默认 client heartbeat 间隔；EventBus 端推送 keepalive 帧 |
 | **10s 加密** | mTLS / 高敏感场景，更快检测 stale |
 | **60s 弱网** | 移动网络 / IM bot，省流量 |
 
 ```ts
-// CLI 端
+// CLI 端（间隔可配，默认 15s 与 PR#3889 一致）
 setInterval(async () => {
   try {
-    await fetch(`${daemonUrl}/v1/session/${sid}/heartbeat`, {
+    await fetch(`${daemonUrl}/session/${sid}/heartbeat`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -232,7 +232,7 @@ setInterval(async () => {
   } catch {
     // 网络不通，下次重试
   }
-}, 30_000)
+}, 15_000)
 ```
 
 ### 5.2 超时与剔除
@@ -396,7 +396,7 @@ UI 显示队列：
 ### 7.2 协议
 
 ```http
-POST /v1/session/<sid>/takeover HTTP/1.1
+POST /session/<sid>/takeover HTTP/1.1
 Authorization: Bearer ...
 Content-Type: application/json
 
@@ -441,17 +441,7 @@ data: {
 
 ### 7.4 审计
 
-每次 takeover 写入 [§14 audit log](./14-orchestrator-multi-tenancy.md#二orchestrator-4-件事)：
-
-```sql
-INSERT INTO audit_log (tenant_id, timestamp, method, path, details)
-VALUES ('t-alice', NOW(),
-  'POST', '/v1/session/sess-abc/takeover',
-  '{"kicked": [...], "by_user": "alice@example.com"}'
-)
-```
-
-企业 tenant 可订阅 audit webhook 实时告警 takeover 事件。
+主线 daemon 把 takeover 事件追加到本地 transcript JSONL（不写 RDBMS）；External orchestrator 接管后通过 audit channel（jsonl / syslog / OpenTelemetry / Kafka，详见 [§14 §二 Orchestrator 4 件事](./14-orchestrator-multi-tenancy.md#二orchestrator-4-件事)）汇聚到 audit_log 表 + 企业 tenant 可订阅 audit webhook 实时告警 takeover 事件。
 
 ## 八、Exclusive 模式（可选 / tenant config）
 
@@ -640,7 +630,7 @@ Active subscribers
 ### 11.3 IM bot 的特殊路由协议
 
 ```http
-POST /v1/session/<sid>/prompt HTTP/1.1
+POST /session/<sid>/prompt HTTP/1.1
 Authorization: Bearer ${IM_BOT_TOKEN}
 Content-Type: application/json
 
@@ -718,13 +708,13 @@ T=60   daemon 端：老 SSE 正在 timeout 中，新连接来了
 T=60+  events from Last-Event-ID 续接
 ```
 
-### 12.3 跨 daemon pod failover ()
+### 12.3 跨 daemon pod failover（External Phase 4 SaaS）
 
 ```
 T=0    daemon-1 crash
 T=10   sticky cookie 过期 → ingress 路由到 daemon-2
 T=15   client subscribe → daemon-2 loadSession
-T=15   daemon-2 重建 subscribers 列表（从 Postgres / Redis）
+T=15   daemon-2 重建 subscribers 列表（External Phase 4 SaaS 从 Redis 同步；主线无需）
 T=15+  其他 client 也重连 → 全部聚到 daemon-2
 T=20   coordination 状态全部恢复
 ```
@@ -795,7 +785,7 @@ T=120  之前正在编辑的 prompt 内容 lost? → 不一定
 | T14 | client_kind 伪造（webui 声明 cli）| token allowedKinds 校验拒绝 |
 | T15 | Subscribers list 隐私 | ip 字段不暴露 |
 
-## 十六、Stage 1-6 各阶段实施
+## 十六、各阶段实施
 
 | Stage / Phase | 本章实施 |
 |---|---|
