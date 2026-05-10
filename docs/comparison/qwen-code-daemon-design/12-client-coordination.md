@@ -1,6 +1,6 @@
-# 13 — 多端协调策略：subscriber 协议 / liveness / takeover
+# 12 — 多端协调策略：subscriber 协议 / liveness / takeover
 
-> [← 上一篇：远端 CLI 模式](./12-remote-cli-mode.md) · [回到 README](./README.md)
+> [← 上一篇：远端 CLI 模式](./11-remote-cli-mode.md) · [回到 README](./README.md)
 
 > **🚀 Stage 1 部分实现**（2026-05-07）：[PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) commit `41aa95094` 实现了本章 §五 liveness 协议子集——15s heartbeat（比设计 30s 更激进）+ bounded subscriber queues + `client_evicted` overflow（设计 §五.4 子连接超时差异化的简化版）+ AbortController on `req.close`（即时剔除断开 client）。多端协调的 active typer / takeover / kind 限额 / IM bot 一对多用户等高级特性 Stage 1 不含——Stage 2/3 才做。详见 [§06 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
@@ -45,7 +45,7 @@
 
 ### 2.3 拒绝的反模式
 
-- ❌ 全局 hard limit "1 CLI per session"（[§12 §一](./12-remote-cli-mode.md) 列出 7 个被破坏场景）
+- ❌ 全局 hard limit "1 CLI per session"（[§11 §一](./11-remote-cli-mode.md) 列出 7 个被破坏场景）
 - ❌ 第一连接独占（违反 §1 'single' scope 哲学）
 - ❌ kick everyone on new connection（默认就是吵架）
 
@@ -65,7 +65,7 @@ interface Subscriber {
   joinedAt: number                           // 加入时间戳
   lastHeartbeatAt: number                    // 最近 heartbeat
   lastEventSentAt: number                    // 最近 daemon 推 event
-  capabilities: ClientCapabilities           // 见 §12 §3.5
+  capabilities: ClientCapabilities           // 见 §11 §3.5
   state: 'active' | 'idle' | 'typing' | 'stale'
   ssePosition: string | null                 // last delivered event id
 }
@@ -192,7 +192,7 @@ daemon 校验 + 加入 subscribers + 返回 SSE 流的 endpoint。
 
 ### 4.3 Kind 不可伪造
 
-每个 kind 的 token scope 限制（[§16 AuthZ](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事)）：
+每个 kind 的 token scope 限制（[§15 AuthZ](./15-orchestrator-multi-tenancy.md#二orchestrator-4-件事)）：
 - `webui` token 不能声明 `cli` kind（防止绕过 cli 上限）
 - `im_bot` token 不能声明 `cli` kind（防止 IM bot 当成 CLI 抢 active typer）
 - daemon 端校验 `token.allowedKinds.includes(declared_kind)`
@@ -441,7 +441,7 @@ data: {
 
 ### 7.4 审计
 
-每次 takeover 写入 [§16 audit log](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事)：
+每次 takeover 写入 [§15 audit log](./15-orchestrator-multi-tenancy.md#二orchestrator-4-件事)：
 
 ```sql
 INSERT INTO audit_log (tenant_id, timestamp, method, path, details)
@@ -756,7 +756,7 @@ T=120  之前正在编辑的 prompt 内容 lost? → 不一定
 | §6 prompt FIFO + first responder | 本章 active typer 是 §6 的 UX 补充（不替代 FIFO）|
 | §10 多 TUI 共 session | TUI 内部要实现本章的 typing focus / subscriber 列表 UI |
 | External SaaS HA failover | activeTyper 状态需 in-memory，failover 后重协商 |
-| §12 远端 CLI 模式 + capability | 本章 subscriber 元信息是 capability 路由依据 |
+| §11 远端 CLI 模式 + capability | 本章 subscriber 元信息是 capability 路由依据 |
 
 ## 十四、与 OpenCode / Claude Code / VSCode Live Share 对比
 
@@ -812,4 +812,4 @@ T=120  之前正在编辑的 prompt 内容 lost? → 不一定
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：与 Anthropic Managed Agents 对比 →](./14-vs-anthropic-managed-agents.md)
+[← 返回 README](./README.md) · [下一篇：与 Anthropic Managed Agents 对比 →](./13-vs-anthropic-managed-agents.md)

@@ -1,6 +1,6 @@
-# 12 — 远端 CLI 模式与 Client Capability 协议
+# 11 — 远端 CLI 模式与 Client Capability 协议
 
-> [← 上一篇：实体模型与层级关系](./11-entity-model.md) · [回到 README](./README.md)
+> [← 上一篇：TUI 兼容性](./10-tui-compatibility.md) · [回到 README](./README.md)
 
 > **远端 client 接入流程**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) "1 daemon = 1 session"下）：
 >
@@ -786,7 +786,7 @@ CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork r
 
 [§10](./10-tui-compatibility.md) 讨论了 TUI 在单进程 vs daemon 下的兼容性，**Local-Local 拓扑（§10 主题）**已覆盖；**本章补充 Remote-Remote 拓扑**。
 
-| 维度 | §10 Local | §12 Remote |
+| 维度 | §10 Local | §11 Remote |
 |---|---|---|
 | Ink 组件 | 共用 | 共用 |
 | HttpAcpAdapter | 同 host fast path | 跨 host RPC + TLS |
@@ -795,7 +795,7 @@ CLI 重连时传 `Last-Event-ID`：daemon 通过 PR#3739 transcript-first fork r
 | Local echo | 不需要 | **必需** |
 | 离线降级 | 通常不需要（同机不会断）| **必需** |
 
-§10 + §12 合起来构成完整的 TUI 部署矩阵。
+§10 + §11 合起来构成完整的 TUI 部署矩阵。
 
 ## 十一、与 VSCode Remote-SSH 的对比借鉴
 
@@ -964,4 +964,4 @@ CLI 端必须验证收到的 SSE event `session_id` 与自己订阅的 sessionId
 
 ---
 
-[← 返回 README](./README.md) · [下一篇：多端协调策略 →](./13-client-coordination.md)
+[← 返回 README](./README.md) · [下一篇：多端协调策略 →](./12-client-coordination.md)

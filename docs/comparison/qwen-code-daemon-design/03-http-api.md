@@ -349,7 +349,7 @@ POST /session/sess-yesterday/load HTTP/1.1
 
 ### 4.4 跨 daemon 续行（多 session 场景）
 
-不同 daemon instance 之间互相不可见——跨 channel / 跨设备续行属于 **orchestrator 层**职责（`coordinator.sessionScope: 'single' / 'user' / 'thread'` 决定如何把 sessionId 路由到对应 daemon）。详见 [§02 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) + [§16 Orchestrator 多租户与配额](./16-orchestrator-multi-tenancy.md)。
+不同 daemon instance 之间互相不可见——跨 channel / 跨设备续行属于 **orchestrator 层**职责（`coordinator.sessionScope: 'single' / 'user' / 'thread'` 决定如何把 sessionId 路由到对应 daemon）。详见 [§02 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) + [§15 Orchestrator 多租户与配额](./15-orchestrator-multi-tenancy.md)。
 
 主要场景：
 - **同 user 跨设备**（手机 → 电脑）：orchestrator `scope: 'user'` 路由到同一 daemon instance（按 userId）
@@ -421,7 +421,7 @@ GET / HTTP/1.1
 
 ## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> 1 Daemon Instance = 1 Session 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§15 设计对比](./15-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
+> 1 Daemon Instance = 1 Session 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§14 设计对比](./14-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 
 ### 8.1 Daemon 层路由（主线）
 

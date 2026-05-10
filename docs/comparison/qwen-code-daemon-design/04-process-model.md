@@ -156,7 +156,7 @@ User 同时在 /work/repo-a 和 /work/repo-b 工作
        daemon-2: cwd=/work/repo-b, sess-B
 
 每 daemon 各自的 LSP / MCP / FileReadCache / process.cwd 完全独立。
-跨 daemon 不共享状态（详见 [§16 Orchestrator](./16-orchestrator-multi-tenancy.md)）。
+跨 daemon 不共享状态（详见 [§15 Orchestrator](./15-orchestrator-multi-tenancy.md)）。
 ```
 
 ## 八、不引入 Effect-TS / ALS Instance 路由层

@@ -2,7 +2,7 @@
 
 > [← 上一篇：权限 / 认证](./05-permission-auth.md) · [下一篇：与 OpenCode 详细对比 →](./07-comparison-with-opencode.md)
 
-> Qwen Code 项目本身只承诺 **"daemon building block"** —— 把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何外部 client / 编排器消费的服务。多 session orchestrator / 多租户 / SaaS 部署等"平台层"由外部实现（商业平台 / k8s operator / 云厂商定制），项目提供 [§15](./15-single-vs-multi-session-design.md) / [§16](./16-orchestrator-multi-tenancy.md) / [§03 §8.2](./03-http-api.md#82-新增-orchestrator-层-apistage-2) 作为参考架构蓝图。
+> Qwen Code 项目本身只承诺 **"daemon building block"** —— 把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何外部 client / 编排器消费的服务。多 session orchestrator / 多租户 / SaaS 部署等"平台层"由外部实现（商业平台 / k8s operator / 云厂商定制），项目提供 [§14](./14-single-vs-multi-session-design.md) / [§15](./15-orchestrator-multi-tenancy.md) / [§03 §8.2](./03-http-api.md#82-新增-orchestrator-层-apistage-2) 作为参考架构蓝图。
 
 ## 总览
 
@@ -15,10 +15,10 @@ qwen-code 主线（~3 周内 feature complete）：
 ────────── qwen-code daemon feature complete ──────────
 
 External Reference Architecture（外部 / 商业层，参考实现）：
-├─ Orchestrator (multi-daemon spawn / route / cleanup)        → §15 / §03 §8.2 设计参考
-├─ Multi-tenancy (Tenant / OIDC / Quota / Audit)              → §16 设计参考
+├─ Orchestrator (multi-daemon spawn / route / cleanup)        → §14 / §03 §8.2 设计参考
+├─ Multi-tenancy (Tenant / OIDC / Quota / Audit)              → §15 设计参考
 ├─ Shell sandbox (NoSandbox / OS user / Namespace / Container) → §09 设计参考
-└─ SaaS deployment (k8s / Postgres / Redis / S3)              → External SaaS HA / §16 §七 设计参考
+└─ SaaS deployment (k8s / Postgres / Redis / S3)              → External SaaS HA / §15 §七 设计参考
 ```
 
 **核心判断**：qwen-code 是 building block，不是 SaaS 平台。Stage 1 + Stage 1.5 + Stage 2 完成后 daemon 协议表面 100% 稳定，外部集成方（如阿里云 DashScope / 自建团队 / 用户）可基于此自由实现 orchestrator + 多租户 + SaaS。这与 OpenCode（端到端 SaaS 路线）的设计哲学相反——后者绑定平台决策，前者保持 Unix 风格的可组合性。
@@ -111,13 +111,13 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | `61f2f59a1` scaffold `qwen serve` Express + auth + Host allowlist + /health + /capabilities | §03 §一 + §05 §1 |
 | `8d7c03a5f` HttpAcpBridge spawn `qwen --acp` per workspace + ACP 10s init + sessionScope:single | §02 §1 + §04 进程模型 |
 | `ca996ecb5` POST /prompt FIFO + /cancel + SessionNotFoundError | §03 §一 + 决策 §6 |
-| `41aa95094` EventBus + SSE Last-Event-ID + 15s heartbeat + ring replay + client_evicted overflow | §03 §三 + §03 §三 + §13 §五 |
+| `41aa95094` EventBus + SSE Last-Event-ID + 15s heartbeat + ring replay + client_evicted overflow | §03 §三 + §03 §三 + §12 §五 |
 | `6ee655f0a` POST /permission first-responder vote + cancelSession resolves outstanding | §02 §6 决策 + §05 §3 |
 | `8206a64b5` SDK DaemonClient + DaemonHttpError + parseSseStream | §08 SDK / ACP 协议兼容性 |
 | `a8ce5e08d` /workspace/:id/sessions + /session/:id/model + errorMessage helper | §03 §一 |
 | `ad0e6ec06` audit round 1: timing-safe bearer / coalesce spawnOrAttach / parseLastEventId / IPv6 / failOnError | §05 §1 + §05 |
 | 后续 14 commits（self-audit 2-10 + reviewer rounds 1-7）| 持续 audit |
-| `0337f71` / `87255e1` / `11567a4` / `149999a` / `2cc2305` / `988507e` close ~30 multi-model（gpt-5.5 / claude-opus-4-7 / deepseek）review threads —— race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout | §05 §1 + §05 + §03 §三 + §13 §五 |
+| `0337f71` / `87255e1` / `11567a4` / `149999a` / `2cc2305` / `988507e` close ~30 multi-model（gpt-5.5 / claude-opus-4-7 / deepseek）review threads —— race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout | §05 §1 + §05 + §03 §三 + §12 §五 |
 | `27a164c` Stage 1 docs：用户 quickstart + HTTP 协议 reference + SDK ts 示例 + README "Daemon mode" 入口 | §03 §一 + §05 + §08 |
 
 #### 4️⃣ 设计 vs 实现对应度评估
@@ -133,8 +133,8 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | §05 §6.1 0.0.0.0 拒绝默认 | **100%** ✓ |
 | §08 capabilities envelope | **100%**（9 tags 实现）|
 | §03 §三 SSE Last-Event-ID 重连 | **100%**（ring + replay + 15s heartbeat）|
-| §13 §五 liveness 协议 | **75%**（heartbeat 间隔 15s vs 设计 30s——更激进；client_evicted overflow 已实现）|
-| §12 远端 CLI / Capability 反向 RPC | **0%**（Stage 1 不含；Stage 2 deferred）|
+| §12 §五 liveness 协议 | **75%**（heartbeat 间隔 15s vs 设计 30s——更激进；client_evicted overflow 已实现）|
+| §11 远端 CLI / Capability 反向 RPC | **0%**（Stage 1 不含；Stage 2 deferred）|
 | **Stage 1 文档**（user guide + HTTP 协议 reference + SDK 示例）| **100%**（commit `27a164c` 补全 §06 §"Documentation + examples + e2e tests" 1d 任务）|
 
 **综合**：~95% Stage 1 范畴内的设计决策 1:1 实现；文档 100% 补全；少数偏差都是**设计向更严格演进**（timing-safe / 401 uniform / 15s heartbeat 比 30s 更激进 / IPv6 ergonomics），不是简化。**Stage 1 GA-ready**——可 merge 后开 Stage 1.5（Mode A `qwen --serve` ~4d）follow-up。
@@ -161,10 +161,10 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | 多 token / per-token user-id | Stage 2 |
 | Prometheus metrics endpoint | Stage 2 |
 | `POST /file/read` / `/file/write` | **External / Stage 2 可选**（agent 已有 fs，daemon-only file API 仅给远端 client 用）|
-| Mobile / browser UI | **External**（参考 [§12 远端 CLI 模式](./12-remote-cli-mode.md)；PR#3929-3931 平行 stack 已有 mobile UI 参考）|
+| Mobile / browser UI | **External**（参考 [§11 远端 CLI 模式](./11-remote-cli-mode.md)；PR#3929-3931 平行 stack 已有 mobile UI 参考）|
 | Pairing token / LAN URL | **External**（参考 PR#3929-3931）|
-| Orchestrator (multi-daemon spawn / route / cleanup) | **External**（参考 [§03 §8.2](./03-http-api.md#82-新增-orchestrator-层-apistage-2) + [§15](./15-single-vs-multi-session-design.md) + [§16](./16-orchestrator-multi-tenancy.md)）|
-| Multi-tenancy / OIDC / Quota / Audit | **External**（参考 [§16](./16-orchestrator-multi-tenancy.md)）|
+| Orchestrator (multi-daemon spawn / route / cleanup) | **External**（参考 [§03 §8.2](./03-http-api.md#82-新增-orchestrator-层-apistage-2) + [§14](./14-single-vs-multi-session-design.md) + [§15](./15-orchestrator-multi-tenancy.md)）|
+| Multi-tenancy / OIDC / Quota / Audit | **External**（参考 [§15](./15-orchestrator-multi-tenancy.md)）|
 | Shell sandbox（OS user / namespace / container / remote）| **External**（参考 [§09](./09-multi-tenancy-and-sandbox.md)）|
 
 #### 7️⃣ Stage 1 主线 HA 与稳定性已覆盖范围
@@ -285,19 +285,19 @@ IM bot       ─────│  - Mode B (headless)      │
 | Cross-daemon aggregate API（"我所有 task"）| ~2d | [§03 §8.2 `/aggregate`](./03-http-api.md#82-新增-orchestrator-层-apistage-2) |
 | **合计参考** | **~1.5-2 周 / 1 人** | |
 
-详见 [§15 单 vs 多 Session 设计深度对比](./15-single-vs-multi-session-design.md) 的决策树。
+详见 [§14 单 vs 多 Session 设计深度对比](./14-single-vs-multi-session-design.md) 的决策树。
 
 ### Multi-tenancy + OIDC + Quota + Audit
 
 | 组件 | 工作量参考 | 设计文档 |
 |---|---|---|
-| Tenant 抽象 + Workspace ACL | ~3-5d | [§16 §三 Tenant 抽象](./16-orchestrator-multi-tenancy.md) |
-| AuthN 4 模式（Bearer / OIDC / mTLS / cookie）| ~5-7d | [§16](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
-| Quota engine（Redis sliding-window + reservation）| ~5-7d | [§16](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
-| Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）| ~3-5d | [§16](./16-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
+| Tenant 抽象 + Workspace ACL | ~3-5d | [§15 §三 Tenant 抽象](./15-orchestrator-multi-tenancy.md) |
+| AuthN 4 模式（Bearer / OIDC / mTLS / cookie）| ~5-7d | [§15](./15-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
+| Quota engine（Redis sliding-window + reservation）| ~5-7d | [§15](./15-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
+| Audit log 4 通道（jsonl / syslog / OpenTelemetry / Kafka）| ~3-5d | [§15](./15-orchestrator-multi-tenancy.md#二orchestrator-4-件事) |
 | **合计参考** | **~3-4 周 / 1-2 人** | |
 
-详见 [§16 Orchestrator 多租户与配额](./16-orchestrator-multi-tenancy.md)。
+详见 [§15 Orchestrator 多租户与配额](./15-orchestrator-multi-tenancy.md)。
 
 ### Shell Sandbox
 
@@ -315,11 +315,11 @@ IM bot       ─────│  - Mode B (headless)      │
 | 组件 | 工作量参考 | 设计文档 |
 |---|---|---|
 | k8s native（StatefulSet + PVC + Service mesh）| ~1-2w |  |
-| Postgres state + Redis cache + S3 transcript | ~1-2w | [§16 持久化栈](./16-orchestrator-multi-tenancy.md)（持久层） |
+| Postgres state + Redis cache + S3 transcript | ~1-2w | [§15 持久化栈](./15-orchestrator-multi-tenancy.md)（持久层） |
 | Multi-region / cross-geo scheduling | ~1-2w |  |
 | **合计参考** | **~3-6 周 / 2-3 人** | |
 
-详见  + [§16 持久化栈](./16-orchestrator-multi-tenancy.md)（持久层）。
+详见  + [§15 持久化栈](./15-orchestrator-multi-tenancy.md)（持久层）。
 
 ---
 

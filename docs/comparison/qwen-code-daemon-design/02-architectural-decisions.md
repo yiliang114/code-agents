@@ -44,7 +44,7 @@ scope 概念**移到 orchestrator 层**（不是 daemon 内部）：
 | Client A 等待 permission（SSE permission_request）| **任何 client（A 或 B）都能 POST /permission/:requestId 应答** |
 | Client A 关闭浏览器 / SDK 退出 | daemon instance 不影响（进程仍存活）；其他 client 继续观察 |
 | Client B 通过 LoadSession 加载历史 | 从该 daemon 的本地 transcript JSONL 重建 |
-| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（[§16](./16-orchestrator-multi-tenancy.md)）|
+| 所有 client 都断开 + 空闲 N 分钟 | daemon instance 进入 idle，可被 orchestrator 回收（[§15](./15-orchestrator-multi-tenancy.md)）|
 
 这是 **"live collaboration" 模型** —— 与 Google Docs 多人编辑一个文档同构。协作发生在 daemon 进程内，没有跨 session 路由开销。
 
@@ -183,7 +183,7 @@ SDK 客户端默认走 C —— 用户感受到的就是"同 workspace 自动共
 | 实现复杂度 | **低**（每 daemon 自给自足）| 高（cross-session 状态管理）|
 | 适用规模 | **个人 / 小团队 / 中等 SaaS** | 大规模 SaaS（共享更经济）|
 
-适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§15 设计对比](./15-single-vs-multi-session-design.md)）。
+适用边界：单机 N < 50 并发 session 经济性可接受；N ≥ 100 时考虑资源池化或迁移到多 session 模式（详见 [§14 设计对比](./14-single-vs-multi-session-design.md)）。
 
 ### 必要的工程约束
 
@@ -625,7 +625,7 @@ class PermissionRequestHandler {
 | **CORS / Origin lock** | 默认 loopback only（`127.0.0.1`）| 配置驱动 |
 | **进程退出** | TUI Ctrl+C → graceful drain HTTP → close port → exit | SIGTERM → graceful drain → close port → exit |
 | **重启 / 持久** | 不适用（用户在终端）| systemd / pm2 / Docker auto-restart |
-| **mDNS 广播**（§12） | 可选 `--discoverable` flag | 可选配置 `discovery.mdns: true` |
+| **mDNS 广播**（§11） | 可选 `--discoverable` flag | 可选配置 `discovery.mdns: true` |
 
 ### Mode A 的 TUI ↔ Core 通讯
 
