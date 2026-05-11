@@ -449,7 +449,7 @@
 
 ## 六、更新日志
 
-### 2026-05-11（~3d 增量 · 11 项合并 · prior-read 守卫链闭环（PR#4002 close #3964 + #3945）+ reactive compression harden + LiveAgentPanel 完整化 + targeted resize repaint）
+### 2026-05-11（~5d 增量 · 28 项合并 · prior-read 守卫链闭环（PR#4002 close #3964 + #3945）+ reactive compression 落地+硬化（PR#3879 + PR#3985）+ LiveAgentPanel 完整化 + i18n coverage（PR#3871 +6253/-4423）+ Subagent isolation 5 PR 收官）
 
 扫描窗口：2026-05-08 → 2026-05-11 UTC。窗口内 **11 项合并 + 多项关键 OPEN**。本次主线：① **prior-read 守卫链完整闭环**（PR#4002 +707/-127 close #3964 + #3945 · 与 Claude Code 行为对齐 · 3 部分修复：cacheable 与 truncation 解耦 / `detectFileType` 优先 mime+扩展名 / WriteFile partial-read 死锁）；② **reactive compression 跟进硬化**（PR#3985 +189/-18 · setup-failure 释放 send lock + 显式失败 latch + AbortSignal 传播）；③ **LiveAgentPanel 完整化**（PR#3909 inline AgentExecutionDisplay → 始终 LiveAgentPanel；PR#3919 panel-ownership filter + post-delete statusChange）；④ **TUI resize 优化**（PR#3967 替换 `ESC[2J ESC[3J ESC[H]` 全屏清屏为 `cursorTo + eraseDown` 定向重绘 · 消除 resize 闪屏）；⑤ **subagent 审批 banner 补充工具详情**（PR#3956 +179/-53 · `general-purpose` subagent 工具调用现显示完整命令 / diff / MCP server）；⑥ **OTel diagnostics 静音**（PR#3986 +93/-3 · exporter 连接失败不再污染 UI surface · 走 debug log path）；⑦ **skills 热重载 slash commands**（PR#3923 +212/-4 · `SkillManager.addChangeListener` 触发 `slashCommandProcessor.reloadCommands()` · `/<skill>` 不再需要重启）；⑧ **Idealab 作为第三方 provider**（PR#3955）；⑨ **partial reads 在 prior-read enforcement 中被接受**（PR#3932 · Edit 路径 `lastReadWasFull` relaxed）。
 
@@ -469,6 +469,28 @@
 | **[PR#3916](https://github.com/QwenLM/qwen-code/pull/3916)** | fix(core): drop disabled MCP server from health status registry | 2026-05-09 | **关联 item-13 MCP Auto-Reconnect**（+182/-0 同 PR#3741 footer pill）—— 禁用的 MCP server 不再出现在 health registry，footer pill 不再误显示 |
 | **[PR#3947](https://github.com/QwenLM/qwen-code/pull/3947)** | [codex] Persist ACP model selection | 2026-05-08 | **ACP 协议增强**——ACP session 重连后 model 选择持久化（不再丢失）|
 | **[PR#3955](https://github.com/QwenLM/qwen-code/pull/3955)** | feat(cli): add Idealab as third-party provider | 2026-05-08 | **关联 [provider-deep-dive](./provider-deep-dive.md)**——增加 Idealab 作为第三方 provider |
+| **[PR#3871](https://github.com/QwenLM/qwen-code/pull/3871)** | feat(cli): core built-in i18n coverage | 2026-05-10 | 🌟 **大体量 i18n 国际化**（**+6253/-4423**）——核心 built-in CLI 文案 i18n 覆盖。本周最大单 PR |
+| **[PR#3897](https://github.com/QwenLM/qwen-code/pull/3897)** | perf(core): bound session-list metadata reads to head/tail 64KB; pool buffer; lazy message | 2026-05-10 | **session-list 性能优化**（**+1327/-198**）——`countSessionMessages` 改为 head/tail 64KB sample；buffer pool；lazy message count。是 PR#3989 two-phase `/resume` 第一帧瞬时显示的前置基础 |
+| **[PR#3879](https://github.com/QwenLM/qwen-code/pull/3879)** | feat(core): add reactive compression on context overflow | 2026-05-09 | 🌟 **关联 item-10 反应式压缩**（**+797/-12**）——本 item 从"完全缺失"升级为 ✓ **首次实现**：捕获 `prompt_too_long` 错误后自动触发 reactive compression + 重试。**之前所有依赖主动压缩的最后兜底现在补齐**。PR#3985 是后续硬化（修补 3 个 review 漏洞）|
+| **[PR#3880](https://github.com/QwenLM/qwen-code/pull/3880)** | feat(cli): searchable /resume picker with focus-aware modes | 2026-05-08 | **/resume UX 大改**（**+1731/-109**）——`/resume` picker 加 fuzzy search + focus-aware modes（输入态 / 选择态 / 预览态）。Closes #3977 系列；与 PR#3989 two-phase listing 协同 |
+| **[PR#3902](https://github.com/QwenLM/qwen-code/pull/3902)** | fix(core): throttle shell tool live text updates | 2026-05-09 | **Shell 输出节流**（**+494/-64**）——shell tool live text 更新过于频繁导致 TUI 重绘压力；加 throttle 控制刷新率 |
+| **[PR#3905](https://github.com/QwenLM/qwen-code/pull/3905)** | fix(cli): unfreeze Ctrl+O compact-mode toggle on long conversations | 2026-05-09 | **Ctrl+O 卡死 bug**（**+432/-4**）——长对话场景下 Ctrl+O 切 compact-mode 导致 TUI 冻结。修复渲染层堆积问题 |
+| **[PR#3882](https://github.com/QwenLM/qwen-code/pull/3882)** | fix(core): filter Mistral reasoning content at request boundary | 2026-05-09 | **关联 thinking 块跨 provider**（**+210/-0**）——Mistral 返回 reasoning content 但下一轮请求时未过滤，导致重复发送或 API 拒绝 |
+| **[PR#3963](https://github.com/QwenLM/qwen-code/pull/3963)** | fix(cli): validate /model command arguments | 2026-05-08 | **/model 参数校验**（**+467/-63**）——`/model unknown-model-id` 之前静默接受导致后续请求失败，加 client-side 校验 |
+| **[PR#3894](https://github.com/QwenLM/qwen-code/pull/3894)** | feat(core): foreground → background promote integration (#3831 PR-2 of 3) | 2026-05-08 | **Promote 系列 PR-2/3**（**+935/-15**）——shell.ts 集成 `result.promoted: true` 检测 + snapshot output to `bg_xxx.output` + 注册 `BackgroundShellEntry`；与 PR#3842 (PR-1 signal.reason 基础) + PR#3969 (PR-3 Ctrl+B keybind，OPEN) 组合 |
+| **[PR#3873](https://github.com/QwenLM/qwen-code/pull/3873)** | fix(core): rebuild tool registry on subagent Config overrides | 2026-05-07 | **Subagent isolation 5 PR 系列之一**（**+862/-41**）——subagent Config overrides 时重建 ToolRegistry，让 bound tools 解析到 subagent 自己的 view 而非父 |
+| **[PR#3892](https://github.com/QwenLM/qwen-code/pull/3892)** | fix(core): close bound-tool gap on runForkedAgent's YOLO wrapper | 2026-05-08 | **Subagent isolation 5 PR 系列之一**（**+394/-48**）——`runForkedAgent` YOLO wrapper 路径补 bound-tool 配置 |
+| **[PR#3887](https://github.com/QwenLM/qwen-code/pull/3887)** | fix(core): stop per-subagent ToolRegistry on foreground-fork path | 2026-05-07 | **Subagent isolation 5 PR 系列之一**（**+69/-3**）——foreground-fork 路径停掉 per-subagent ToolRegistry，避免 lifecycle 泄漏 |
+| **[PR#3893](https://github.com/QwenLM/qwen-code/pull/3893)** | feat(telemetry): add sensitive span attribute opt-in | 2026-05-07 | **关联 item-26 OTel**（**+414/-52**）——sensitive span attributes（如 prompt content / tool args）改为 opt-in（默认 redact），避免敏感数据自动 export 到 telemetry 后端 |
+| **[PR#3915](https://github.com/QwenLM/qwen-code/pull/3915)** | fix(skills): allow symlinks pointing outside the skills directory | 2026-05-07 | **关联 item-9 Skill**（**+86/-383**）——skill 目录之前禁止 symlink 指向外部路径（过度防御），导致用户用 symlink 组织 skill 库失败。改为允许 + 加路径白名单 |
+| **[PR#3908](https://github.com/QwenLM/qwen-code/pull/3908)** | feat(web-templates): add light theme and toggle to /export HTML | 2026-05-07 | **/export 增强**（+262/-14）——`/export` 生成 HTML 加 light theme + toggle 按钮（之前仅 dark theme）|
+| **[PR#3872](https://github.com/QwenLM/qwen-code/pull/3872)** | fix(core): shrink file diff session records | 2026-05-06 | **Session record 体积优化**（**+616/-20**）——file diff session records 之前完整保留 before/after 内容，导致长 session JSONL 膨胀。改为只存 diff hash + 上下文截断 |
+| **[PR#3903](https://github.com/QwenLM/qwen-code/pull/3903)** | fix(cli): use tmux-safe dots spinner to reduce redraw pressure | 2026-05-07 | **tmux 适配**（+76/-3）——默认 spinner 在 tmux 下 redraw 频率过高，改为 tmux-safe dots variant |
+| **[PR#3921](https://github.com/QwenLM/qwen-code/pull/3921)** | fix(core): foreground agent entry lingering in status bar after completion | 2026-05-07 | **LiveAgentPanel 系列**——foreground agent 完成后 status bar entry 残留 |
+| **[PR#3922](https://github.com/QwenLM/qwen-code/pull/3922)** | fix(cli): prevent ESC in background tasks dialog from cancelling running request | 2026-05-07 | **LiveAgentPanel 系列**——background tasks dialog 内 ESC 不再误取消主请求 |
+| **[PR#3875](https://github.com/QwenLM/qwen-code/pull/3875)** | fix(core): create temp dir before saving truncated shell output | 2026-05-07 | **Truncated shell output 保存**（+10/-0）——长 shell 输出截断后保存到 temp 文件前先 mkdir |
+| **[PR#3883](https://github.com/QwenLM/qwen-code/pull/3883)** | fix(cli): warn on ignored provider generation config | 2026-05-07 | **Provider 配置警告**（+296/-5）——provider config 含未识别的 generation 字段时 warn |
+| **[PR#3948](https://github.com/QwenLM/qwen-code/pull/3948)** | fix(vscode): mark Qwen OAuth coder-model as Discontinued in model picker | 2026-05-08 | **VSCode 集成**（**+648/-17**）——Qwen OAuth coder-model 在 VSCode picker 标记为 Discontinued |
 
 #### 🟡 关键 OPEN（值得追踪）
 
@@ -521,10 +543,33 @@ subagent 执行 UI 经过从"inline frame 3 档（compact/default/verbose）"→
 | **Skill slash command 热重载** | 改 SKILL.md 需重启 | ✓ 修复（PR#3923）|
 | **terminal resize 闪屏** | 全屏 ESC[2J 清屏 | ✓ 修复（PR#3967 targeted repaint）|
 
+#### 🎯 重点解析 3：Subagent isolation 5 PR 系列收官
+
+Subagent isolation 是 PR#3735（agent-local resource manager）以来跨多周的工程序列，确保父 daemon 与 subagent 之间不泄漏配置 / tool registry / lifecycle。本周收尾 5 PRs：
+
+| PR | 合并 | 重点 |
+|---|---|---|
+| PR#3735 | （早期）| agent-local resource manager 基础 |
+| PR#3873 | 2026-05-07 +862/-41 | rebuild ToolRegistry on subagent Config overrides |
+| PR#3887 | 2026-05-07 +69/-3 | stop per-subagent ToolRegistry on foreground-fork path |
+| PR#3892 | 2026-05-08 +394/-48 | close bound-tool gap on `runForkedAgent` YOLO wrapper |
+| PR#3707 | OPEN | per-agent ContentGenerator |
+
+合计 +1325 行隔离修复，让 subagent 真正以 "fork-and-isolate" 语义运行（之前有多个 sneaky 路径让父 config / tool registry 泄漏到 subagent）。这与 §02 §2 决策"1 daemon = 1 session / 进程级隔离免费"哲学一致——subagent 在同一 daemon 内也通过 isolation 套路达到类似进程级的隔离强度。
+
+#### 🎯 重点解析 4：i18n PR#3871 大体量国际化收官
+
+PR#3871 (+6253/-4423) 是过去一周最大单 PR——core built-in CLI 文案 i18n 全覆盖。这是 Qwen Code 国际化路线的关键里程碑：之前散落各处的英文文案现在统一走 i18n 框架，支持中文 / 英文 / 多语言切换。`-4423` 删除来自旧硬编码英文常量；`+6253` 来自 i18n key/value 注册 + 所有调用点改为 `t('key')` 形式。
+
 #### 累计计数
 
-- 已合并 PR: 165 → **176**（+11，含 PR#4002 / 3985 / 3986 / 3967 / 3923 / 3956 / 3955 / 3947 / 3916 / 3932 / 3919）
+- 已合并 PR: 165 → **193**（+28，含完整本期 7 天扫描窗口）
+- **本周 Top 5 体量**：PR#3871 +6253/-4423（i18n） · PR#3880 +1731/-109（searchable /resume） · PR#3933 +1772/-82（codex monitor notifications）· PR#3909 +1439/-1126（LiveAgentPanel）· PR#3897 +1327/-198（session-list perf）
 - 关键 OPEN：8 项 wenshao 系列（PR#4023 cancel queue / #4020 Anthropic proxy + global cache / #4022 deferred tools / #3969 Ctrl+B promote / #3989 two-phase session list / #4001 structured JSON output / #3970 TaskBase / #3990 VSCode Token Plan）
+
+#### 备忘：扫描盲区检查
+
+本期 7 天扫描共 50 项 merged PR，其中 22 项为 CI / chore / release / test infra（v0.15.7 - v0.15.10 release 链 + CI 优化 + bilingual issue commands + sdk-python release tooling），剩余 28 项业务 PR 已全部并入本期日志。CI / release 类不单独列项（在累计计数内）。
 
 #### 备忘：FileReadCache 系列单挑战 5 PR、跨 13 天
 
