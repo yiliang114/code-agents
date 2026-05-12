@@ -7,14 +7,16 @@
 ## 总览
 
 ```
-qwen-code 主线（~3-4 周内 feature complete）：
-├─ Stage 1   🟡 (PR#3889 OPEN, 78 commits / +12393/-194, code complete + 多轮 multi-model audit + CHANGES_REQUESTED)
-│            │
-│            └─ Mode B headless qwen serve · 1 daemon + M qwen --acp children (1 per workspace)
-│               + N sessions multiplexed per workspace via QwenAgent.sessions: Map
-│               + 默认 --max-sessions=20 · --max-connections=256
-├─ Stage 1.5 🆕 chiga0 review 10 must-haves（blockers 3 + reliability 4 + ergonomics 3）+ Mode A qwen --serve flag
-└─ Stage 2   🆕 (~3-4 周, 2a-2d 拆分) daemon 完善 + 可选 native in-process（去掉 qwen --acp child 桥接）
+qwen-code 主线（~7-10 周 feature complete · Stage 1 merge ~1-2w + Stage 1.5 ~3-4w + Stage 2 ~3-4w）：
+├─ Stage 1     🟡 (PR#3889 OPEN, 78 commits / +12393/-194, code complete + 多轮 multi-model audit + CHANGES_REQUESTED 收敛中)
+│              │
+│              └─ Mode B headless qwen serve · 1 daemon + M qwen --acp children (1 per workspace)
+│                 + N sessions multiplexed per workspace via QwenAgent.sessions: Map
+│                 + 默认 --max-sessions=20 · --max-connections=256
+├─ Stage 1.5   🆕 (~3-4 周总计, 1.5a 与 1.5b 可并行)
+│   ├─ Stage 1.5a chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，~2-3 周）
+│   └─ Stage 1.5b Mode A `qwen --serve` flag（~4d 增量）
+└─ Stage 2     🆕 (~3-4 周, 2a-2d 拆分) daemon 完善 · 可选 Stage 2e native in-process（去 qwen --acp child）~1-2w
 
 ────────── qwen-code daemon feature complete ──────────
 
@@ -27,7 +29,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 
 **核心判断**：qwen-code 是 building block，不是 SaaS 平台。Stage 1 + Stage 1.5 + Stage 2 完成后 daemon 协议表面 100% 稳定，外部集成方（如阿里云 DashScope / 自建团队 / 用户）可基于此自由实现 orchestrator + 多租户 + SaaS。这与 OpenCode（端到端 SaaS 路线）的设计哲学相反——后者绑定平台决策，前者保持 Unix 风格的可组合性。
 
-> **Stage 1 架构演进**（2026-05-12 commit `6a170ef8`）：早期设计假设 "1 daemon = 1 session = 1 `qwen --acp` child"——但 PR#3889 review 过程中（LaZzyMan / tanzhenxin / 维护者反馈）发现 `packages/cli/src/acp-integration/acpAgent.ts:194` 的 `QwenAgent.sessions: Map<string, Session>` 已原生支持单 child 多 session。Stage 1 bridge 因此重构为 "**1 daemon + M qwen --acp children（1 per workspace）+ N sessions multiplexed per workspace via QwenAgent.sessions: Map**"，N=5 同 workspace session 内存从 300-500MB（5 child）降到 60-100MB（1 child + 5 session）。**跨 workspace 仍需独立 child**（`acpAgent.ts:601` 在 `newSession` 时 `loadSettings(cwd)` 重新加载 settings，跨 workspace 复用会互相污染）——Stage 2 native in-process 才能解决。
+> **Stage 1 架构演进**（2026-05-12 commit `6a170ef8`）：早期设计假设 "1 daemon = 1 session = 1 `qwen --acp` child"——但 PR#3889 review 过程中（LaZzyMan / tanzhenxin / 维护者反馈）发现 `packages/cli/src/acp-integration/acpAgent.ts:194` 的 `QwenAgent.sessions: Map<string, Session>` 已原生支持单 child 多 session。Stage 1 bridge 因此重构为 "**1 daemon + M qwen --acp children（1 per workspace）+ N sessions multiplexed per workspace via QwenAgent.sessions: Map**"，N=5 同 workspace session 内存从 300-500MB（5 child）降到 60-100MB（1 child + 5 session）。**跨 workspace 仍需独立 child**（`acpAgent.ts:601` 在 `newSession` 时 `loadSettings(cwd)` 重新加载 settings，跨 workspace 复用会互相污染）——Stage 2e native in-process 才能解决。
 
 > **前置 PR 全部已合并**（2026-05-06 之前）：PR#3717 FileReadCache + PR#3810 5 路径 invalidation + PR#3723 共享 permission flow + PR#3739 transcript-first fork + PR#3642 `/tasks` + PR#3818 MCP rediscovery coalesce + PR#3836 Kind framework——daemon 化前置基础就绪。
 
@@ -37,7 +39,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 
 ### 目标
 
-提供 daemon 的最小可用形态——`qwen serve` headless 进程，通过 HTTP+SSE 暴露 ACP NDJSON 协议。1 daemon + M `qwen --acp` children（1 per workspace）+ N sessions multiplexed per workspace via `QwenAgent.sessions: Map`（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）。跨 workspace 仍由外部 orchestrator spawn 多 daemon 处理（或 Stage 2 native in-process 时升级到单 daemon 多 workspace）。
+提供 daemon 的最小可用形态——`qwen serve` headless 进程，通过 HTTP+SSE 暴露 ACP NDJSON 协议。1 daemon + M `qwen --acp` children（1 per workspace）+ N sessions multiplexed per workspace via `QwenAgent.sessions: Map`（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）。跨 workspace 仍由外部 orchestrator spawn 多 daemon 处理（或 Stage 2e native in-process 时升级到单 daemon 多 workspace）。
 
 ### 实现
 
@@ -144,16 +146,20 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | Commit | 关注章节 |
 |---|---|
 | `61f2f59a1` scaffold `qwen serve` Express + auth + Host allowlist + /health + /capabilities | §03 §一 + §05 §1 |
-| `8d7c03a5f` HttpAcpBridge spawn `qwen --acp` per workspace + ACP 10s init + sessionScope:single | §02 §1 + §04 进程模型 |
+| `8d7c03a5f` HttpAcpBridge spawn `qwen --acp` per workspace（早期 sessionScope:single 复用一个 session）+ ACP 10s init + BridgeClient fs proxy | §02 §1 + §04 进程模型 |
 | `ca996ecb5` POST /prompt FIFO + /cancel + SessionNotFoundError | §03 §一 + 决策 §6 |
 | `41aa95094` EventBus + SSE Last-Event-ID + 15s heartbeat + ring replay + client_evicted overflow | §03 §三 SSE Last-Event-ID + §11 §五 liveness |
 | `6ee655f0a` POST /permission first-responder vote + cancelSession resolves outstanding | §02 §6 决策 + §05 §3 |
 | `8206a64b5` SDK DaemonClient + DaemonHttpError + parseSseStream | §08 SDK / ACP 协议兼容性 |
 | `a8ce5e08d` /workspace/:id/sessions + /session/:id/model + errorMessage helper | §03 §一 |
 | `ad0e6ec06` audit round 1: timing-safe bearer / coalesce spawnOrAttach / parseLastEventId / IPv6 / failOnError | §05 §1 + §05 |
-| 后续 14 commits（self-audit 2-10 + reviewer rounds 1-7）| 持续 audit |
-| `0337f71` / `87255e1` / `11567a4` / `149999a` / `2cc2305` / `988507e` close ~30 multi-model（gpt-5.5 / claude-opus-4-7 / deepseek）review threads —— race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout | §05 §1 + §03 §三 + §11 §五 |
+| 中间 ~14 commits（self-audit 2-10 + reviewer rounds 1-7 multi-model）| 持续 audit close ~30 review threads |
 | `27a164c` Stage 1 docs：用户 quickstart + HTTP 协议 reference + SDK ts 示例 + README "Daemon mode" 入口 | §03 §一 + §05 + §08 |
+| **`6a170ef8`**（2026-05-12 🌟）| **架构重构** —— `ChannelInfo` + `byWorkspaceChannel: Map` + `getOrCreateChannel` coalesce + `connection.newSession({cwd, mcpServers})` multiplex N session per workspace + `killSession` 引用计数清理 | §02 §2 + §04 进程模型 |
+| **`f29353a2`**（2026-05-12 🌟）| **N:1 framing 修正 docs** —— qwen-code 自身 `QwenAgent.sessions: Map` 已支持多 session（VSCode 插件早就用），更正早期文档措辞 | docs/users/qwen-serve.md |
+| **`bbc7b8b6`** + `b1767903`（2026-05-12）| chiga0 第 3 轮 review：Stage 1 scope honesty + 10 must-haves for Stage 1.5+ + Durability model section（must-have #10 shipped）| §06 Stage 1.5 段 |
+| `8de72dcf` + `9352627f`（2026-05-12）| LaZzyMan reviews：Mode A vs Mode B 语义澄清 + Stage 1 scope 边界 | §02 §7 |
+| `734d833b` / `e18b8fa6` / `b37cc01c` 等多轮（2026-05-12）| 后续 ~30 review threads close：atomic write / read-size cap / force-exit on 2nd signal / 6 critical bugs + 6 follow-ups | 多章节 |
 
 #### 4️⃣ 设计 vs 实现对应度评估
 
@@ -172,7 +178,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | §10 远端 CLI / Capability 反向 RPC | **0%**（Stage 1 不含；External 范畴）|
 | **Stage 1 文档**（user guide + HTTP 协议 reference + SDK 示例）| **100%**（commit `27a164c` 补全 §06 §"Documentation + examples + e2e tests" 1d 任务）|
 
-**综合**：100% Stage 1 范畴内的设计决策 1:1 实现；文档 100% 补全；少数偏差都是**设计向更严格演进**（timing-safe SHA-256 + crypto.timingSafeEqual / 401 uniform across no-header/bad-scheme/wrong-token / IPv6 loopback ergonomics），不是简化。**Stage 1 GA-ready**——可 merge 后开 Stage 1.5（Mode A `qwen --serve` ~4d）follow-up。
+**综合**：100% Stage 1 范畴内的设计决策 1:1 实现；文档 100% 补全；少数偏差都是**设计向更严格演进**（timing-safe SHA-256 + crypto.timingSafeEqual / 401 uniform across no-header/bad-scheme/wrong-token / IPv6 loopback ergonomics），不是简化。**Stage 1 code complete + CHANGES_REQUESTED**——PR 仍在 multi-model audit 收敛中（chiga0 第 3 轮 + LaZzyMan/tanzhenxin reviews + 维护者反馈），merge 后开 Stage 1.5（chiga0 10 must-haves + Mode A `qwen --serve`）follow-up。
 
 #### 5️⃣ 经验沉淀
 
@@ -181,20 +187,25 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | **EventBus 在 Stage 1 就需要完整实现** | 原计划放在 External Reference Architecture / SaaS HA 详做，但 SSE Last-Event-ID 重连是 Stage 1 用户必需，无法 deferred |
 | **Timing-safe / 401 uniform 等 side-channel 防御 Stage 1 就要做** | §05 设计放在多租户章节，但 PR#3889 在 Stage 1 单租户也做了——开源 daemon 默认就该这么严 |
 | **IPv6 loopback ergonomics 不能省略** | 容器化 / Docker / `host.docker.internal` 是常见用例，loopback 处理细节比预想复杂 |
-| **多轮 self-audit + multi-model 流程的价值** | PR#3889 用 ~12 轮 audit（claude-opus-4-7 / gpt-5.5 / deepseek 三模型）—— close ~30 review threads；不同模型抓不同类问题（race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout 互补覆盖）|
-| **child-crash recovery 是必需的** | reviewer round 4 才补；spawn 子进程模式下，子进程崩溃时 daemon 必须 graceful 处理而不是把错误传播给所有 SSE clients |
-| **PR 体量 ~5x-9x 预估是常态** | 工程文档预估 vs 实际几乎总是 5-9x，因为 audit + 边界 + ergonomics + 文档 占大头 |
+| **多轮 self-audit + multi-model + 多 reviewer follow-up 流程的价值** | PR#3889 用 ~25 轮 audit（self-audit 1-10 + reviewer rounds 1-7 + chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews）—— close ~60+ review threads；不同模型 / 不同 reviewer 抓不同类问题（race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout / N:1 framing / Stage scope honesty 互补覆盖）|
+| **child-crash recovery 是必需的** | reviewer round 4 才补；spawn 子进程模式下，子进程崩溃时 daemon 必须 graceful 处理而不是把错误传播给所有 SSE clients；commit `6a170ef8` 后扩展为 channel-level crash（一 channel 崩溃 → 该 workspace 全部 N session 收 `session_died` 事件）|
+| **架构能在 Stage 1 内重构**（commit `6a170ef8`）| reviewer 反馈触发架构反思——`QwenAgent.sessions: Map` 已具备多 session 能力（VSCode 插件早就用），bridge 不该假设 1 child = 1 session。教训：reviewer 多视角能发现"设计偏差"而非仅"实现 bug" |
+| **PR 体量 ~7x-12x 预估是常态** | 工程文档预估 vs 实际几乎总是 7x-12x，因为 audit + 边界 + ergonomics + 文档 + 反向架构修订 占大头 |
 | **文档不能 deferred 到 merge 后** | 原 §06 §1 "1d Documentation + examples" 在主实现之后被推迟；commit `27a164c` 补回（591 行 docs）。教训：文档要列入 PR scope 否则 merge 后没人会回填 |
 
 #### 6️⃣ Stage 1 不含 / 推到 Stage 1.5 / Stage 2 / 外部的能力
 
 | 能力 | 状态 |
 |---|---|
-| Mode A（CLI + HttpServer，`qwen --serve`）| Stage 1.5（~4d 增量）|
-| `WS /session/:id`（双向 WebSocket）| Stage 2 |
-| OpenAPI 自动生成 + mDNS 服务发现 | Stage 2 |
-| 多 token / per-token user-id | Stage 2 |
-| Prometheus metrics endpoint | Stage 2 |
+| Per-request `sessionScope` override + `loadSession` HTTP 暴露 + pair token registry | **Stage 1.5a**（chiga0 blockers 1-3）|
+| Client heartbeat / `permission_already_resolved` event / 大 replay ring / `slow_client_warning` | **Stage 1.5a**（chiga0 reliability 4-7）|
+| `POST /session/:id/_meta` + `/capabilities` protocol_versions 协商 | **Stage 1.5a**（chiga0 ergonomics 8-9）|
+| Mode A（CLI + HttpServer，`qwen --serve`）| **Stage 1.5b**（~4d，可与 1.5a 并行）|
+| `WS /session/:id`（双向 WebSocket）| **Stage 2a** |
+| OpenAPI 自动生成 + HttpTransport SDK 适配器 | **Stage 2b** |
+| 多 token / per-client identity / pair tokens / revocation | **Stage 1.5a** Blocker #3（不在 Stage 2 范畴）|
+| mDNS 服务发现 + Prometheus metrics endpoint + `--max-sessions` flag | **Stage 2c** |
+| Native in-process（去 `qwen --acp` child 桥接） | **可选 Stage 2e**（~1-2w）|
 | `POST /file/read` / `/file/write` | **External / Stage 2 可选**（agent 已有 fs，daemon-only file API 仅给远端 client 用）|
 | Mobile / browser UI | **External**（参考 [§10 远端 CLI 模式](./10-remote-cli-mode.md)；PR#3929-3931 平行 stack 已有 mobile UI 参考）|
 | Pairing token / LAN URL | **External**（参考 PR#3929-3931）|
@@ -220,13 +231,21 @@ qwen-code 主线 HA / 稳定性需求由 PR#3889 + PR#3739 已完整覆盖（详
 
 ---
 
-## Stage 1.5：Mode A + chiga0 10 must-haves（~2-3 周总计）
+## Stage 1.5：chiga0 10 must-haves + Mode A flag（~3-4 周总计，分 1.5a / 1.5b 两条并行 workstream）
 
 ### 来源
 
 PR#3889 review 中 chiga0 第 3 轮 review（[#3889 comment 4427875644](https://github.com/QwenLM/qwen-code/pull/3889#issuecomment-4427875644)）从 IM bot / mobile companion / IDE extension 三个 downstream consumer 视角审计 Stage 1 protocol surface，得出结论："**Stage 1 promises 'real workloads' but the protocol surface is sized for demo / single-user / never-crashes**"。作者拒绝把 must-haves 加入 Stage 1（保持 Stage 1 scope honesty），全部推到 Stage 1.5。
 
-### chiga0 10 must-haves
+### Stage 1.5 拆分（1.5a 必需 + 1.5b 可并行 Mode A）
+
+| Sub-stage | 内容 | 工作量 |
+|---|---|---|
+| **Stage 1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，其中 #10 已 shipped）| ~2-3 周 |
+| **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d 增量 |
+| **合计**（1.5a + 1.5b 并行）| | **~3-4 周 / 1 人** |
+
+### Stage 1.5a — chiga0 10 must-haves
 
 #### 🚨 Blockers（生产用必需）
 
@@ -253,23 +272,31 @@ PR#3889 review 中 chiga0 第 3 轮 review（[#3889 comment 4427875644](https://
 | 9 | **`/capabilities` actual feature negotiation** | `protocol_versions: { acp: '0.14.x', daemon_envelope: 1 }` 让 client 能 detect drift 而非 fall through 到 "unknown frame, ignore" |
 | 10 | **First-class durability documentation** | 已 shipped（commit `bbc7b8b6` `docs/users/qwen-serve.md` "Durability model" section）|
 
-### Stage 1.5 工作量估算
+### Stage 1.5a 工作量估算
 
-| Workstream | 工作量 |
-|---|---|
-| **Blockers 1-3** | ~5-7d（loadSession 是大头 + token registry/revocation 中等）|
-| **Reliability 4-7** | ~3-5d（多个轻量事件 + ring config 改造）|
-| **Ergonomics 8-9** | ~2-3d（/_meta + capabilities 协商）|
-| **Mode A `qwen --serve` flag** | ~4d（原 Stage 1.5 内容）|
-| **合计** | **~2-3 周 / 1 人** |
+| Workstream | 工作量 | 说明 |
+|---|---|---|
+| **Blockers 1-3** | ~5-7d | loadSession 是大头 + token registry/revocation 中等 |
+| **Reliability 4-7** | ~3-5d | 多个轻量事件 + ring config 改造 |
+| **Ergonomics 8-9** | ~2-3d | /_meta + capabilities 协商（#10 durability docs 已 shipped）|
+| **合计** | **~10-15d ≈ 2-3 周 / 1 人** | |
+
+### Stage 1.5a 验收
+
+- ✓ `POST /session` 接受 `{ scope: 'single' \| 'thread' \| 'user' }` body 字段
+- ✓ `POST /session/:id/load` + `POST /session/:id/resume` 路由（HTTP 暴露 `loadSession` / `unstable_resumeSession`）
+- ✓ token registry + `DELETE /tokens/:id` revocation API
+- ✓ `POST /session/:id/heartbeat` client-initiated 心跳路由
+- ✓ `permission_already_resolved` event + `slow_client_warning` event + per-session ring config + `POST /session/:id/_meta`
+- ✓ `/capabilities` 返回 `protocol_versions` 字段
 
 ---
 
-## Stage 1.5b：Mode A CLI + HttpServer（~4 天增量，可与 must-haves 并行）
+## Stage 1.5b：Mode A CLI + HttpServer（~4 天增量，可与 1.5a 并行）
 
 ### 目标
 
-让 `qwen` CLI 进程同时挂载 HttpServer——TUI 在终端正常渲染，远端 client（WebUI / IDE / IM bot）通过 HTTP 接入同一 daemon。Mode A 的 daemon 可同时持 N session（同 Stage 1 multi-session per workspace 机制），TUI 绑定其中某一个 session（[§02 §7 双部署模式](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）。
+让 `qwen` CLI 进程同时挂载 HttpServer——TUI 在终端正常渲染，远端 client（WebUI / IDE / IM bot）通过 HTTP 接入同一 daemon。Mode A 的 daemon 可同时持 N session（同 Stage 1 channel-per-workspace 多 session multiplexed 机制），TUI 绑定其中某一个 session（[§02 §7 双部署模式](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）。
 
 ### 实现
 
@@ -296,7 +323,7 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 ### Stage 1.5b 验收
 
 - ✓ `qwen --serve` 启动 TUI + HTTP server 同进程
-- ✓ 远端 client 通过 HTTP 接入同 daemon（与 TUI 共享 EventBus）；同 workspace 内 daemon 可持 N session，TUI 绑定其一
+- ✓ 远端 client 通过 HTTP 接入同 daemon（与 TUI 共享 EventBus）；同 workspace 内 daemon 可持 N session（继承 Stage 1 channel multiplexing），TUI 绑定其中一个
 - ✓ TUI 退出 → HTTP server graceful drain → 整进程退出
 - ✓ 默认 loopback only / no token（本地信任）；远端启用必须显式 `--token`
 - ✓ 与 Stage 1 PR#3889 同 wire 协议（client SDK 不需要改）
@@ -327,14 +354,13 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 
 ### Stage 2b — Ecosystem / Security（~1 周）
 
-让 SDK 客户端能透明用 daemon + 基础多 token：
+让 SDK 客户端能透明用 daemon + OpenAPI codegen：
 
 | 任务 | 工作量 | 说明 |
 |---|---|---|
 | OpenAPI codegen | 3-5d | `@asteasolutions/zod-to-openapi` 从 ACP zod schema 生成 spec |
-| 多 token / per-token user-id | 2-3d | `tokens.json` + 每 token 绑定 user-id + revocation 粒度（不做 OIDC——orchestrator 范畴）|
 | `HttpTransport` 适配器（SDK 端）| 2-3d | `packages/sdk-typescript/src/transport/HttpTransport.ts` —— 镜像 ProcessTransport 让现有 `query()` 透明走 daemon |
-| **合计** | **~7-11d / 1 人** | 与 chiga0 推荐"multi-token + OpenAPI 应该提到 Stage 1.5"对齐——拆分后这里仍是 Stage 2，但 sub-stage 化让 multi-token 不被其他不相关项阻塞 |
+| **合计** | **~5-8d / 1 人** | 注：基础多 token / per-client identity 已在 Stage 1.5a Blocker #3 落地（pair tokens + revocation + daemon-stamped identity），Stage 2b 不再重复 |
 
 ### Stage 2c — Observability（~3-5d）
 
@@ -360,15 +386,15 @@ Operator UX：
 | Sub-stage | 工作量 | 阻塞依赖 |
 |---|---|---|
 | 2a Protocol | 5-7d | 无（独立 wire 协议补齐）|
-| 2b Ecosystem | 7-11d | 部分依赖 2a（OpenAPI 含 2a 新路由）|
+| 2b Ecosystem | 5-8d | 部分依赖 2a（OpenAPI 含 2a 新路由）|
 | 2c Observability | 3-5d | 无（独立观察层）|
 | 2d Perf Eval | 4-5d | 依赖 2a/2b 完成做基准 |
-| **合计** | **~3-4 周 / 1 人**（可并行 2a/2c）| 整体 |
+| **合计** | **~3-4 周 / 1 人**（可并行 2a/2c · 后接 2b · 收尾 2d）| 整体 |
 
 ### Stage 2 验收
 
 - ✓ 2a：WebSocket bidi + `/health?deep=1` + `/ext/:method` + permission policy schema
-- ✓ 2b：OpenAPI spec auto-gen + 多 token + HttpTransport SDK 适配器
+- ✓ 2b：OpenAPI spec auto-gen + HttpTransport SDK 适配器
 - ✓ 2c：Prometheus metrics + mDNS + `--max-sessions`
 - ✓ 2d：性能基准公开 + cookbook + README scope 声明
 
@@ -381,7 +407,7 @@ VSCode       ─────│  - Mode A (含 TUI)        │
 IM bot       ─────│  - Mode B (headless)      │
                   │  - HTTP + SSE + WebSocket  │
                   │  - mDNS + OpenAPI          │
-                  │  - Bearer + 多 token       │
+                  │  - Bearer + pair tokens    │
                   │  - Prometheus metrics      │
                   └──────────────────────────┘
                   ↑
@@ -451,16 +477,19 @@ PR#3889 已实现的 `BridgeClient` file-proxy 方法（`readTextFile` / `writeT
 ## 时间线
 
 ```
-                  Week 1-2    Week 3-5      Week 6-9
+                  Week 1-2     Week 3-6        Week 7-10        Week 11-12
 qwen-code 主线
    Stage 1       ████ 🟡 PR OPEN（CHANGES_REQUESTED 收敛中）
-   Stage 1.5             ████ chiga0 10 must-haves + Mode A
-   Stage 2                       ░░░░░░ 2a-2d + 可选 2e native in-process
+   Stage 1.5a            ████████ chiga0 10 must-haves（~2-3w）
+   Stage 1.5b            ███ Mode A flag（~4d，与 1.5a 并行）
+   Stage 2                            ████████ 2a-2d（~3-4w）
+   Stage 2e（可选）                                ██████ native in-process（~1-2w）
 
 里程碑:
-   end Week 2:  Stage 1 PR#3889 merge（收敛 review threads）
-   end Week 5:  Stage 1.5 GA（must-haves 全实 + Mode A）
-   end Week 9:  Stage 2 GA（daemon protocol surface 锁定）+ 可选 Stage 2e native in-process
+   end Week 2:   Stage 1 PR#3889 merge（收敛 review threads）
+   end Week 6:   Stage 1.5 GA（1.5a must-haves + 1.5b Mode A 并行完成）
+   end Week 10:  Stage 2 GA（daemon protocol surface 锁定）
+   end Week 12:  可选 Stage 2e native in-process（去 child 桥接）
 
 External Reference Architecture（独立时间线，非项目路线图）:
    Orchestrator ~1.5-2w        → 外部团队按需实施
@@ -491,4 +520,4 @@ External Reference Architecture（独立时间线，非项目路线图）:
 
 ---
 
-下一篇：[09-与 OpenCode 详细对比 →](./07-comparison-with-opencode.md)
+下一篇：[07-与 OpenCode 详细对比 →](./07-comparison-with-opencode.md)
