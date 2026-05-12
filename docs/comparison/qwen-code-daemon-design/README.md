@@ -83,7 +83,7 @@ daemon 与外部世界对话的协议层、daemon 进程内部的运行时机制
 
 ### Part V — 平台层能力（External Reference Architecture）
 
-> **注**：以下能力**不在 qwen-code 主线路线图**中（[§06](./06-roadmap.md)），是给外部集成方（商业平台 / k8s operator / 云厂商定制）的设计参考蓝图。qwen-code daemon protocol surface 在 [Stage 2](./06-roadmap.md#stage-2daemon-完善1-2-周) 锁定后，下面这些能力可基于此自由实现。
+> **注**：以下能力**不在 qwen-code 主线路线图**中（[§06](./06-roadmap.md)），是给外部集成方（商业平台 / k8s operator / 云厂商定制）的设计参考蓝图。qwen-code daemon protocol surface 在 [Stage 2](./06-roadmap.md#stage-2daemon-完善拆分-2a-2d3-4-周总计) 锁定后，下面这些能力可基于此自由实现。
 
 | # | 文档 | 一句话 |
 |---|---|---|

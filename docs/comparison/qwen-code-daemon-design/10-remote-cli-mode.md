@@ -210,7 +210,7 @@ Content-Type: application/json
 
 daemon 在 emit capability_request 前检查 `clientCapabilities.remote`，不支持的 capability 走 `fallback` 策略。
 
-> **注**：本章 capability 协议是 [External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图) 设计——[§06 Stage 2 worklist](./06-roadmap.md#stage-2daemon-完善1-2-周) 不含此项；外部集成方决定 ACP `clientCapabilities` extension 的 schema 命名空间（本节示例用 `clientCapabilities.remote`）。
+> **注**：本章 capability 协议是 [External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图) 设计——[§06 Stage 2 worklist](./06-roadmap.md#stage-2daemon-完善拆分-2a-2d3-4-周总计) 不含此项；外部集成方决定 ACP `clientCapabilities` extension 的 schema 命名空间（本节示例用 `clientCapabilities.remote`）。
 
 ## 四、5 类 Capability 详细设计
 

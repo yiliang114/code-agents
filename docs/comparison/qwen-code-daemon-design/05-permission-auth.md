@@ -98,7 +98,7 @@ export const authMiddleware: RequestHandler = (req, res, next) => {
 
 **Stage 1 不支持**——单 token = 单用户（所有 client 用同一 token）。
 
-**Stage 2 加多 token**：[§06 Stage 2](./06-roadmap.md#stage-2daemon-完善1-2-周) daemon 完善阶段加 `tokens.json` 多 token + 每 token 绑定 user-id + workspace allowlist：
+**Stage 2 加多 token**：[§06 Stage 2](./06-roadmap.md#stage-2daemon-完善拆分-2a-2d3-4-周总计) daemon 完善阶段加 `tokens.json` 多 token + 每 token 绑定 user-id + workspace allowlist：
 
 ```json
 {
@@ -182,11 +182,52 @@ function handleAskInDaemonHttp(
 
 | 选项 | 评估 |
 |---|---|
-| **A：first responder wins（本设计选）** | ✓ 简单可用 ✓ UX 直觉（哪个 client 顺手就批） ✗ 多人模式下可能有"别人替我批了"的困惑 |
-| B：仅 primary client 能审批 | 需要"主控端 + 观察端"角色概念 → 增加 client 类型 ✗ 用户额外管理负担 |
-| C：majority vote | 多人协作场景才有意义；单用户多 client 反而不便 |
+| **A：first responder wins（Stage 1 默认 / PR#3889 已实现）** | ✓ 简单可用 ✓ UX 直觉（哪个 client 顺手就批） ✗ 多人模式下可能有"别人替我批了"的困惑 ✗ **bot client 可在 human 看到前自动 approve**（[chiga0 audit](https://github.com/QwenLM/qwen-code/pull/3889#issuecomment-...)） |
+| B：仅 designated client 能审批 | 需要"主控端 + 观察端"角色概念 → 增加 client 类型 ✗ 用户额外管理负担 |
+| C：majority / quorum vote | 多人协作场景才有意义；单用户多 client 反而不便 |
 
-主线选 A；B（primary client）作为外部多用户企业部署的可选 UX 增强（[§14](./14-orchestrator-multi-tenancy.md) External Reference）。
+主线选 A；B（designated client）作为外部多用户企业部署的可选 UX 增强（[§14](./14-orchestrator-multi-tenancy.md) External Reference）。
+
+### 3.2.1 Permission policy 扩展设计（Stage 2+）
+
+> chiga0 [PR#3889 external review](https://github.com/QwenLM/qwen-code/pull/3889) 指出 first-responder 缺 authorization model 风险：ACP `requestPermission` 设计为 1:1，daemon 升级为 1:N 广播后没有 client identity 区分，**bot client 可在 human 看到前自动 approve**。即使 Stage 1 只实现 first-responder，schema 应预留 policy 字段。
+
+permission_request event schema 加 `policy` 字段（向后兼容 / 老 client 视为 first-responder）：
+
+```jsonc
+// SSE event: permission_request
+{
+  "type": "permission_request",
+  "requestId": "r1",
+  "tool": "Bash",
+  "args": { "cmd": "npm test" },
+  "policy": "first-responder",     // 🆕 'first-responder' | 'designated' | 'quorum'
+  "designatedClientIds": null,      // 🆕 policy='designated' 时填指定 clientId 列表
+  "quorumRequired": null            // 🆕 policy='quorum' 时填需要的 approve 票数
+}
+```
+
+permission response schema 加 `X-Client-Id` header（识别 responder client）：
+
+```http
+POST /session/:id/permission/r1 HTTP/1.1
+Authorization: Bearer xxx
+X-Client-Id: cli-laptop-alice-b7m2k9...    # 🆕 与 §11 client kind 协议对齐
+
+{ "allow": true, "respondedBy": "alice@example.com" }
+```
+
+| policy | Stage 1 | Stage 2+ | External Phase 1+（多租户）|
+|---|:---:|:---:|:---:|
+| `first-responder`（默认）| ✓ PR#3889 已实现 | ✓ | ✓ |
+| `designated`（指定 clientId 列表才能应答）| ✗ | 🟡 schema 预留 + 实现 | ✓ + tenant policy 配置 |
+| `quorum`（需 N 个 approve）| ✗ | ✗ | 🟡 仅企业部署需要 |
+
+**Bot client 风险缓解**（即使 Stage 1）：
+- 通过 token allowedKinds 限制（[§11 §4.3](./11-client-coordination.md#43-kind-不可伪造)）：`im_bot` token 不能声明 `cli` kind
+- daemon 实现 `permission_request` 时**至少给 human kind 5s grace period** 前不接受 bot kind 响应（轻量缓解，无 schema 变更）
+
+---
 
 ### 3.3 审批响应 schema
 

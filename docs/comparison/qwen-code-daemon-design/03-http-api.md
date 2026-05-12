@@ -19,8 +19,13 @@
 ```
 GET    /                                   服务端版本元信息（qwen / daemon / acp 版本号）
 GET    /capabilities                       完整能力清单 + 当前绑定状态（详见 §七 / §八.3）
-GET    /health                             健康检查（无认证）
+GET    /health                             浅层健康检查（仅检测 listener，无认证）
+GET    /health?deep=1                      深度健康检查（含 ACP child liveness + EventBus 状态，Stage 2+）
 POST   /authenticate                       (HTTP-only) bearer token 取换 long-lived token
+
+# ACP 扩展协议桥接（Stage 2+ · 给 vendor zero-fork 扩展点）
+POST   /ext/:method                        ACP extMethod 桥接  ← ExtMethodRequest
+GET    /session/:id/events?include=ext     SSE 加 extNotification channel
 
 # Session 生命周期（直接映射 ACP RPC；1 daemon = 1 session 下幂等返回 bound）
 POST   /session                            get-or-create bound session   ← NewSessionRequest
@@ -127,7 +132,7 @@ const DaemonNewSessionRequest = NewSessionRequest.extend({
 
 ## 三、SSE / WebSocket 事件流（核心）
 
-> **Stage 划分**：SSE 是 **Stage 1（PR#3889 已实现）** 的默认事件传输；WebSocket bidi 升级是 [Stage 2 工作](./06-roadmap.md#stage-2daemon-完善1-2-周)（与 mDNS / OpenAPI / 多 token / Prometheus 同批），Stage 1 不含。
+> **Stage 划分**：SSE 是 **Stage 1（PR#3889 已实现）** 的默认事件传输；WebSocket bidi 升级是 [Stage 2 工作](./06-roadmap.md#stage-2daemon-完善拆分-2a-2d3-4-周总计)（与 mDNS / OpenAPI / 多 token / Prometheus 同批），Stage 1 不含。
 
 ### 选择：默认 SSE，Stage 2 升级 WebSocket
 
@@ -421,6 +426,121 @@ GET / HTTP/1.1
 
 - **daemon API 版本独立于 qwen 包版本** —— 允许 qwen 包升级时不破坏 SDK 客户端
 - **ACP 协议版本透传** —— 与底层 ACP 库版本一致（当前 0.14）
+
+---
+
+## 七·五、`/health` 深度探测协议（Stage 2+）
+
+> chiga0 [PR#3889 external review](https://github.com/QwenLM/qwen-code/pull/3889) 指出：Stage 1 `/health` 仅返回 200 判断 listener 在线，**不探测 ACP child liveness**——k8s rolling deploy / Docker health checks 会把 zombie daemon（child 已挂）看成 healthy。Stage 2+ 加 `/health?deep=1` 解决。
+
+### 7.5.1 浅层 vs 深度对比
+
+| 维度 | `GET /health`（Stage 1）| `GET /health?deep=1`（Stage 2+）|
+|---|---|---|
+| 检测层级 | listener 在线 | listener + ACP child + EventBus |
+| 延迟 | < 1ms | ~10-50ms（含 child IPC ping）|
+| 调用频率 | 高频（k8s liveness probe / Docker healthcheck）| 低频（外部监控 / 告警）|
+| 认证 | 无 | 无（避免依赖 auth 路径）|
+
+### 7.5.2 深度响应 schema
+
+```jsonc
+GET /health?deep=1 HTTP/1.1
+→ 200 OK
+{
+  "status": "healthy",                    // healthy / degraded / unhealthy
+  "listener": {
+    "uptime_ms": 12345,
+    "bound": "127.0.0.1:7776"
+  },
+  "acp_child": {                           // 仅 deep=1 时返回
+    "pid": 23456,
+    "alive": true,                         // ping ACP NDJSON stdio
+    "last_ping_ms": 5,                     // child ack 时延
+    "session_bound": "sess-abc",
+    "init_ts": "2026-05-12T08:00:00Z"
+  },
+  "eventbus": {
+    "active_subscribers": 3,
+    "ring_buffer_size": 1000,
+    "ring_buffer_used": 47,
+    "evicted_count": 0                     // bounded queue 累计 evict
+  }
+}
+
+→ 503 Service Unavailable（child crashed / EventBus broken）
+{ "status": "unhealthy", "reason": "acp_child_dead", "acp_child": { "alive": false, ... } }
+```
+
+### 7.5.3 与 k8s liveness 协议对齐
+
+```yaml
+# k8s pod spec
+livenessProbe:
+  httpGet:
+    path: /health             # Stage 1 浅层 — 高频
+    port: 7776
+  periodSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /health?deep=1      # 深度 — 低频确认 child healthy
+    port: 7776
+  periodSeconds: 30
+  failureThreshold: 2
+```
+
+---
+
+## 七·六、ACP `extMethod` / `extNotification` HTTP 桥接（Stage 2+）
+
+> chiga0 [PR#3889 external review](https://github.com/QwenLM/qwen-code/pull/3889) 指出 Stage 1 daemon **不桥接 ACP `extMethod`**——任何 daemon 不原生支持的能力 vendor 必须 fork qwen-code。Stage 2+ 加 `POST /ext/:method` 给 vendor 零 fork 扩展点。
+
+### 7.6.1 ACP extMethod 简介
+
+ACP 协议规定 `extMethod` 是 RPC-style 扩展点，`extNotification` 是 push-style 扩展点。两者由 ACP SDK 通过 NDJSON channel 透明转发。daemon 化时这两个 channel 之前没有 HTTP 暴露。
+
+### 7.6.2 `POST /ext/:method` 桥接
+
+```http
+POST /ext/dashscope.queryQuota HTTP/1.1
+Authorization: Bearer ...
+Content-Type: application/json
+
+{
+  "params": { "month": "2026-05" }
+}
+
+→ 200 OK
+{
+  "result": { "quota": 1000000, "used": 234567 },
+  "error": null
+}
+```
+
+daemon route handler 把 `:method` + body 包装为 `ExtMethodRequest` 发给 ACP child，等 response 返回 HTTP。**完全透传**——daemon 不感知具体 method 语义。
+
+### 7.6.3 SSE 加 ext notification channel
+
+```
+GET /session/:id/events?include=ext HTTP/1.1
+Accept: text/event-stream
+
+event: ext_notification
+id: 12345
+data: {"method":"dashscope.quotaWarning","params":{"remaining":50000}}
+```
+
+`?include=ext` query 参数显式 opt-in（默认 SSE 流不含 ext channel，避免 client 处理未知 event 类型）。
+
+### 7.6.4 与 Stage 1 capability 协议的区分
+
+| 维度 | `POST /session/:id/permission/:reqId`（Stage 1）| `POST /ext/:method`（Stage 2+）|
+|---|---|---|
+| 用途 | 工具调用授权（first-responder 应答）| 任意 ACP 扩展方法 |
+| 方向 | daemon → client request；client → daemon response | client → daemon request；daemon → child 透传 |
+| schema 范围 | 固定（permission_request schema）| 开放（`extMethod` 由 vendor 定义）|
+| daemon 实现复杂度 | 内置 | 仅透传 + ts 化签名 |
 
 ---
 

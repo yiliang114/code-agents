@@ -224,33 +224,72 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 
 ---
 
-## Stage 2：daemon 完善（~1-2 周）
+## Stage 2：daemon 完善（拆分 2a-2d，~3-4 周总计）
 
 ### 目标
 
-让 daemon 协议表面 **feature complete**——添加 mDNS 发现、OpenAPI codegen、WebSocket bidi、多 token、Prometheus metrics。Stage 2 完成后 qwen-code daemon scope 锁定，外部集成方可放心基于此构建。
+让 daemon 协议表面 **feature complete**——分 4 个独立 workstream 推进，每个 sub-stage 可单独 review/merge，互相**不阻塞**。Stage 2d 完成后 qwen-code daemon scope 锁定。
 
-### 工作清单
+> **拆分动机**（[chiga0 PR#3889 external review](https://github.com/QwenLM/qwen-code/pull/3889) Recommendation 5）：原 Stage 2 把 6 项打包到 "1-2w"——protocol completion / observability / perf evaluation / ecosystem 是 4 个不同 workstream，混在一起 review/merge 阻塞。拆为 4 sub-stage 各自 ~1 周。
+
+### Stage 2a — Protocol Completion（~1 周）
+
+让 wire 协议补齐主线缺口：
 
 | 任务 | 工作量 | 说明 |
 |---|---|---|
 | WebSocket bidi 升级 | 2d | 默认 `express-ws`；SSE → WS 并存（[§03 §三 WebSocket 库选型](./03-http-api.md#websocket-库选型express-5--express-ws-默认)）|
-| mDNS 服务发现 | 1d | `bonjour-service`（OpenCode 同款）—— `_qwen._tcp.local` |
+| `/health?deep=1` 深度探测 | 1d | ACP child liveness + EventBus 状态（[§03 §七·五](./03-http-api.md#七五health-深度探测协议stage-2)）|
+| `POST /ext/:method` ACP extMethod 桥接 | 2-3d | 给 vendor zero-fork 扩展点（[§03 §七·六](./03-http-api.md#七六acp-extmethod--extnotification-http-桥接stage-2)）|
+| `permission_request` policy 字段 schema 预留 | 0.5d | 即使仅实现 first-responder，schema 加 `policy` + `X-Client-Id`（[§05 §3.2.1](./05-permission-auth.md#321-permission-policy-扩展设计stage-2)）|
+| **合计** | **~5-7d / 1 人** | 协议表面闭环 |
+
+### Stage 2b — Ecosystem / Security（~1 周）
+
+让 SDK 客户端能透明用 daemon + 基础多 token：
+
+| 任务 | 工作量 | 说明 |
+|---|---|---|
 | OpenAPI codegen | 3-5d | `@asteasolutions/zod-to-openapi` 从 ACP zod schema 生成 spec |
-| 多 token / per-token user-id | 2-3d | `tokens.json` + 每 token 绑定 user-id（不做 OIDC——orchestrator 范畴）|
-| Prometheus metrics endpoint | 1-2d | `/metrics` 标准 OpenMetrics（HTTP 请求 / SSE 订阅 / EventBus 队列等）|
+| 多 token / per-token user-id | 2-3d | `tokens.json` + 每 token 绑定 user-id + revocation 粒度（不做 OIDC——orchestrator 范畴）|
 | `HttpTransport` 适配器（SDK 端）| 2-3d | `packages/sdk-typescript/src/transport/HttpTransport.ts` —— 镜像 ProcessTransport 让现有 `query()` 透明走 daemon |
-| 文档 + 示例 + 性能基准 | 2-3d | 单 daemon instance 性能基线 |
-| **合计** | **~1.5-2 周 / 1 人** | ~1500-2500 行 |
+| **合计** | **~7-11d / 1 人** | 与 chiga0 推荐"multi-token + OpenAPI 应该提到 Stage 1.5"对齐——拆分后这里仍是 Stage 2，但 sub-stage 化让 multi-token 不被其他不相关项阻塞 |
+
+### Stage 2c — Observability（~3-5d）
+
+Operator UX：
+
+| 任务 | 工作量 | 说明 |
+|---|---|---|
+| Prometheus metrics endpoint | 1-2d | `/metrics` 标准 OpenMetrics（HTTP 请求 / SSE 订阅 / EventBus 队列 / ACP child IPC RTT 等）|
+| mDNS 服务发现 | 1d | `bonjour-service`（OpenCode 同款）—— `_qwen._tcp.local` |
+| `--max-sessions` flag（默认 20）| 0.5d | Guard rail against N≈50 cliff（[chiga0 audit Risk 1](https://github.com/QwenLM/qwen-code/pull/3889) recommendation 3）|
+| **合计** | **~3-5d / 1 人** | 上线运维基线 |
+
+### Stage 2d — Perf Eval + 文档（~3-5d）
+
+| 任务 | 工作量 | 说明 |
+|---|---|---|
+| 单 daemon instance 性能基准 | 2-3d | TTI / streaming throughput / memory baseline 测量 + README 公开数字 |
+| 文档 + 示例 + cookbook | 2d | Mode A / Mode B / multi-token / `/ext` 使用示例 + README 顶部明确 "local-collaboration grade, not service grade"（[chiga0 audit Risk 1](https://github.com/QwenLM/qwen-code/pull/3889)）|
+| **合计** | **~4-5d / 1 人** | 锁定 protocol surface 前的最后一道 |
+
+### Stage 2 总计
+
+| Sub-stage | 工作量 | 阻塞依赖 |
+|---|---|---|
+| 2a Protocol | 5-7d | 无（独立 wire 协议补齐）|
+| 2b Ecosystem | 7-11d | 部分依赖 2a（OpenAPI 含 2a 新路由）|
+| 2c Observability | 3-5d | 无（独立观察层）|
+| 2d Perf Eval | 4-5d | 依赖 2a/2b 完成做基准 |
+| **合计** | **~3-4 周 / 1 人**（可并行 2a/2c）| 整体 |
 
 ### Stage 2 验收
 
-- ✓ WebSocket bidi 升级（与 SSE 并存，client capability 检测）
-- ✓ mDNS 自动发现（同网段零摩擦接入）
-- ✓ OpenAPI spec 自动生成 + SDK 验证
-- ✓ 多 token + 每 token user-id（基础多用户 daemon，不含 OIDC）
-- ✓ Prometheus metrics（基础可观测性）
-- ✓ HttpTransport SDK 适配器（透明替代 ProcessTransport）
+- ✓ 2a：WebSocket bidi + `/health?deep=1` + `/ext/:method` + permission policy schema
+- ✓ 2b：OpenAPI spec auto-gen + 多 token + HttpTransport SDK 适配器
+- ✓ 2c：Prometheus metrics + mDNS + `--max-sessions`
+- ✓ 2d：性能基准公开 + cookbook + README scope 声明
 
 ### Stage 2 后 qwen-code 状态
 
