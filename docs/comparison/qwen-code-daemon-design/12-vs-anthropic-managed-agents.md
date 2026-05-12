@@ -8,9 +8,7 @@
 
 > **免责声明**：本对比基于 Anthropic 公开文档（截至 2026 Q1），Managed Agents 是闭源服务，具体实现细节、定价、内置工具列表可能已变更。本系列是 codeagents 项目的设计提案，与 Anthropic / Qwen 团队均无关联。
 
-> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态），与 **PR#3889 Stage 1 Qwen daemon "1 Daemon Instance = 1 Session"** 模型（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）在 deployment unit 粒度上一致。主要差异是**self-host 多进程 vs cloud 多容器**——部署形态之差，而非架构之差。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§14 SaaS Phase 1-4](./14-orchestrator-multi-tenancy.md#五4-个-phase演进路径)），与 Managed Agents 的 container per-session 形态等价。自托管 vs 云托管的核心哲学差异不变。
->
-> **Stage 2 in-process N-session 影响**：Qwen 模型从"1 container/process per session"转为"1 daemon process per workspace, N session in-process"，与 Managed Agents 的 container-per-session 模型偏离更大；但 Anthropic 内部具体实现未公开，可能也走 in-process N-session（节省 container baseline 内存）。
+> **架构哲学相似性**：Anthropic Managed Agents 的内部模型很可能是"per-session container/process"（云原生隔离的最自然形态）；**PR#3889 Stage 1 (commit `6a170ef8`) Qwen daemon = channel-per-workspace + N session multiplexed** 在同 workspace 内偏离 Anthropic 的 per-session 隔离（同 workspace N session 共 OS 权限 + 共 MCP），跨 workspace 仍保持进程级隔离（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）。主要差异是 self-host 多进程 vs cloud 多容器，加上 Stage 1 同 workspace 内 in-process N-session 的资源经济性 vs Anthropic 假定的纯进程隔离。Anthropic 内部具体实现未公开，可能也走类似 hybrid 模型节省 container baseline。External SaaS 部署路径：daemon instance per-pod + orchestrator 路由（[§14 SaaS Phase 1-4](./14-orchestrator-multi-tenancy.md#五4-个-phase演进路径)）。
 
 ## 一、TL;DR
 
@@ -102,7 +100,7 @@ Anthropic Managed Agents
 
 | 维度 | Anthropic | Qwen daemon |
 |---|---|---|
-| 进程模型 | Anthropic 内部 worker pool（推测 per-session container/process）| **PR#3889 Stage 1 = 1 Daemon Instance = 1 Session**（OS 进程边界天然隔离）；Stage 2 in-process N-session 可选（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）|
+| 进程模型 | Anthropic 内部 worker pool（推测 per-session container/process 或 hybrid）| **PR#3889 Stage 1 = channel-per-workspace + N session multiplexed**（commit `6a170ef8`，同 workspace 应用层多 session，跨 workspace OS 进程隔离）；Stage 2e native in-process 可选（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）|
 | Session 共享语义 | per call 独立 / 持久化跨 call | sessionScope 由 External orchestrator 路由（'single' 多 client 共享 daemon / 'thread' / 'user'，[§02 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享)）|
 | Session 状态管理 | Anthropic 管理（黑盒）| 主线：每 daemon JSONL transcript；External SaaS：+ orchestrator 层 SQLite/Postgres 聚合（[§14 持久化栈](./14-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
 | 长跑 / Background | ✓ async tasks API | ✓ 4 kinds（agent/shell/monitor/dream）+ 跨 client 可见（[§subagent-display](../subagent-display-deep-dive.md)）|

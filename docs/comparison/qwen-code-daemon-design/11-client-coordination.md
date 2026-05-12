@@ -4,12 +4,12 @@
 
 > **🚀 Stage 1 部分实现**（2026-05-07）：[PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) commit `41aa95094` 实现了本章 §五 liveness 协议子集——server-push 15s SSE keepalive 帧（与设计 15s 一致）+ bounded subscriber queues + `client_evicted` overflow（消息队列满即 evict 慢消费 client，§九 数量上限的细粒度版）+ AbortController on `req.close`（即时剔除断开 client）。多端协调的 active typer / takeover / kind 限额 / IM bot 一对多用户等高级特性 Stage 1 不含——Stage 2 + External 才做。详见 [§06 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
-> **多端协调要点**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) **PR#3889 Stage 1** 1 daemon = 1 session 下）：
+> **多端协调要点**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) PR#3889 Stage 1 channel-per-workspace + N session multiplexed 架构）：
 >
-> - **Active typer / takeover / kind 限额 / IM bot 一对多** 全部 per-daemon 内逻辑
-> - **Cross-session multi-client**（IM bot 连接多个 session）—— "client 同时 attach 多个 daemon"，由 client 端管理
-> - **Cross-daemon aggregate UI**（"我所有 background tasks"视图）—— 由 orchestrator 提供 aggregate API
-> - **Stage 2 in-process N-session 影响**：active typer / takeover / subscriber set / kind 限额 全部从 per-daemon 收缩为 per-session（sessionId 维度索引）；cross-session aggregate UI 移入 daemon 内（无需 orchestrator）
+> - **Active typer / takeover / kind 限额 / IM bot 一对多** 全部 per-session 内逻辑（同 channel N session 各自维护 subscriber set）
+> - **Cross-session multi-client**（IM bot 连接多个 session）—— client 端同 daemon HTTP front 通过 sessionId path 区分多个 session
+> - **Cross-daemon aggregate UI**（"我所有 background tasks"视图）—— 由 orchestrator 提供 aggregate API（跨 daemon 进程）
+> - **同 daemon 内 cross-session aggregate**：commit `6a170ef8` 后 daemon 可在同进程内提供 `GET /workspace/:id/sessions` aggregate（已在 PR#3889 Stage 1 实现）
 
 > 决策 §1 + §6 让一个 session 可被多 client 同时订阅；本章定义这些 client 如何协调（liveness / active typer / takeover / exclusive 模式 / IM bot 多用户分摊），保住 collaboration 红利的同时解决 stale connection 等运维痛点。
 

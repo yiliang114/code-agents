@@ -2,35 +2,38 @@
 
 > [下一篇：Orchestrator 多租户与配额 →](./14-orchestrator-multi-tenancy.md) · [回到 README](./README.md)
 
-> **前置事实纠正（2026-05-12 维护者反馈）**：本章对比的不是 "qwen-code vs OpenCode" 的根本能力差异。**qwen-code 当前已通过 ACP 协议原生支持单进程 N session**：
-> - `packages/cli/src/acp-integration/acpAgent.ts:193` 的 `class QwenAgent` 持 `private sessions: Map<string, Session>`
-> - VSCode 插件 (`acpConnection.ts` + `qwenAgentManager.ts:1324`) 已生产使用 1 child + N session + `switchToSession()` 切换
-> - ACP SDK 定义了 `newSession` / `loadSession` / `unstable_listSessions` / `unstable_forkSession` / `session/resume` 5 个多 session RPC
+> **架构演进时间线**（2026-05-12）：
+> - **早期 PR#3889 Stage 1 设计**（`8d7c03a5f` 时期）：1 daemon + N children（1 per session）= "1 daemon = 1 session"。每 session N× 内存 / N× OAuth / N× FileReadCache。
+> - **commit `f29353a2`（2026-05-12 上午）**：N:1 framing 修正——维护者反馈 + LaZzyMan review 指出 `packages/cli/src/acp-integration/acpAgent.ts:194` `QwenAgent.sessions: Map<string, Session>` 已原生支持单 child 多 session（`yiliang114` 的 VSCode 插件早已生产使用）。
+> - **commit `6a170ef8`（2026-05-12 下午）**：Stage 1 bridge 重构——改为 **1 daemon + M children（1 per workspace）+ N sessions multiplexed per workspace via QwenAgent.sessions: Map**。N=5 同 workspace session 内存 300-500MB → **60-100MB**。
+> - **跨 workspace 仍需独立 child**（`acpAgent.ts:601 loadSettings(cwd)` 跨 workspace 复用会污染）——Stage 2e native in-process 才能解决。
 >
-> 故本章 22 维对比的真实题目是 "**HTTP daemon 模式下 PR#3889 Stage 1 选了 1 child = 1 session 的工程简化路径**，vs OpenCode 的 single-process N-session 路径"。PR#3889 选择 child-process-per-session 不是因为做不到 single-process N-session，而是 **Stage 1 简化** + **进程级隔离免费** + **与 PR#3889 时间表对齐**。Stage 2 in-process 重构后预期可切换到 OpenCode 同款模式。
->
-> 系统对比"PR#3889 Stage 1 1 Daemon Instance = 1 Session"与"单 daemon 多 session"（OpenCode 模式 / `qwen --acp` 已有能力）两种设计的 tradeoff。**本章回答"PR#3889 Stage 1 为什么选这条路"——为选型决策提供数据**；扩展到 single-process N-session 是 Stage 2 in-process 范畴，本章解释 Stage 1 选 1 daemon = 1 session 的工程逻辑。
+> 故本章 22 维对比的真实题目是 "**Stage 1 channel-per-workspace + N session multiplexed**"（PR#3889 当前实现）vs **OpenCode single-process N-session 跨 workspace 共享**" 两种模式。Stage 1 在同 workspace 内已经达到 OpenCode 同款 in-process N-session 经济性；跨 workspace 资源共享是 Stage 2e 才解决的可选演进，不在主线 scope。
 
 ## 一、TL;DR
 
-**复杂度守恒**——child-process-per-session 把隔离卖给 OS（实现简单 + cold start/内存代价），single-process N-session 自己实现隔离（资源经济 + 5 PR isolation 套路 + 17 HPE 攻击向量代价）。
+**Stage 1 (commit `6a170ef8`) 已经在同 workspace 内达到 in-process N-session 经济性**——跨 workspace 仍走 OS 进程隔离。整体是 "**Hybrid**" 模型——同 workspace 内 N session 共享应用层 ACP `sessions: Map`，跨 workspace 走进程级隔离。
 
-| 哲学 | PR#3889 Stage 1 child-process-per-session | OpenCode 模式 / qwen-code Stage 2 in-process N-session |
+| 维度 | PR#3889 Stage 1（channel per workspace + N session multiplexed） | OpenCode 单进程 N-session 跨 workspace 共享 |
 |---|---|---|
-| **隔离** | OS process 级（免费）| 应用层 ALS（自己实现）|
-| **代价主战场** | Orchestrator 层 + 资源池化 | Daemon 内部 + 长跑稳定性 + multi-tenant 安全 |
-| **Cold start** | ~1-3s/session | ~10ms/session |
-| **内存（N=50）** | ~2GB | ~300MB |
-| **Crash 半径** | 1 session | 整 daemon |
-| **Subagent isolation** | 自动成立 | 5 PR 套路 |
-| **大规模 SaaS（100+ session/机）** | 需资源池化 | 原生支持 |
-| **qwen-code 当前状态** | PR#3889 Stage 1 已实现（OPEN）| `qwen --acp` agent 已支持多 session（main 已有），HTTP daemon 模式留待 Stage 2 in-process 重构后接入 |
+| **同 workspace N session 资源共享** | ✓（OAuth × 1 / FileReadCache × 1 / CLAUDE.md parse × 1 / MCP × 1 per server）| ✓（同款）|
+| **跨 workspace 资源共享** | ✗（不同 child = 进程隔离）| ✓（Map<workspace, Instance> 共享）|
+| **跨 workspace 隔离** | OS process 级（免费）| 应用层 ALS（Effect-TS LocalContext）|
+| **同 workspace 隔离** | 应用层（ACP `sessions: Map` per-session）| 应用层 ALS |
+| **Cold start（首 session）** | ~1-3s（spawn child）| ~10ms（同进程函数调用）|
+| **Cold start（同 workspace 第 N session）** | **<200ms**（attach existing channel）| ~10ms |
+| **内存（N=5 同 workspace session）** | **60-100MB**（1 child + 5 session）| ~75MB（50MB baseline + 5×5MB） |
+| **内存（N=50 跨 workspace 50 daemon）** | ~3-5GB（50 child × ~60-100MB）| ~300MB |
+| **Crash 半径** | 同 workspace channel 全部 N session（其他 workspace 独立）| 整 daemon |
+| **Subagent isolation** | 同 workspace 内应用层；跨 workspace 进程级 | 应用层 5 PR 套路 |
+| **大规模 SaaS（500+ session/机）** | 需 Stage 2e native in-process（去 child + 跨 ws 共享）| 原生支持 |
+| **qwen-code 当前状态** | PR#3889 Stage 1 OPEN (commit `6a170ef8`)；同 workspace N session 已 in-process | 上游 OpenCode 已上线 |
 
-**实务建议**：单 session 模式覆盖 95% 真实场景；多 session 模式仅在大客户压测必需时投。
+**实务建议**：Stage 1 当前模型 **同 workspace 高密度场景已完美**（共享 OAuth/Cache/parse/LSP/MCP），跨 workspace 场景在 N < 200 同样可接受；只有 cross-workspace 高密度才需要 Stage 2e native in-process 重构。
 
 ## 二、22 维对比矩阵
 
-> 表头"单 Session" = PR#3889 Stage 1 child-process-per-session；"多 Session" = OpenCode single-process N-session / Qwen Stage 2 in-process。
+> 表头"单 Session" = 原 PR#3889 Stage 1 early child-process-per-session 框架（已被 commit `6a170ef8` 重构淘汰）；"多 Session" = OpenCode single-process N-session / Qwen Stage 1 channel-per-workspace（commit `6a170ef8` 后）/ Qwen Stage 2e native in-process。**本表保留两侧对比是为了显示工程演进 tradeoff——实际 PR#3889 已经从左列演进到右列**。
 
 | # | 维度 | 单 Session（Stage 1）| 多 Session（OpenCode / Stage 2）|
 |---|---|---|---|
@@ -88,7 +91,7 @@ N 个 cold session 启动总成本：
 
 **结论**：Cold start 在 **稳定长 session 工作流下不是 bottleneck**，在 **高频短 session 工作流下是 killer**。
 
-**缓解**：External SaaS 资源池化路径的 daemon warm pool —— orchestrator 预热 N 个 idle daemon，按需绑 session，cold start ~1-3s → ~50-200ms。（Stage 2 in-process N-session 重构后 cold start 直接降到 ~10ms，是更彻底的修法）
+**缓解**：Stage 1 commit `6a170ef8` 已经把同 workspace 第 N session cold start 降到 <200ms（attach existing channel）；跨 workspace 仍 ~1-3s/session 可走 External SaaS warm pool（orchestrator 预热 N 个 idle daemon）。Stage 2e native in-process 后跨 workspace cold start 也降到 ~10ms（无 child spawn），是更彻底的修法。
 
 ### 3.3 内存 baseline 在多大 N 时变得致命
 
@@ -154,16 +157,17 @@ N 个 cold session 启动总成本：
 
 ### 3.6 与现实约束的对齐
 
-**PR#3889 已实现 child-process-per-session**（+8883/-4 / 32 commits，Stage 1 scope 100% + 文档 100% 补全）—— 这是 Stage 1 HttpAcpBridge 的事实标准。
+**PR#3889 当前状态**（+12393/-194 / **78 commits** / OPEN / CHANGES_REQUESTED）：Stage 1 bridge **已重构为 channel-per-workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）—— 这是 Stage 1 真正的事实标准。
 
-| 选择 | PR#3889 Stage 1 改造 | 与 PR#3889 Stage 1 一致性 |
+| 选择 | 改造范围 | 状态 |
 |---|---|---|
-| Stage 1 child-process-per-session（当前 PR#3889 实现）| ~0 行 | ✅ 100%（PR#3889 child-process = 当前 daemon instance）|
-| Stage 2 in-process N-session（复用 `QwenAgent.sessions: Map` 已有能力）| **比想象的小**——`qwen --acp` agent 已支持多 session（VSCode 插件已用）；改造主要在 HttpAcpBridge 层从 spawn-per-session 改成 attach-to-existing-agent | ⚠️ 中等（需 HttpAcpBridge 重构 + EventBus per-session 路由）|
+| Stage 1 channel-per-workspace（当前 PR#3889 实现）| `byWorkspaceChannel: Map<workspace, ChannelInfo>` + `getOrCreateChannel` coalesce + `connection.newSession()` 多路复用 + `killSession` 引用计数（commit `6a170ef8` 新增 ~500 行）| ✅ 100% Stage 1 内实现 |
+| Stage 2e native in-process（去 `qwen --acp` child）| 修 `acpAgent.ts:601 loadSettings(cwd)` 跨 workspace 污染；HTTP daemon 直接 import `QwenAgent` 而非 spawn | ⚠️ 中等（~1-2 周，需 settings 重载层重构）|
+| OpenCode-style 全应用层 ALS | + Effect-TS LocalContext + Map<workspace, Instance> + 跨 workspace ALS 路由 | ❌ 大改写（~2-3 月，且违反 Qwen "不引 Effect" 原则）|
 
-**OpenCode 已实现多 session daemon ~半年**——经验和坑都踩过，但他们的 codebase 是 Effect-first，不能直接拷代码。**而 qwen-code 自己的 `qwen --acp` 已实现多 session ~更久**（VSCode 插件早就在用），Stage 2 可直接复用而无需 Effect-TS。
+**关键里程碑**：commit `6a170ef8` 直接把"原计划 Stage 2 native in-process"的核心收益（同 workspace N session 资源共享）在 Stage 1 内实现了。Stage 2e 剩下的工作量较小（跨 workspace 共享），且收益有限（除非 cross-workspace 高密度场景）。
 
-**结论**：PR#3889 Stage 1 选 child-process-per-session = 0 改造成本快速 GA。Stage 2 in-process N-session 是后续路径，**实现代价比"单 vs 多 session 重写"小得多**（只需重构 HttpAcpBridge，不动 ACP agent 内部）。
+**OpenCode 仍是 cross-workspace 高密度场景的成熟参考**；qwen-code Stage 1 已覆盖单 workspace 高密度场景；Stage 2e 是可选演进。
 
 ## 四、何时选哪个：决策树
 
@@ -200,32 +204,39 @@ N 个 cold session 启动总成本：
 ```
 开始
 ├── N（并发 session/机）≤ 5？
-│   └─ 是 → ✅ Stage 1 child-process-per-session（多 session 反而 baseline 更费）
-├── N ≤ 50 且长 session 工作流？
-│   └─ 是 → ✅ Stage 1 child-process-per-session（PR#3889 默认）
-├── N ≤ 100 但 cold start 敏感？
+│   └─ 是 → ✅ Stage 1 channel-per-workspace（同 workspace N session 共享 OAuth/cache/MCP）
+├── 主要是同 workspace 内多 client / 多 session 协作？
+│   └─ 是 → ✅ Stage 1（commit `6a170ef8` 后同 workspace N session ~60-100MB total，cold start <200ms after first）
+├── N ≤ 50 跨 workspace（每 ws 少 session）+ 长 session 工作流？
+│   └─ 是 → ✅ Stage 1（每 workspace ~60-100MB × 50 ws = ~3-5GB，可接受）
+├── N ≤ 200 跨 workspace 中等密度？
 │   └─ 是 → ✅ Stage 1 + External SaaS 资源池化（warm pool）~2-3w
-├── N ≤ 500 且同 workspace 高密度？
-│   └─ 是 → ⚠️ Stage 1 + External SaaS Worker threads hybrid ~3-4w
-└── N ≥ 500 大规模 SaaS？
-    └─ 是 → 🟡 推进 Stage 2 in-process N-session（**仅 Mode B headless `qwen serve`**——TUI 是 single-session by design，[§02 §7 Stage 2 下 Mode A TUI 语义](./02-architectural-decisions.md#stage-2-in-process-n-session-下-mode-a-的-tui-语义关键设计澄清) 推荐 Mode A 永远 single-session）；复用 `QwenAgent.sessions: Map`，主要重构 HttpAcpBridge，**远小于** OpenCode 那种 Effect-TS 重写
+├── N ≤ 500 跨 workspace 高密度 + cold start 敏感？
+│   └─ 是 → ⚠️ Stage 2e native in-process（去 child 桥接 + 跨 ws 资源共享）~1-2w
+└── N ≥ 500 大规模 SaaS（跨 workspace 高密度长跑）？
+    └─ 是 → 🟡 Stage 2e + External orchestrator pool（daemon-per-tenant）
 ```
+
+**注**：单 workspace 内多 session（含 Mode A TUI + 多个 HTTP client）已被 Stage 1 commit `6a170ef8` 完美覆盖。决策树主要区分 **跨 workspace 多少**——这是 Stage 1 / Stage 2e 的真正分界。
 
 ## 五、与 PR#3889 / OpenCode / qwen-code 自身现状的具体对齐
 
-### 5.1 PR#3889 Stage 1 child-process model（HTTP daemon 的 Stage 1 实现路径）
+### 5.1 PR#3889 Stage 1 channel-per-workspace model（HTTP daemon 当前架构，commit `6a170ef8`）
 
 ```
 qwen serve（HTTP front）
-└─ HttpAcpBridge: spawn `qwen --acp` child per session
-   ├─ child 1：sess-A 的 ACP NDJSON stdio agent
-   ├─ child 2：sess-B 的 ACP NDJSON stdio agent
-   └─ child N：...
+├─ byWorkspaceChannel: Map<workspace, ChannelInfo>
+└─ HttpAcpBridge: spawn `qwen --acp` child per workspace
+   ├─ child 1 (workspace=A)：QwenAgent.sessions Map → {sess-1, sess-2, sess-3}（multiplex）
+   ├─ child 2 (workspace=B)：QwenAgent.sessions Map → {sess-4, sess-5}
+   └─ child M (workspace=C)：QwenAgent.sessions Map → {sess-N}
 ```
 
-**命名约定**：
-- `qwen serve` HTTP front = **Orchestrator**（多 daemon spawn / route / cleanup，External Reference Architecture）
-- `qwen --acp` child = **Daemon Instance**（Stage 1 框架下绑唯一 session，主线 building block）
+**关键操作**：
+- `getOrCreateChannel(workspaceKey)`：reuse existing channel 或 spawn 新 child（concurrent calls coalesced via `inFlightChannelSpawns`）
+- `connection.newSession({cwd, mcpServers})`：在 existing channel 上加新 session
+- `killSession`：从 `channelInfo.sessionIds` 移除；sessionIds 空时才 kill child
+- `channel.exited` cleanup：tear down all sessions on channel + 每 session fan-out `session_died` event
 
 ### 5.2 OpenCode multi-session model
 
@@ -252,17 +263,20 @@ VSCode 插件实际使用：
 └─ AcpConnection（1 child + N session + switchToSession()）
 ```
 
-**这是 qwen-code 自身已验证的能力，不是新设计**——Stage 2 in-process 重构主要工作是把 HTTP daemon front 的 `HttpAcpBridge` 从 spawn-per-session 改成 attach-to-existing-agent（直接复用同一个 `QwenAgent` 实例并暴露 sessionId path 路由）。
+**这是 qwen-code 自身已验证的能力，不是新设计**——commit `6a170ef8` 在 HttpAcpBridge 层从 spawn-per-session 改成 spawn-per-workspace + multiplex N session 即是基于此能力。Stage 2e native in-process 进一步去 child 桥接，直接在 daemon HTTP front 进程内 import `QwenAgent`。
 
 ### 5.4 三种模型差异对照
 
-| 维度 | OpenCode | PR#3889 Stage 1（HttpAcpBridge child-per-session）| Stage 2 in-process（基于已有 `QwenAgent.sessions: Map`）|
+| 维度 | OpenCode | **PR#3889 Stage 1 channel-per-workspace（commit `6a170ef8`）** | Stage 2e native in-process（可选，去 child）|
 |---|---|---|---|
-| 隔离机制 | Effect-TS LocalContext | OS process | `AsyncLocalStorage`（Node 内建，不引 Effect-TS）|
-| 资源管理 | per-workspace Map | per-daemon-child | per-workspace（多 session 共 LSP/MCP/cache）|
-| 持久化 | 跨 session SQLite | per-daemon-child JSONL | 跨 session JSONL + SQLite（如需）|
-| Cold start | ~10ms | ~1-3s/session | ~10ms（attach to existing agent）|
-| Crash 半径 | 整 daemon | 1 session | 整 daemon |
+| 同 workspace N session 隔离 | 应用层 ALS | 应用层 ACP `sessions: Map` per-session | 应用层 `AsyncLocalStorage`（Node 内建）|
+| 跨 workspace 资源共享 | ✓ Map<workspace, Instance> | ✗（不同 child）| ⚠️ 需先解 `loadSettings(cwd)` 污染 |
+| 跨 workspace 隔离 | 应用层 LocalContext | OS process | 应用层 ALS（如解决污染）|
+| 资源管理范围 | per-workspace Map | per-`qwen --acp` child（= per-workspace）| 同 Stage 1 + 跨 workspace 可选共享 |
+| 持久化 | 跨 session SQLite | per-`qwen --acp` child JSONL（同 workspace N session 各自一份）| 同 Stage 1 |
+| Cold start（首 session）| ~10ms | ~1-3s（spawn child）| ~10ms |
+| Cold start（同 workspace 第 N session）| ~10ms | **<200ms**（attach existing channel）| ~10ms |
+| Crash 半径 | 整 daemon | 同 workspace channel 全部 N session | 整 daemon |
 
 详见 [§07 与 OpenCode 详细对比](./07-comparison-with-opencode.md)。
 
@@ -271,20 +285,20 @@ VSCode 插件实际使用：
 
 | 章节 | 协同点 |
 |---|---|
-| [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型) | PR#3889 Stage 1 选 child-process-per-session 的决策来源 |
+| [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型) | PR#3889 Stage 1 channel-per-workspace（commit `6a170ef8`）+ Stage 2e native in-process 可选演进的决策来源 |
 | [§07 与 OpenCode 详细对比](./07-comparison-with-opencode.md) | OpenCode multi-session 模式 + Stage 2 in-process 演进对照 |
 | [§12 vs Anthropic Managed Agents](./12-vs-anthropic-managed-agents.md) | Anthropic 的 per-session container 与 Stage 1 child-process model 架构相似 |
 
 ## 七、一句话总结
 
-**复杂度守恒**——Stage 1 单 session 还是 Stage 2 in-process N-session 不是"哪个简单"的问题，是"复杂度放在哪"的问题：
+**PR#3889 Stage 1 commit `6a170ef8` 已实现 "channel-per-workspace + N session multiplexed"** ——这是 hybrid 模型：
 
-- **Stage 1 child-process-per-session：复杂度在 orchestrator 层 + 资源池化层**——新模块，问题域清晰，可独立演进
-- **Stage 2 in-process N-session：复杂度散在 daemon 内部**——与 core 业务交织，每次新加 feature 都要考虑 isolation
+- **同 workspace 内**：完全应用层多 session 共享（OAuth × 1 / cache × 1 / MCP × 1 / cold start <200ms），与 OpenCode 同款经济性
+- **跨 workspace**：仍走 OS 进程隔离（`acpAgent.ts:601 loadSettings(cwd)` 是边界），未达 OpenCode 跨 workspace 资源共享
 
-**PR#3889 Stage 1 默认 child-process-per-session**：因为（1）N < 50 时经济性可接受；（2）Stage 1 工程简化让 GA-ready 快；（3）OS 进程边界免费提供隔离；（4）触发条件多数项目永远不出现。
+**90% 真实场景在此模型下已是最佳**——大多数用户单 workspace 1-10 session，已享受全部 in-process 经济性。
 
-**Stage 2 in-process N-session 仅在大规模 SaaS 必需时推进**——技术路径已具备（`qwen --acp` agent 现成多 session 能力），届时主要重构 HttpAcpBridge 而非整体改写。
+**Stage 2e native in-process（可选）**：只在 cross-workspace 高密度场景必需时推进——技术路径已具备（解决 `loadSettings(cwd)` 跨 ws 污染即可），届时直接 import `QwenAgent` 去掉 bridge child，省 ~50MB/workspace + IPC 延迟。
 
 ---
 

@@ -2,15 +2,15 @@
 
 > [← 上一篇：3 阶段路线图](./06-roadmap.md) · [下一篇：协议兼容性 →](./08-protocol-compatibility.md)
 
-> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似。**进程模型层面**：OpenCode HTTP daemon 走 single-process multi-session，**Qwen PR#3889 Stage 1 HttpAcpBridge 走 child-process-per-session**——后者是 PR#3889 的工程简化选择（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)），**不是** qwen-code 的能力上限：`packages/cli/src/acp-integration/acpAgent.ts:193` 的 `QwenAgent.sessions: Map<sessionId, Session>` 已在 main 分支证明 qwen-code 同样支持 single-process multi-session（VSCode 插件 `AcpConnection` 已生产使用），与 OpenCode 在协议能力上**对等**。代价权衡：Stage 1 HttpAcpBridge child-process-per-session 失去 cross-session 资源经济性（同 workspace 多 session 共享 LSP/MCP/cache），换取 process-level 隔离 + 实现简化；Stage 2 in-process 重构后可切换到 OpenCode 同款 single-process N-session 模式。OpenCode 仍是 cross-session 资源共享场景的成熟参考；qwen-code Stage 1 选择简化路径，Stage 2 视场景再切换。详见 [§13 单 vs 多 Session 设计深度对比](./13-single-vs-multi-session-design.md)。
+> 本设计与 OpenCode daemon 在 wire 协议、HTTP 路由、SQLite 持久化层面相似。**进程模型层面**：OpenCode HTTP daemon 走 single-process N-session 跨 workspace 共享，**Qwen PR#3889 Stage 1 走 channel-per-workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）—— 后者在**同 workspace 内**已达到 OpenCode 同款 in-process N-session 经济性（OAuth × 1 / cache × 1 / MCP × 1 / cold start <200ms after first），**跨 workspace** 仍走 OS 进程隔离（`acpAgent.ts:601 loadSettings(cwd)` 边界）。OpenCode 跨 workspace 资源共享是 qwen-code Stage 2e 才考虑的可选演进。详见 [§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§13 单 vs 多 Session 设计深度对比](./13-single-vs-multi-session-design.md)。
 
 ## 一、设计哲学对比
 
 | 维度 | OpenCode | Qwen Daemon（本设计）| 差异理由 |
 |---|---|---|---|
-| 进程模型 | 单 daemon 多 session 共进程 | **PR#3889 Stage 1 HttpAcpBridge = 1 child = 1 session**（多 session 由 orchestrator spawn 多 daemon）| **Stage 1 工程简化选择**——不是 qwen-code 能力上限：`QwenAgent.sessions: Map` 已支持单进程 N session（VSCode 插件已生产用）；Stage 2 in-process 重构后可切到 OpenCode 同款模式 |
+| 进程模型 | 单 daemon 多 session 共进程（跨 workspace）| **PR#3889 Stage 1 = channel-per-workspace + N session multiplexed**（commit `6a170ef8`）| 同 workspace 已 in-process N-session（OpenCode 同款经济性）；跨 workspace 仍走 OS 进程隔离；Stage 2e native in-process 可选演进解决跨 workspace |
 | `process.cwd()` | 永不改变 | **同款** | OpenCode 已验证 |
-| 上下文传播 | Effect-TS `LocalContext` | **Stage 1：不需要**（daemon 进程本身就是 session ctx）；**Stage 2 in-process N-session：需要 `AsyncLocalStorage` per-request session ctx**，但仍不引入 Effect-TS（沿用 Node 内建 ALS）| Qwen 不引入 Effect 重依赖 |
+| 上下文传播 | Effect-TS `LocalContext`（per-request session + workspace ctx）| **Stage 1**：HTTP route handler 拿到 sessionId 后 dispatch 到对应 ACP channel；同 channel 内多 session 走 ACP wire 自带 sessionId 路由（不需要应用层 ALS）。**Stage 2e**：daemon 直接 import `QwenAgent` 时需引入 Node 内建 `AsyncLocalStorage` per-request session ctx | Qwen 不引入 Effect 重依赖 |
 | HTTP 框架 | Hono | **Express 5（默认，复用 vscode-ide-companion 已有依赖）/ Hono 可选（External SaaS 高并发）** | 不强行对齐——Express 5 + zod 校验已够用，Hono 是性能 trigger 后再切 |
 | 协议 schema | OpenAPI codegen（13525 行）| **复用 ACP NDJSON zod schema** | Qwen 已有 838 行 ACP agent，0 设计成本 |
 | 多 channel 支持 | 仅 SDK / TUI / Web | **+ IM / IDE 全走 SessionRouter** | Qwen 已有 Channels 包 |
@@ -153,13 +153,15 @@
 
 ## 六、性能对比预期
 
-| 维度 | OpenCode（实测）| Qwen Stage 1 child-process-per-session | Qwen Stage 2 in-process N-session（预期）|
+| 维度 | OpenCode（实测）| Qwen Stage 1 channel-per-workspace（commit `6a170ef8`）| Qwen Stage 2e native in-process（预期）|
 |---|---|---|---|
 | 启动时间 | ~2-3s | ~2-3s（HTTP front 启动）| 类似（同框架）|
-| 单 session 创建 | <100ms | ~1-3s（spawn `qwen --acp` child + V8 / module load）| <100ms（attach to existing agent）|
-| 同 workspace 第二个 session | <50ms（LSP/MCP 已 ready）| **~1-3s 全量重启**（不共享）| <50ms 类似 OpenCode（LSP/MCP 已 ready）|
+| 首 session 创建（新 workspace）| <100ms | ~1-3s（spawn `qwen --acp` child + V8 / module load）| <100ms（无 child spawn）|
+| 同 workspace 第 N session | <50ms（LSP/MCP/cache 已 ready）| **<200ms**（attach existing channel + 1 ACP `newSession` RPC）| <50ms 同 OpenCode |
+| 跨 workspace 第二个 session | <50ms（同进程共享 LSP/MCP）| ~1-3s（不同 child）| <50ms（如解 `loadSettings(cwd)` 污染）|
 | Prompt 端到端延迟（SSE 首字节）| 主要由 LLM 决定 | 类似 | 类似 |
-| 100 并发 session | 内存约 1-2GB（取决于 LLM 上下文）| ~3-5GB（N × ~30-50MB daemon baseline + LLM 上下文）| 类似 OpenCode |
+| 100 同 workspace session | 内存约 100-150MB（共享）| **类似** ~100-150MB（1 child + 100 session multiplexed via ACP `sessions: Map`）| 类似 |
+| 100 跨 workspace session（每 ws 1 session）| 内存 ~200MB（同进程共享）| ~6-10GB（100 child × ~60-100MB）| 类似 OpenCode 同进程共享 |
 
 **Qwen 可能略高的地方**：
 - ACP zod schema 校验 vs OpenCode Effect Schema —— zod 在大 schema 上略慢但 Qwen 路由相对简单，影响可忽略
@@ -215,7 +217,7 @@ const q = query({ transport: new HttpTransport({
 | HTTP+SSE+WebSocket 协议层 | 2. 多 channel 路由（IM/IDE/Web/SDK 同源）|
 | 持久化分层（文件+RDBMS）| 3. **Express 5 复用 vscode-ide-companion**（Hono 是 External SaaS 高并发可选，不是默认）|
 | ACP / OpenAPI 协议表面 | 4. 复用 PR#3723 应用层权限流 |
-| **进程模型阶段性差异** | 5. **PR#3889 Stage 1 = child-process-per-session**（HttpAcpBridge 简化路径；OpenCode 是 single-process N-session）—— 不是 qwen-code 能力上限：`qwen --acp` agent 已支持单进程 N session（VSCode 插件生产用），Stage 2 in-process 重构后可切到 OpenCode 同款模式 |
+| **进程模型差异** | 5. **PR#3889 Stage 1 = channel-per-workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）——同 workspace 内 in-process N-session 与 OpenCode 同款经济性；跨 workspace 仍走 OS 进程隔离（vs OpenCode 单进程 N workspace 共享）。Stage 2e native in-process 是可选演进，解决跨 workspace 资源共享 |
 | 默认安全策略 | 6. 默认 0.0.0.0 + 无 token = 拒绝启动 |
 
 **Qwen daemon 不是"OpenCode 的复刻"，而是"借鉴 OpenCode 验证过的进程模型 + 复用 Qwen 自家的 ACP / Channels / PR#3723 / Background tasks 等成熟资产"** —— ~75% 复用率的来源即此。

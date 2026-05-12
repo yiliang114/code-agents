@@ -4,7 +4,7 @@
 
 ## 核心架构
 
-**PR#3889 Stage 1：1 Daemon Instance = 1 Session**——每个 daemon 进程承载唯一一个 session；多 session 通过 orchestrator spawn 多个 daemon 实例实现。这是 `HttpAcpBridge` 的 Stage 1 工程简化选择，**不是** qwen-code / ACP 的固有约束：`packages/cli/src/acp-integration/acpAgent.ts:193` 的 `QwenAgent.sessions: Map<sessionId, Session>` 已在 main 分支证明 qwen-code 同样支持 single-process N session（VSCode 插件生产用）。Stage 2 in-process N-session 重构后 HTTP daemon 可切换到同款模式（**仅 Mode B headless** 接入，Mode A TUI 仍 single-session by design）。详见 [§02 §2](./02-architectural-decisions.md#2-状态进程模型) 前置事实纠正块。
+**PR#3889 Stage 1 (commit `6a170ef8`, 2026-05-12)：1 daemon process + M `qwen --acp` children (1 per workspace) + N sessions multiplexed per workspace**——同 workspace 内通过 `QwenAgent.sessions: Map<sessionId, Session>` 多路复用 N session（OAuth × 1 / FileReadCache × 1 / CLAUDE.md parse × 1 / cold start <200ms after first），与 OpenCode 同款 in-process N-session 经济性；**跨 workspace** 走独立 child 进程级隔离（`acpAgent.ts:601 loadSettings(cwd)` 边界）。详见 [§02 §2](./02-architectural-decisions.md#2-状态进程模型)。
 
 **双部署模式**：
 
@@ -13,9 +13,15 @@
 | **Mode A: CLI + HttpServer** | `qwen --serve [--port N]` | ✅ 本地渲染 | 单用户在终端 + WebUI / IDE / IM bot 同时接入 |
 | **Mode B: Headless Daemon + HttpServer** | `qwen serve [--port N]` | ❌ | 服务器 / 容器 / 远端机器 |
 
-Stage 1 两种模式都遵循"1 daemon instance = 1 session"，区别仅在 daemon instance 是否同时承载本地 TUI 客户端。TUI 是 client #0（in-process EventBus），与 HTTP 远端 client 共享同一份事件流（[§02 §6](./02-architectural-decisions.md#6-多-client-并发请求) fan-out）。Stage 2 in-process N-session 重构后 Mode B 可承载同进程多 session；Mode A 因 TUI single-session UX by design 永远保持 1 daemon = 1 session（[§02 §7 TUI 语义澄清](./02-architectural-decisions.md#stage-2-in-process-n-session-下-mode-a-的-tui-语义关键设计澄清)）。
+两种模式都遵循 Stage 1 channel-per-workspace + N session multiplexed 架构，区别仅在 daemon process 是否同时承载本地 TUI 客户端。TUI 是 client #0（in-process EventBus）绑定其中一个 session；同 daemon 内 daemon HTTP 路径可访问其他 N-1 session（详见 [§02 §7 TUI 语义澄清](./02-architectural-decisions.md#mode-a-在多-session-daemon-下的-tui-语义关键设计澄清)）。
 
-**为什么 Stage 1 选 child-process-per-session**：进程级隔离免费、crash 半径小、subagent isolation 自动成立、与 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 工程简化路径一致。代价是 cold start ~1-3s/session、内存 ~30-50MB × N session——单机 N < 50 场景可接受。**何时推进 Stage 2 in-process N-session**：N ≥ 500 大规模 SaaS 场景，复用 `QwenAgent.sessions: Map` 已有能力，主要重构 HttpAcpBridge 而非整体改写。详见 [§13 单 vs 多 Session 设计深度对比](./13-single-vs-multi-session-design.md)。
+**Stage 1 特性**：
+- 同 workspace N session 内存 ~60-100 MB（commit `6a170ef8` 实测，5 session 同 child）
+- 同 workspace 第 N session cold start <200ms（attach existing channel）
+- 同 workspace N session 共享 OAuth / FileReadCache / CLAUDE.md parse / MCP children
+- 跨 workspace 仍 OS 进程级隔离（独立 child）
+
+**何时考虑 Stage 2e native in-process**：跨 workspace 高密度场景（N ≥ 500），先解 `acpAgent.ts:601 loadSettings(cwd)` 跨 workspace 污染，再 daemon 直接 import `QwenAgent`（省 bridge child ~50MB/workspace + IPC 延迟）。详见 [§13 单 vs 多 Session 设计深度对比](./13-single-vs-multi-session-design.md)。
 
 
 > **关于 Stage 编号约定**：本系列文档中的 Stage 编号有两个语境：
@@ -110,13 +116,13 @@ Qwen Code 已有 ACP agent 838 行 + Channels 多路由设施 + WebUI 包 + SDK 
 ```
 
 **核心设计哲学**：
-- daemon 内部不再 spawn CLI 子进程；core 通过 import 加载到 daemon 进程内
-- **PR#3889 Stage 1：1 Daemon Instance = 1 Session = 1 Workspace**——HttpAcpBridge spawn-per-session 简化路径；Stage 2 in-process N-session（同 workspace 多 session 共 LSP/MCP/cache）复用 `QwenAgent.sessions: Map` 已有能力
-- LSP / MCP server / PTY 才是真正的子进程（Stage 1 per-daemon；Stage 2 退化为 per-workspace 多 session 共享）
-- 持久化：每 daemon 自己的 transcript JSONL；外部 orchestrator 可选 SQLite/Postgres 做 cross-daemon 聚合（详见 [§14 持久化栈](./14-orchestrator-multi-tenancy.md#四持久化栈大致方向)）
+- daemon HTTP front 不直接 import core；spawn `qwen --acp` child per workspace + 通过 ACP NDJSON 桥接（Stage 1）；Stage 2e 可选去 child 直接 import
+- **PR#3889 Stage 1 (commit `6a170ef8`)：1 daemon + M children (per workspace) + N sessions multiplexed per workspace**——`QwenAgent.sessions: Map` 复用，同 workspace 内 in-process N-session 经济性已达成
+- LSP / MCP server / PTY 仍是 per-`qwen --acp` child (= per-workspace) 子进程（同 workspace N session 共享，跨 workspace 进程级隔离）
+- 持久化：每 session 自己的 transcript JSONL（同 channel N session 各一份）；外部 orchestrator 可选 SQLite/Postgres 做 cross-daemon 聚合（详见 [§14 持久化栈](./14-orchestrator-multi-tenancy.md#四持久化栈大致方向)）
 
 **与 OpenCode 不同的地方**：
-- **进程模型阶段性差异**：OpenCode 走 single-process multi-session；qwen-code Stage 1 走 multi-process single-session（HttpAcpBridge 简化路径，OS 进程边界天然 isolation，避开 Stage 1 引入应用层 ALS / Effect-TS / per-session resource managers 复杂度）；Stage 2 in-process 重构后可切换到 OpenCode 同款模式（**不是** qwen-code 能力上限，`qwen --acp` agent 本身已支持多 session）
+- **进程模型**：OpenCode 单进程 N session 跨 workspace 共享；qwen-code Stage 1 channel-per-workspace 模型——同 workspace 已 in-process N-session（与 OpenCode 同款经济性），跨 workspace 仍 OS 进程隔离。Stage 2e native in-process 是可选演进解决跨 workspace 共享
 - **复用 ACP NDJSON schema 作为内部 RPC**（OpenCode 用自定义 OpenAPI schema codegen）
 - **Channels 多路由复用**（IM / WebUI / IDE 都走 SessionRouter）—— OpenCode 没有等价物
 - **bearer token + PR#3723 共享 L3→L4 权限流**（OpenCode 用单密码）

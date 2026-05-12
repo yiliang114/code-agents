@@ -7,10 +7,14 @@
 ## 总览
 
 ```
-qwen-code 主线（~3 周内 feature complete）：
-├─ Stage 1   ✅ (~1 周, PR#3889 Stage 1 scope 100%) Mode B headless qwen serve
-├─ Stage 1.5 🆕 (~4 天增量) Mode A CLI + HttpServer (qwen --serve)
-└─ Stage 2   🆕 (~1-2 周) daemon 完善：mDNS / OpenAPI / WebSocket bidi / 多 token / Metrics
+qwen-code 主线（~3-4 周内 feature complete）：
+├─ Stage 1   🟡 (PR#3889 OPEN, 78 commits / +12393/-194, code complete + 多轮 multi-model audit + CHANGES_REQUESTED)
+│            │
+│            └─ Mode B headless qwen serve · 1 daemon + M qwen --acp children (1 per workspace)
+│               + N sessions multiplexed per workspace via QwenAgent.sessions: Map
+│               + 默认 --max-sessions=20 · --max-connections=256
+├─ Stage 1.5 🆕 chiga0 review 10 must-haves（blockers 3 + reliability 4 + ergonomics 3）+ Mode A qwen --serve flag
+└─ Stage 2   🆕 (~3-4 周, 2a-2d 拆分) daemon 完善 + 可选 native in-process（去掉 qwen --acp child 桥接）
 
 ────────── qwen-code daemon feature complete ──────────
 
@@ -23,25 +27,41 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 
 **核心判断**：qwen-code 是 building block，不是 SaaS 平台。Stage 1 + Stage 1.5 + Stage 2 完成后 daemon 协议表面 100% 稳定，外部集成方（如阿里云 DashScope / 自建团队 / 用户）可基于此自由实现 orchestrator + 多租户 + SaaS。这与 OpenCode（端到端 SaaS 路线）的设计哲学相反——后者绑定平台决策，前者保持 Unix 风格的可组合性。
 
+> **Stage 1 架构演进**（2026-05-12 commit `6a170ef8`）：早期设计假设 "1 daemon = 1 session = 1 `qwen --acp` child"——但 PR#3889 review 过程中（LaZzyMan / tanzhenxin / 维护者反馈）发现 `packages/cli/src/acp-integration/acpAgent.ts:194` 的 `QwenAgent.sessions: Map<string, Session>` 已原生支持单 child 多 session。Stage 1 bridge 因此重构为 "**1 daemon + M qwen --acp children（1 per workspace）+ N sessions multiplexed per workspace via QwenAgent.sessions: Map**"，N=5 同 workspace session 内存从 300-500MB（5 child）降到 60-100MB（1 child + 5 session）。**跨 workspace 仍需独立 child**（`acpAgent.ts:601` 在 `newSession` 时 `loadSettings(cwd)` 重新加载 settings，跨 workspace 复用会互相污染）——Stage 2 native in-process 才能解决。
+
 > **前置 PR 全部已合并**（2026-05-06 之前）：PR#3717 FileReadCache + PR#3810 5 路径 invalidation + PR#3723 共享 permission flow + PR#3739 transcript-first fork + PR#3642 `/tasks` + PR#3818 MCP rediscovery coalesce + PR#3836 Kind framework——daemon 化前置基础就绪。
 
 ---
 
-## Stage 1：Mode B headless `qwen serve`（~1 周，✅ PR#3889 GA-ready / Stage 1 scope 100%）
+## Stage 1：Mode B headless `qwen serve`（PR#3889 OPEN · 78 commits · +12393/-194 · CHANGES_REQUESTED）
 
 ### 目标
 
-提供 daemon 的最小可用形态——`qwen serve` headless 进程，通过 HTTP+SSE 暴露 ACP NDJSON 协议。一 daemon instance 绑一 session（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)），多 session 由外部 spawn 多个 instance 实现。
+提供 daemon 的最小可用形态——`qwen serve` headless 进程，通过 HTTP+SSE 暴露 ACP NDJSON 协议。1 daemon + M `qwen --acp` children（1 per workspace）+ N sessions multiplexed per workspace via `QwenAgent.sessions: Map`（[§02 §2](./02-architectural-decisions.md#2-状态进程模型)）。跨 workspace 仍由外部 orchestrator spawn 多 daemon 处理（或 Stage 2 native in-process 时升级到单 daemon 多 workspace）。
 
 ### 实现
 
 ```
-[现有] qwen --acp                 → stdio NDJSON ACP agent
+[现有] qwen --acp                 → stdio NDJSON ACP agent · QwenAgent.sessions: Map 原生多 session
 [Stage 1] qwen serve              → Express 5 HTTP server
-                                  → 内部 spawn `qwen --acp` per session
+                                  → 内部 spawn `qwen --acp` per workspace（不再 per session）
+                                  → byWorkspaceChannel: Map<workspace, ChannelInfo>
+                                  → connection.newSession({cwd, mcpServers}) 加新 session 到 existing channel
                                   → HTTP body ↔ stdio NDJSON 桥接
                                   → SSE 事件流给多 client
 ```
+
+### Stage 1 内存模型（commit `6a170ef8` 数据）
+
+| N 同 workspace session | 早期设计（1 child per session）| 当前实现（1 child per workspace）|
+|---|---|---|
+| 1 | ~60-100 MB RSS | ~60-100 MB RSS（相同）|
+| 5 | 300-500 MB RSS | **60-100 MB RSS**（节省 ~5x）|
+| 10 | 600-1000 MB RSS | **80-150 MB RSS**（节省 ~6-7x）|
+| OAuth refresh | N× | 1× per channel |
+| FileReadCache | N× 独立 | shared per channel |
+| CLAUDE.md parse | N× | parse 一次 per channel |
+| Cold start（第 N 个 session）| ~1-3s | ~1-3s（首个 session）/ <200ms（后续 same workspace）|
 
 ### 工作清单（设计估算）
 
@@ -57,19 +77,30 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | 文档 + 示例 + e2e 测试 | 1d | |
 | **合计** | **~7-8 天 / 1 人** | ~700-1000 行新增代码 |
 
-### Stage 1 PR#3889 实现 audit（2026-05-07）
+### Stage 1 PR#3889 实现 audit（最近更新 2026-05-12 第三轮）
 
-> 最近更新 2026-05-09：commits 23 → 32 / +7698/-46 → +8883/-4 / Stage 1 docs 已补全（commit `27a164c`）/ multi-model audit 累计 close ~30 review threads。
+> 累计更新历程：commits 23 → 32 → 78 / +7698/-46 → +8883/-4 → **+12393/-194** / 经历 5 轮 multi-model audit + LaZzyMan / tanzhenxin reviews + chiga0 三轮 follow-up + 维护者 N:1 framing 反馈。
 
-[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— OPEN，**+8883/-4 / 32 commits** —— Stage 1 GA-ready（代码 100% Stage 1 scope 落地 + 文档 100% 补全 + 多轮 multi-model audit 收敛）。
+[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— **OPEN / CHANGES_REQUESTED**，**+12393/-194 / 78 commits** —— Stage 1 scope 代码完成 + 文档 100% 补全 + 多轮 audit 持续收敛中。
+
+#### 最新关键 commits（2026-05-12）
+
+| Commit | 说明 |
+|---|---|
+| **`6a170ef8`** | 🌟 **架构重构**：Stage 1 bridge 改为 multiplex sessions on one `qwen --acp` child per workspace（复用 `QwenAgent.sessions: Map`）。N=5 内存 300-500MB → 60-100MB |
+| **`f29353a2`** | 🌟 **N:1 framing 修正**：纠正"qwen-code 不支持多 session 资源共享"的早期错误描述（来自 LaZzyMan + 维护者反馈）；指明 `acpAgent.ts:194` 已支持多 session |
+| **`bbc7b8b6`** + `b1767903` | chiga0 第 3 轮 review：Stage 1 scope honesty + 10 must-haves for Stage 1.5+ + durability model 显式化 |
+| `8de72dcf` + `9352627f` | LaZzyMan reviews：Mode A vs Mode B 语义澄清 + Stage 1 scope 边界 |
+| `734d833b` | 7 review threads close：atomic write / read-size cap / force-exit on 2nd signal / doc fixes |
+| `e18b8fa6` + `b37cc01c` | 12 review threads close 两轮：6 critical bugs + 6 follow-ups |
 
 #### 1️⃣ 体量与预估对比
 
-| 维度 | 预估（本节工作清单）| 实际（PR#3889 当前）| 倍数 |
+| 维度 | 预估（本节工作清单）| 实际（PR#3889 2026-05-12）| 倍数 |
 |---|---|---|---|
-| LOC | ~700-1000 行 | **+8883 / -4**（含测试 + 文档；剔除测试 + 文档 ~5100 LOC）| **5x-9x** |
-| 工作量 | ~7-8 天 / 1 人 | 多周（32 commits 跨多轮 multi-model audit + Stage 1 文档补全）| 几周 vs 1 周 |
-| 提交数 | — | **32 commits**：7 实现 + 13 self-audit / review round（claude-opus-4-7 / gpt-5.5 / deepseek 多模型）+ 2 e2e/doc-note + 5 多模型 review threads close 批次（30+ threads）+ 1 Stage 1 docs + 4 merge / lint | — |
+| LOC | ~700-1000 行 | **+12393 / -194**（含测试 + 文档；剔除测试 + 文档 ~7000 LOC）| **7x-12x** |
+| 工作量 | ~7-8 天 / 1 人 | 多周（78 commits 跨 5 轮 multi-model audit + LaZzyMan/tanzhenxin/chiga0 reviews + N:1 framing 重构）| 几周 vs 1 周 |
+| 提交数 | — | **78 commits**：7 实现 + 多轮 self-audit / review round（claude-opus-4-7 / gpt-5.5 / deepseek 多模型）+ chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 维护者 N:1 framing 反馈 + 架构重构（6a170ef8 channel per workspace） + Stage 1 docs + merge/lint | — |
 
 **超出原因**（设计 → 实现的工程现实）：
 
@@ -79,10 +110,12 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | **Timing-safe bearer compare** | §05 设计为 Bearer，PR#3889 加 SHA-256 + `crypto.timingSafeEqual` + 401 uniform across no-header/bad-scheme/wrong-token，对应 §05 side-channel 防御（设计在 §05 但 Stage 1 实现）|
 | **IPv6 loopback ergonomics** | `::1` / `[::1]` / `host.docker.internal` 等 LOOPBACK_BINDS 边界，原设计未具体化 |
 | **EventBus correctness** | `client_evicted` overflow / replay ring / AsyncIterable abort handling 等几百行 |
-| **Self-audit + multi-model reviewer rounds** | 32 commits 中 ~12 轮 audit（self-audit 1-10 + reviewer rounds 1-7 + 后续 multi-model review threads close）—— 这是 PR#3889 体量超出的最大来源；多模型审（claude-opus-4-7 + gpt-5.5 + deepseek）累计 close ~30 review threads（race / leak / IPv6 / SSE / Windows / env whitelist / abort timeout 等）|
+| **Self-audit + multi-model reviewer rounds + 多 reviewer follow-up** | 78 commits 中 ~25 轮 audit（self-audit 1-10 + reviewer rounds 1-7 + chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 后续 multi-model review threads close）—— PR#3889 体量超出的最大来源；多模型审（claude-opus-4-7 + gpt-5.5 + deepseek）累计 close ~60+ review threads |
+| **🌟 架构重构（commit `6a170ef8` 2026-05-12）** | Stage 1 bridge 重构为 multiplex sessions on one `qwen --acp` child per workspace（复用 `QwenAgent.sessions: Map`）；新增 `ChannelInfo` 类型 + `byWorkspaceChannel: Map` + `getOrCreateChannel(workspaceKey)` coalesce + `connection.newSession({cwd, mcpServers})` 多 session 多路复用 + `killSession` 引用计数清理。这是最 expensive 的 follow-up（原设计完全没料到这个能力可以在 Stage 1 实现）|
 | **DaemonClient SDK** | §03 没单独估算 SDK 端，但 sibling 同步实现 `parseSseStream` / `DaemonHttpError` |
 | **child-crash recovery** | reviewer round 4 加，原设计未含 |
-| **Stage 1 文档补全** | commit `27a164c` 补 §06 设计原计划的 1d "documentation + examples" 任务：`docs/users/qwen-serve.md`（114 行用户 quickstart）+ `docs/developers/qwen-serve-protocol.md`（287 行 HTTP 协议 reference）+ `docs/developers/examples/daemon-client-quickstart.md`（190 行 SDK ts 示例）+ README "Daemon mode" 入口；总 +591 行 docs |
+| **Stage 1 文档补全** | commit `27a164c` 补 §06 设计原计划的 1d "documentation + examples" 任务：`docs/users/qwen-serve.md`（用户 quickstart）+ `docs/developers/qwen-serve-protocol.md`（HTTP 协议 reference）+ `docs/developers/examples/daemon-client-quickstart.md`（SDK ts 示例）+ README "Daemon mode" 入口 |
+| **chiga0 第 3 轮 review docs**（`bbc7b8b6`）| Stage 1 scope honesty + durability model 显式化 + 10 must-haves for Stage 1.5+ |
 
 #### 2️⃣ 实现的 9 个 STAGE1_FEATURES（capabilities envelope）
 
@@ -176,21 +209,67 @@ qwen-code 主线 HA / 稳定性需求由 PR#3889 + PR#3739 已完整覆盖（详
 | 机制 | 实现 | 覆盖 |
 |---|---|---|
 | **Daemon crash 自动重启** | 由外部进程管理器（systemd / k8s / orchestrator）负责 | 单 daemon 进程崩溃 → 重启 |
-| **Transcript-first fork resume** | PR#3739 已合并 | 新 daemon 启动 replay transcript JSONL 重建 session 状态 |
+| **Transcript-first fork resume** | PR#3739 已合并 | 新 daemon 启动 replay transcript JSONL 重建 session 状态（但 PR#3889 Stage 1 不在 HTTP 上暴露 `loadSession` —— chiga0 must-have #2 推到 Stage 1.5）|
 | **SSE Last-Event-ID 重连** | PR#3889 commit `41aa95094` | client 网络抖动 / daemon 重启后断点续连（详细协议见 [§03 §三](./03-http-api.md#三sse--websocket-事件流核心)）|
-| **Crash isolation 免费** | OS 进程边界（决策 §2 PR#3889 Stage 1 1 daemon = 1 session）| Stage 1：一 daemon 崩溃只影响其唯一 session，其他 daemon 不受影响。Stage 2 in-process N-session 下需引入 daemon 内 session-level crash 隔离（process-level uncaughtException → 当前所有 session 受波及，需 per-session error boundary + supervisor restart）|
-| **资源 cleanup 简单** | OS process exit | kill daemon = 清理所有 fd / child process / memory，无需主动 cleanup hooks |
+| **Crash isolation 半径**（commit `6a170ef8` 后修订）| 1 channel per workspace（含 N session）| Stage 1：一 channel 崩溃影响该 workspace 全部 N 个 session（不再是 1 个），其他 workspace channel 不受影响。`session_died` 事件 fan-out 到所有 session 的 SSE 订阅者；无 resume，client 须 `POST /session` 重建 |
+| **资源 cleanup 简单** | OS process exit + channel teardown | kill daemon = 清理所有 fd / child / memory；`killSession` 引用计数清理（其他 session 仍在的 workspace 保留 channel）|
 | **timing-safe bearer auth + 401 uniform** | PR#3889 commit `ad0e6ec06` | 防 side-channel 攻击 |
+| **Durability model**（chiga0 must-have #10）| 显式 documented as ephemeral | Stage 1 sessions 不跨 daemon restart 存活；`writeTextFile` atomic across crash 但 not across restart；ring overflow on long disconnects |
 
 主线**不需要**：multi-pod sticky session / Postgres Patroni / Redis Sentinel / per-tenant heap budget / Worker thread tenant isolation / 30 天 Soak/Chaos 测试矩阵 等——这些都是 External SaaS 运营层关切，作为 External Reference Architecture 设计参考蓝图。
 
 ---
 
-## Stage 1.5：Mode A CLI + HttpServer（~4 天增量）
+## Stage 1.5：Mode A + chiga0 10 must-haves（~2-3 周总计）
+
+### 来源
+
+PR#3889 review 中 chiga0 第 3 轮 review（[#3889 comment 4427875644](https://github.com/QwenLM/qwen-code/pull/3889#issuecomment-4427875644)）从 IM bot / mobile companion / IDE extension 三个 downstream consumer 视角审计 Stage 1 protocol surface，得出结论："**Stage 1 promises 'real workloads' but the protocol surface is sized for demo / single-user / never-crashes**"。作者拒绝把 must-haves 加入 Stage 1（保持 Stage 1 scope honesty），全部推到 Stage 1.5。
+
+### chiga0 10 must-haves
+
+#### 🚨 Blockers（生产用必需）
+
+| # | must-have | 设计点 |
+|---|---|---|
+| 1 | **Per-request `sessionScope` override on `POST /session`** | 今天 daemon-wide default 是唯一设置；VSCode 扩展无法说"这个 window 我要独立 session"对抗一个配置为 shared 的 daemon。需 body 字段 `{ scope: 'single' \| 'thread' \| 'user' }` 覆盖 |
+| 2 | **`loadSession` / `unstable_resumeSession` over HTTP** | 没这个，integration 无法 survive child crash 或 daemon restart；任何 orchestrator 也无法恢复状态。需 `POST /session/:id/load` + `POST /session/:id/resume` 路由 |
+| 3 | **Persistent client identity（pair tokens + 客户端 revocation）** | Stage 1 用单 shared bearer；leak 一个 token 全员撤销，且 `originatorClientId` 是 client 自报而非 daemon 从认证身份盖章。需 token registry + revocation API |
+
+#### 🛡️ Reliability baseline
+
+| # | must-have | 设计点 |
+|---|---|---|
+| 4 | **Client-initiated heartbeat path** | 区分 "agent 思考中" 和 "daemon 死了"，不等 15s server heartbeat。需 `POST /session/:id/heartbeat` 或 SSE 双向 ping |
+| 5 | **`permission_already_resolved` event** | 当 vote 在 first-responder race 中失败，UI 现在只能从 404 推断状态。需主动 event 通知 |
+| 6 | **Larger / per-session-configurable replay ring** | default 4000 frames 覆盖短断开；mobile / chatty-turn workload 需 8000+ 或 per-session config |
+| 7 | **`slow_client_warning` event before `client_evicted`** | Soft backpressure，让 well-behaved slow client 自我节流（trim render depth / drop chunks）before 被终结 |
+
+#### 🎨 Integration ergonomics
+
+| # | must-have | 设计点 |
+|---|---|---|
+| 8 | **`POST /session/:id/_meta` for IM-style context** | per-session key-value 附加到后续 prompt（chat id / sender / thread id）替代 per-channel improvisation |
+| 9 | **`/capabilities` actual feature negotiation** | `protocol_versions: { acp: '0.14.x', daemon_envelope: 1 }` 让 client 能 detect drift 而非 fall through 到 "unknown frame, ignore" |
+| 10 | **First-class durability documentation** | 已 shipped（commit `bbc7b8b6` `docs/users/qwen-serve.md` "Durability model" section）|
+
+### Stage 1.5 工作量估算
+
+| Workstream | 工作量 |
+|---|---|
+| **Blockers 1-3** | ~5-7d（loadSession 是大头 + token registry/revocation 中等）|
+| **Reliability 4-7** | ~3-5d（多个轻量事件 + ring config 改造）|
+| **Ergonomics 8-9** | ~2-3d（/_meta + capabilities 协商）|
+| **Mode A `qwen --serve` flag** | ~4d（原 Stage 1.5 内容）|
+| **合计** | **~2-3 周 / 1 人** |
+
+---
+
+## Stage 1.5b：Mode A CLI + HttpServer（~4 天增量，可与 must-haves 并行）
 
 ### 目标
 
-让 `qwen` CLI 进程同时挂载 HttpServer——TUI 在终端正常渲染，远端 client（WebUI / IDE / IM bot）通过 HTTP 接入同一 session（[§02 §7 双部署模式](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）。
+让 `qwen` CLI 进程同时挂载 HttpServer——TUI 在终端正常渲染，远端 client（WebUI / IDE / IM bot）通过 HTTP 接入同一 daemon。Mode A 的 daemon 可同时持 N session（同 Stage 1 multi-session per workspace 机制），TUI 绑定其中某一个 session（[§02 §7 双部署模式](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）。
 
 ### 实现
 
@@ -214,10 +293,10 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 | 文档 + e2e | 1d | |
 | **合计** | **~4 天 / 1 人** | ~300-500 行新增 |
 
-### Stage 1.5 验收
+### Stage 1.5b 验收
 
 - ✓ `qwen --serve` 启动 TUI + HTTP server 同进程
-- ✓ 远端 client 通过 HTTP 接入同 session（与 TUI 共享 EventBus）
+- ✓ 远端 client 通过 HTTP 接入同 daemon（与 TUI 共享 EventBus）；同 workspace 内 daemon 可持 N session，TUI 绑定其一
 - ✓ TUI 退出 → HTTP server graceful drain → 整进程退出
 - ✓ 默认 loopback only / no token（本地信任）；远端启用必须显式 `--token`
 - ✓ 与 Stage 1 PR#3889 同 wire 协议（client SDK 不需要改）
@@ -231,6 +310,8 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 让 daemon 协议表面 **feature complete**——分 4 个独立 workstream 推进，每个 sub-stage 可单独 review/merge，互相**不阻塞**。Stage 2d 完成后 qwen-code daemon scope 锁定。
 
 > **拆分动机**（[chiga0 PR#3889 external review](https://github.com/QwenLM/qwen-code/pull/3889) Recommendation 5）：原 Stage 2 把 6 项打包到 "1-2w"——protocol completion / observability / perf evaluation / ecosystem 是 4 个不同 workstream，混在一起 review/merge 阻塞。拆为 4 sub-stage 各自 ~1 周。
+>
+> **可选 Stage 2e — Native in-process**（去除 `qwen --acp` child 桥接）：Stage 1 已实现 multi-session per workspace via child + bridge；Stage 2e 进一步把 `QwenAgent` 直接 import 到 daemon 进程内，**省去 ~50MB/workspace bridge 进程开销 + IPC 延迟**。需解决 `acpAgent.ts:601 loadSettings(cwd)` 在 cross-workspace 时互相污染问题，工作量估 ~1-2 周。Stage 2e 不在 chiga0 拆分的 2a-2d 之内，是更后期的可选演进。
 
 ### Stage 2a — Protocol Completion（~1 周）
 
@@ -342,7 +423,7 @@ IM bot       ─────│  - Mode B (headless)      │
 
 ### Shell Sandbox
 
-主线 daemon 默认 **NoSandbox**——agent 跑 daemon 进程权限（PR#3889 现状）。Stage 1 PR#3889 1 daemon = 1 session 模型下 daemon 不感知 tenant，sandbox 是给 multi-tenant SaaS 部署的外部隔离方案，不在主线 scope。Stage 2 in-process N-session 下同 daemon 多 session 共享 OS 权限，sandbox 重要性上升（不同 tenant session 跑 daemon 进程权限会互相污染），届时 ShellSandbox 抽象的 in-process Worker isolation 优先级应提升到 daemon 主线 scope。
+主线 daemon 默认 **NoSandbox**——agent 跑 daemon 进程权限（PR#3889 现状）。Stage 1 PR#3889 1 daemon + M children（per workspace）+ N sessions per workspace 模型下 daemon 不感知 tenant，sandbox 是给 multi-tenant SaaS 部署的外部隔离方案，不在主线 scope。同 workspace 的 N session 共享同 `qwen --acp` child 的 OS 权限（即同 user UID + 同 fs 视图），shell 工具调用没有 session 级隔离——这是 Stage 1 的 known boundary，多租户 / 跨用户场景必须由 orchestrator 层做 daemon-per-tenant 隔离。Stage 2e native in-process 下跨 workspace 多 session 共享 OS 权限，sandbox 重要性进一步上升，届时 ShellSandbox 抽象的 in-process Worker isolation 优先级应提升到 daemon 主线 scope。
 
 External 实施方向（按 ShellSandbox interface 抽象）：
 
@@ -370,16 +451,16 @@ PR#3889 已实现的 `BridgeClient` file-proxy 方法（`readTextFile` / `writeT
 ## 时间线
 
 ```
-                  Week 1   Week 2   Week 3
+                  Week 1-2    Week 3-5      Week 6-9
 qwen-code 主线
-   Stage 1       ████ ✅
-   Stage 1.5         ██
-   Stage 2           ░░░░░░░░░░░░
+   Stage 1       ████ 🟡 PR OPEN（CHANGES_REQUESTED 收敛中）
+   Stage 1.5             ████ chiga0 10 must-haves + Mode A
+   Stage 2                       ░░░░░░ 2a-2d + 可选 2e native in-process
 
 里程碑:
-   end Week 1: Stage 1 GA-ready（PR#3889 待 merge）
-   end Week 2: Stage 1.5 GA（Mode A）
-   end Week 3: Stage 2 GA（daemon protocol surface 锁定）
+   end Week 2:  Stage 1 PR#3889 merge（收敛 review threads）
+   end Week 5:  Stage 1.5 GA（must-haves 全实 + Mode A）
+   end Week 9:  Stage 2 GA（daemon protocol surface 锁定）+ 可选 Stage 2e native in-process
 
 External Reference Architecture（独立时间线，非项目路线图）:
    Orchestrator ~1.5-2w        → 外部团队按需实施
@@ -392,8 +473,8 @@ External Reference Architecture（独立时间线，非项目路线图）:
 
 | 风险 | 缓解 |
 |---|---|
-| 单 daemon instance OOM / race condition | daemon crash 由外部 orchestrator（或 systemd / k8s）自动重启；transcript JSONL 持久化保证 PR#3739 fork-resume 恢复 |
-| MCP server 跨 session 状态泄漏 | per-server `requiresPerSession` flag fallback；PR#3889 Stage 1 1 daemon = 1 session 后此问题大部分自动消失。Stage 2 in-process N-session 下需重新审计 `requiresPerSession` 工具——同 daemon 多 session 共 MCP server 时跨 session 状态共享重新成为问题 |
+| 单 daemon instance OOM / race condition | daemon crash 由外部 orchestrator（或 systemd / k8s）自动重启；transcript JSONL 持久化保证 PR#3739 fork-resume 恢复。Stage 1.5 must-have #2 把 `loadSession` 暴露到 HTTP 之后 client 也能跨 daemon restart 重建 |
+| MCP server 跨 session 状态泄漏 | per-server `requiresPerSession` flag fallback；PR#3889 Stage 1 同 workspace N session 共享同 `qwen --acp` child + 同 MCP children——需审计 `requiresPerSession` 工具。跨 workspace 不同 daemon child 自然隔离不受影响。Stage 2e native in-process 下跨 workspace 共享 MCP 时需再审计 |
 | FileReadCache 与 history rewrite 同步问题 | PR#3810 已修 5 路径，新加 daemon 路径需类似 audit |
 | Bearer token 泄漏 | 默认 0.0.0.0 binding 拒绝启动（无 token）；timing-safe compare + 401 uniform |
 | `process.chdir()` 误调 | 落地后 grep audit + CI 守卫 |

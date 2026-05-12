@@ -13,11 +13,11 @@
 | **Daemon Instance**（主线）| 1 session 状态 + tool 执行 + Shell sandbox | qwen-code 项目 |
 | **Orchestrator**（External）| spawn / route daemon、AuthN/AuthZ、quota、audit、持久化 | 外部商业平台 |
 
-**核心思想**：[§02 §2](./02-architectural-decisions.md#2-状态进程模型) **PR#3889 Stage 1** "1 daemon = 1 session" 模型把租户复杂度从 daemon 内挤出到 orchestrator 层——daemon 进程不感知租户，每个 daemon 只服务一个 tenant 的一个 session，进程级隔离自然成立。
+**核心思想**：[§02 §2](./02-architectural-decisions.md#2-状态进程模型) **PR#3889 Stage 1 channel-per-workspace** 模型在 workspace 边界上把租户复杂度从 daemon 内挤出到 orchestrator 层——daemon 进程不感知租户，每个 daemon 服务一组 workspace（外部 orchestrator 决定边界），同 workspace 内 N session 共享 OS 权限，跨 workspace 进程级隔离。**多 tenant 场景必须由 orchestrator 在 workspace / daemon 粒度上做 ACL**——不可让多 tenant 共一个 workspace channel（因为同 channel N session 共 OS 权限）。
 
-> **Stage 2 in-process N-session 影响**：daemon 内承载同 workspace 多 session 时仍可保持"daemon = 1 tenant"假设（多 session 共属同租户），orchestrator 4 件事职责不变；但若推进 cross-tenant in-process 多 session（合规风险），daemon 必须重新引入 sessionId-keyed ACL middleware。本章描述 **Stage 1 假设下** 的 orchestrator 角色分工。
+> **Stage 2e native in-process 影响**：daemon 直接持 `QwenAgent` 跨 workspace 时仍保持"daemon = 1 tenant"假设，orchestrator 4 件事职责不变；但若推进 cross-tenant in-process 多 workspace（合规风险），daemon 必须重新引入 workspace+sessionId-keyed ACL middleware。本章描述 **Stage 1 假设下** 的 orchestrator 角色分工。
 
-**Daemon 主线持久化基线（对比基线）**：每 daemon 一份 transcript JSONL（PR#3739）+ `~/.qwen/settings.json` / skills / OAuth credentials 启动加载、运行时只读。**0 RDBMS 依赖**——并发写 / audit 查询 / quota 原子 / hash lookup 这些 RDBMS 痛点在 PR#3889 Stage 1 1 daemon = 1 session 模型下天然不出现。Stage 2 in-process N-session 下并发写 race 重新出现（同 daemon 内多 session 并发写 permission decisions / settings），需引入 in-memory mutex；audit / quota 仍可下放给 orchestrator。下面 SQLite/Postgres/drizzle-orm 全部是 orchestrator 层关切。
+**Daemon 主线持久化基线（对比基线）**：每 session 一份 transcript JSONL（PR#3739，同 channel N session 各一份）+ `~/.qwen/settings.json` / skills / OAuth credentials 启动加载、运行时只读。**0 RDBMS 依赖**——audit 查询 / quota 原子 / hash lookup 这些 RDBMS 痛点在 PR#3889 Stage 1 主线 daemon 内不出现（仍是 orchestrator 层关切）。但同 workspace N session 并发写 `workspace`/`global` scope permission decisions / settings 时需 in-memory mutex（per-file lock）防 lost update（同 `qwen --acp` child 内）。下面 SQLite/Postgres/drizzle-orm 全部是 orchestrator 层关切。
 
 ## 二、Orchestrator 4 件事
 

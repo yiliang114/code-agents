@@ -57,8 +57,8 @@ Mode B: daemon instance 无 TUI 全 HTTP（qwen serve）
 | 原则 | OpenCode | Qwen Daemon（本设计）|
 |---|---|---|
 | daemon 不再 spawn CLI | core 直接 import | 同样 |
-| 多 session 模型 | `Map<directory, InstanceContext>`（同进程 N session）| **PR#3889 Stage 1 = 1 daemon = 1 session**（HttpAcpBridge spawn-per-session 简化）；**Stage 2 in-process 同 OpenCode**——`qwen --acp` agent 本身已具备 `QwenAgent.sessions: Map<sessionId, Session>` 多 session 能力（VSCode 插件生产用），届时主要重构 HttpAcpBridge 而非 ACP agent |
-| `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | Stage 1 无需 ALS Instance ctx —— daemon 进程本身就是 session ctx；Stage 2 in-process 引入 Node 内建 `AsyncLocalStorage`（不引 Effect-TS）做 per-request session ctx（详见 [04-进程模型](./04-process-model.md)）|
+| 多 session 模型 | `Map<directory, InstanceContext>`（同进程 N session 跨 workspace）| **PR#3889 Stage 1 (commit `6a170ef8`) = channel per workspace + N session multiplexed per workspace**——同 workspace 内 in-process N-session 已达 OpenCode 同款经济性；跨 workspace 走独立 child 进程级隔离；Stage 2e native in-process 是可选演进 |
+| `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | Stage 1：HTTP route handler dispatch 到 ACP channel，channel 内多 session 走 ACP wire 自带 sessionId 路由；Stage 2e（去 child）需引入 Node 内建 `AsyncLocalStorage` per-request session ctx（不引 Effect-TS）（详见 [04-进程模型](./04-process-model.md)）|
 | 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§14 持久化栈](./14-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
 
 ### 2.2 Qwen 独有的 3 条特色
@@ -204,9 +204,9 @@ OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 
 | # | 决策 | 选择 | 详细 |
 |---|---|---|---|
 | 1 | session 是否跨 client 共享 | **默认共享同一 daemon instance**；scope 由 External orchestrator 路由 | [03 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) |
-| 2 | 状态进程模型 | **PR#3889 Stage 1 = 1 Daemon Instance = 1 Session**（HttpAcpBridge spawn-per-session）；Stage 2 in-process 可复用 `QwenAgent.sessions: Map` 已有多 session 能力（仅 Mode B headless 接入；TUI 是 single-session by design） | [02 §2](./02-architectural-decisions.md#2-状态进程模型) |
-| 3 | MCP server 生命周期 | **Stage 1 per-daemon** + PR#3818 in-flight coalesce + 30s 健康检查；Stage 2 退化为 per-workspace 多 session 共享 | §02 |
-| 4 | FileReadCache 共享 | **per-session**（Stage 1 = per-daemon；Stage 2 in-process 仍严格 per-session 不向其他 session 泄漏，符合 PR#3717 既有语义）+ PR#3774 prior-read 守卫 + PR#3810 5 路径 invalidation | §02 §4 |
+| 2 | 状态进程模型 | **PR#3889 Stage 1 = channel per workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）；Stage 2e native in-process 是可选演进解决跨 workspace 共享 | [02 §2](./02-architectural-decisions.md#2-状态进程模型) |
+| 3 | MCP server 生命周期 | **per-`qwen --acp` child (= per-workspace)** + PR#3818 in-flight coalesce + 30s 健康检查；同 workspace N session 共享 MCP children，跨 workspace 进程级隔离 | §02 |
+| 4 | FileReadCache 共享 | **per-session 严格私有**（同 workspace N session 各自实例不共享；跨 workspace 自然独立）+ PR#3774 prior-read 守卫 + PR#3810 5 路径 invalidation | §02 §4 |
 | 5 | Permission flow | **复用 PR#3723，daemon 是第 4 种 mode + 任何 client 都能应答** | [07](./05-permission-auth.md) |
 | 6 | 多 client 并发请求 | **同 session prompt 串行 + 事件 fan-out 多 client 协作观察** | [03 §6](./02-architectural-decisions.md#6-多-client-并发请求) |
 | 7 | 部署模式 | **Mode A（CLI + HttpServer）+ Mode B（Headless Daemon + HttpServer）双模式** | [03 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) |

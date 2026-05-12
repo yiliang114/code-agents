@@ -2,12 +2,12 @@
 
 > **🚀 Stage 1 实现状态**（2026-05-07）：本章 daemon 层核心路由全部由 [PR#3889](https://github.com/QwenLM/qwen-code/pull/3889) 实现（commits `61f2f59a1` scaffold + `ca996ecb5` prompt/cancel + `41aa95094` SSE EventBus + `6ee655f0a` permission + `a8ce5e08d` workspace/model）。详见 [§06 Stage 1 实现 audit](./06-roadmap.md#stage-1-pr3889-实现-audit2026-05-07)。
 
-> **API 模型要点**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) **PR#3889 Stage 1 1 daemon = 1 session** 下）：
+> **API 模型要点**（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) **PR#3889 Stage 1 commit `6a170ef8` channel-per-workspace + N session multiplexed** 架构）：
 >
-> - **`POST /session`**：Stage 1 framework 下 daemon instance 启动时绑定唯一 session，**幂等**——已绑定时返回相同 sessionId 加 `attached: true`（PR#3889 commit `8d7c03a5f` 实测：concurrent calls coalesce → 唯一 daemon spawn）
-> - **多 session 操作在 orchestrator 层**：Stage 1 下 `POST /coordinator/sessions/:id/route` 等聚合 API 由 orchestrator 提供；详见本章 §八
+> - **`POST /session`**：默认 `sessionScope: 'single'` 下同 workspace 已有 session 时返回 `attached: true`；concurrent calls 通过 `inFlightChannelSpawns` coalesce 到唯一 channel + 唯一 session（commit `6a170ef8`）。Stage 1.5 must-have #1 落地后支持 body 字段 `{ scope: 'thread' }` 显式新建 session（同 workspace channel 上 multiplex 多 session）
+> - **多 daemon 跨 workspace 操作在 orchestrator 层**：`POST /coordinator/sessions/:id/route` 等聚合 API 由 orchestrator 提供；详见本章 §八
 > - **Mode A vs Mode B**（[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）：两种部署模式的 HTTP API **完全一致**（Mode A 多挂个 in-process TUI subscriber 不影响 wire）
-> - **Stage 2 in-process N-session 路径**（仅 Mode B headless 接入；[§02 §7 TUI 语义澄清](./02-architectural-decisions.md#stage-2-in-process-n-session-下-mode-a-的-tui-语义关键设计澄清)）：`POST /session` 不再幂等返回 bound 而是真正 create new；`:id` 校验从"必须 = bound"放宽到"必须在 `QwenAgent.sessions: Map` 内"；多 client 通过 sessionId path 路由到 daemon 内不同 session
+> - **Stage 2e native in-process 路径**：daemon 不再 spawn `qwen --acp` child，直接 import `QwenAgent`；多 client 通过 sessionId path 路由到 daemon 内不同 session（Stage 1 已经如此，只是 wire 进入 child）
 
 > [← 上一篇：6 个架构决策](./02-architectural-decisions.md) · [下一篇：进程模型 →](./04-process-model.md)
 
@@ -15,9 +15,7 @@
 
 ## 一、根路由总览
 
-> **`:id` 校验语义**（**PR#3889 Stage 1** 1 daemon = 1 session = 1 workspace 模型下）：所有路径中的 `sessionId` / `workspaceId` 必须 = daemon 启动时绑定的那个，不匹配返回 `404 session_not_bound` / `404 workspace_not_bound`。保留 ID 在 URL 是为了 fail-fast 防御（防止 client 拿错 daemon URL 时静默写到错误目标）。
->
-> **Stage 2 in-process N-session 路径下**校验从"必须 = bound"放宽到"必须在 `QwenAgent.sessions: Map` 内"，404 错误码变为 `404 session_not_found`；`workspaceId` 校验保留（同 daemon 仍是 1 workspace，多 session 共 workspace）。
+> **`:id` 校验语义**（PR#3889 Stage 1 commit `6a170ef8` channel-per-workspace 架构）：所有路径中的 `sessionId` 必须存在于 `byWorkspaceChannel` 内某个 channel 的 `sessionIds` set；`workspaceId` 必须存在于 `byWorkspaceChannel` map key。不匹配返回 `404 session_not_found` / `404 workspace_not_found`。保留 ID 在 URL 是为了 fail-fast 防御（防止 client 拿错 daemon URL 时静默写到错误目标）+ 显式 multi-session 路由。
 
 ```
 GET    /                                   服务端版本元信息（qwen / daemon / acp 版本号）
@@ -334,9 +332,9 @@ POST /session/sess-yesterday/load HTTP/1.1
 
 ### 4.3 多 client 同 daemon live collaboration
 
-**Stage 1**：1 daemon = 1 session 下，**多 client 接入同一 daemon URL 即自动共享该 session**——daemon 内不做 routing，幂等 `POST /session` 永远返回 bound session。
+**Stage 1 (commit `6a170ef8`)**：默认 `sessionScope: 'single'` 下同 workspace 多 client `POST /session` 自动 attach 到同一 channel 的同一 session——daemon 通过 `byWorkspaceChannel` 找到 existing channel + ACP `sessions: Map` 找到 existing session，返回 `attached: true`。Stage 1.5 must-have #1 落地后 client 可显式传 `{ scope: 'thread' }` 在同 channel 上新建 session（仍多路复用同 `qwen --acp` child）。
 
-**Stage 2 in-process N-session**：多 client 需通过 sessionId path 显式选择 session；同 sessionId 的多 client 仍共享 fan-out（live collaboration 语义不变，只是 session 路由从隐式变显式）。
+`GET /session/:id/events` 通过 sessionId path 显式选择 session；同 sessionId 多个 client 通过 EventBus fan-out 共享 live collaboration 流（语义不变，只是 session 路由通过 URL 显式）。
 
 ```
 [CLI]: 启动 daemon（绑定 cwd=/work/repo-a）
@@ -551,9 +549,9 @@ data: {"method":"dashscope.quotaWarning","params":{"remaining":50000}}
 
 ## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> **PR#3889 Stage 1 1 Daemon Instance = 1 Session** 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§13 设计对比](./13-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 已落地，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
+> **PR#3889 Stage 1 commit `6a170ef8` channel-per-workspace + N session multiplexed** 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§13 设计对比](./13-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 OPEN，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 >
-> **Stage 2 in-process N-session** 下两层结构不变，只是 daemon 层从 spawn-per-session 改为 attach-to-existing-agent（HttpAcpBridge 重构），orchestrator 层职责收缩（不再需要 daemon spawn / route，但仍需 cross-workspace 聚合）。
+> **Stage 2e native in-process** 下两层结构不变，只是 daemon 层去除 `qwen --acp` child 桥接（直接 import `QwenAgent`），orchestrator 层职责保持（仍需跨 daemon process / 跨 workspace 聚合）。
 
 ### 8.1 Daemon 层路由（主线）
 
