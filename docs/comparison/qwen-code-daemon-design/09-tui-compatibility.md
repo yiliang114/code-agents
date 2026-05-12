@@ -58,52 +58,104 @@ LaZzyMan 提议过 option B（promoting Gap 2 commands to a `session_state_chang
 - **远程 client 实现简化**——不需要订阅 9+ 种 `session_state_changed.*` event 然后做 state machine
 - session-state-event 完整 taxonomy 工作 **不撤销**，但其目的从 "enumerate wire events" 转为 "document which TUI flows are local-only by design"（移到 #3803 跟进）
 
-## 〇·五、Mode B 无本地 TUI 部署下的远端 TUI 限制（不能复刻 Mode A）
+## 〇·五、Mode B 远端 client 限制 — Stage 1 scope choice，建议 Stage 1.5/2 切到 option B
 
-> **触发问题**：Mode B `qwen serve` headless 部署没有本地 TUI——只有远端 client 接入。如果远端 client 也是 TUI（用 Ink 在终端渲染），它能复刻 Mode A 本地 TUI 的完整体验吗？
+> **触发问题**：Mode B `qwen serve` headless 部署下，远端 client（TUI 或 Web UI）能否拿到 Mode A 本地 TUI 的完整体验（`/memory` / `/mcp` / `/agents` 等 dialogs）？
 
-**答案：不能**。远端 TUI 是 **thin TUI shell**——和 Web UI / mobile / IM bot 同等待遇的 wire 订阅者，只是渲染用 Ink。Mode A super-client 框架下的 ~15 Ink dialogs + local-jsx slash commands **不能跨 wire 传递**。
+**Stage 1 现状（option A）：不能** —— 远端 client 是 thin shell，9 项 TUI dialogs 大部分不可用。
 
-### 为什么远端 TUI 不能等同 Mode A 本地 TUI
+**但这不是技术约束，是 Stage 1 scope choice** —— 8/9 项物理上可以 wire 化，仅 1-2 项有真技术难点。下方逐项拆分 + 同行竞品对比 + Stage 1.5/2 建议路径。
 
-| Mode A 本地 super-client TUI 能做 | 远端 thin TUI shell 做不到 / 受限 |
+### 9 项 dialogs 拆分 — 哪些真有难点 vs 哪些只是没暴露
+
+| Dialog | 是否真的不能 wire 化 | Wire 化方案 | 工作量 | 当前状态 |
+|---|---|---|---|---|
+| `/memory` 编辑 | ❌ **完全可以** | `GET/POST /workspace/:id/memory` 读写 `~/.qwen/memory.json` | ~0.5d | Stage 1.5 候选 |
+| `/mcp` 启停 / 配置 | ❌ **完全可以** | `GET /workspace/:id/mcp` 列状态 + `POST /workspace/:id/mcp/:server/restart` | ~1d | Stage 1.5 候选 |
+| `/agents` 管理 | ❌ **完全可以** | `GET/POST /workspace/:id/agents` —— agents 是 registered objects | ~0.5d | Stage 1.5 候选 |
+| `/tools` 启停 | ❌ **完全可以** | `POST /workspace/:id/tools/:name/enable` | ~0.5d | Stage 1.5 候选 |
+| `/approval-mode` 切换 | ❌ **完全可以** | `POST /session/:id/approval-mode` —— 与 Stage 1 `POST /session/:id/model` 完全同构 | ~0.5d | Stage 1.5 候选 |
+| `/init` 项目初始化 | ❌ **完全可以** | `POST /workspace/:id/init` —— 写文件本来就是 daemon-side 操作 | ~0.5d | Stage 1.5 候选 |
+| `/resume <id>` 切换 session | ❌ **Stage 1.5 must-have #2 已规划** | `POST /session/:id/load` exposes ACP `loadSession` over HTTP | 已在 1.5a | ✅ 计划 |
+| `/auth` OAuth 登录流 | ⚠️ **部分难点** | 两种解：(a) device-flow OAuth (browser-less)；(b) Client Capability 反向 RPC (daemon 让 client 跳浏览器) | ~2-3d | Stage 1.5/2 候选 |
+| `/ide` IDE 集成 | ⚠️ **语义模糊** | "IDE 在哪台机器？" 取决于场景；如在 client 机器 → Capability RPC | 看场景 | TBD |
+| `ModelDialog` 选 model | ✅ 已 wire 化 | `POST /session/:id/model` + 订阅 `model_switched` event | — | Stage 1 ✓ |
+| `SessionPicker` 列 session | ✅ 已 wire 化 | `GET /workspace/:id/sessions` | — | Stage 1 ✓ |
+
+**结论**：6/9 dialogs 是 ~0.5d wire route 增量；2/9 有 IPC-style 难点但 Capability RPC 可解；1/9 (`/ide`) 语义本来就不清晰。**总计 ~3-5d** 即可让远端 client 拿到 7-8 项完整 daemon-side state CRUD 能力。
+
+### 同行竞品对比 — 远端 UI 是否完整访问 daemon state
+
+| 工具 | 远端 UI 完整访问 daemon-side state | 备注 |
+|---|---|---|
+| **Cursor** | ✅ | 远端 IDE 与本地 IDE 体验一致（settings / MCP / memory 都跨 wire）|
+| **Continue.dev** | ✅ | VSCode extension 跨网络可改 config / providers / context |
+| **Claude Code (Anthropic Managed Agents)** | ✅ | Web UI 能访问 session memory / settings / approval-mode |
+| **OpenCode** | ✅ | daemon HTTP API 完整暴露 state CRUD（`/session/*` / `/mcp/*` / `/permission/*`）|
+| **Gemini CLI daemon design** | ✅ | 同 OpenCode |
+| **Qwen Code Stage 1**（current）| ❌ | **离群点**——thin shell only，本地 Mode A 与远端二等待遇 |
+
+**结论**：当前 thin shell 限制让 Qwen Code 成为同行中的**唯一离群点**。所有对标产品都让远端 UI 完整访问 daemon-side state，没有"本地 vs 远端"二等待遇。
+
+### wenshao Stage 1 选 option A 的真实成本 / 收益再评估
+
+我之前在 §〇 末段转述的 4 条 option A 理由，逐项再评估：
+
+| Option A 理由（wenshao 转述） | 重审 |
 |---|---|
-| `/memory` 编辑 `~/.qwen/memory.json` | ❌ daemon 机器的 memory，远端 TUI 没文件系统访问 |
-| `/mcp` 启停 daemon-side MCP children | ❌ MCP children 在 daemon 机器，远端 TUI 看不到 |
-| `/agents` / `/tools` 配置 | ❌ 同上 |
-| `/approval-mode` 切换 | ❌ approval mode 是 daemon 进程内 state |
-| `/auth` 登录流（OAuth 浏览器跳转）| ❌ OAuth callback 需要 daemon 机器的浏览器 / fs |
-| `/init` 项目初始化 | ❌ 写文件到 daemon 机器的 workspace |
-| `/resume <id>` 切换 session | ⚠️ 远端 TUI 可通过 ACP `loadSession` HTTP（Stage 1.5 must-have #2 落地后）切换；不是"重启 TUI"而是"切 wire 订阅"|
-| `/ide` IDE 集成 | ❌ IDE 在 daemon 机器还是 client 机器？语义不明 |
-| `ModelDialog` 选 model | ✅ 通过 `POST /session/:id/model` + 订阅 `model_switched` event |
-| `SessionPicker` 列 session | ✅ 通过 `GET /workspace/:id/sessions` |
-| 渲染 message / tool call / permission | ✅ 订阅 wire SSE 流 |
+| "wire 表面收窄 = Stage 2 native in-process 重构余地大" | ⚠️ **不严谨**——HTTP 路由是 daemon ↔ client 边界，与 daemon 内部是 spawn child 还是 import 无关；Stage 2e 重构跟 wire 大小不强相关 |
+| "TUI 长出新 dialog 不需要 wire schema 演进" | ⚠️ **倒置因果**——用 "保护 TUI 演进自由" 解释 "为什么限制远端 UI"；正向问题是"远端补齐需求一直存在" |
+| "远程 client 实现简化（不订阅 9+ 种 event）" | ⚠️ Trade-off：client 端复杂度 vs **远端用户拿不到功能**。当前选项把代价完全推给用户 |
+| "session-state-event taxonomy 工作不撤销，但目的转为 documentation" | ⚠️ 这是 "放弃实现" 的 face-saving |
 
-### 远端 thin TUI shell 与 Web UI 的等价性
+**更诚实的解读**：option A 是 Stage 1 scope cut——wenshao 想 PR#3889 尽快 ship，不愿在 Stage 1 内做 6-9 个 wire route + daemon-side state CRUD 设计。把"暂时不做"包装成"原则上不做"是问题所在。
 
-| 维度 | 远端 thin TUI shell | Web UI | 区别 |
-|---|---|---|---|
-| 渲染框架 | Ink（terminal）| React DOM（browser）| 仅展示层差异 |
-| 数据源 | HTTP/SSE wire | HTTP/SSE wire | 完全相同 |
-| 可订阅事件 | wire 流（message_part / tool_call / permission_request / model_switched / session_died 等）| 同 | 完全相同 |
-| 可触发 mutation | `POST /session/:id/prompt` / `POST /session/:id/model` / `POST /permission/:id` | 同 | 完全相同 |
-| TUI dialogs（`/memory` 等）| ❌ 不支持（daemon-side state，wire 不暴露）| ❌ 不支持（同样原因）| **同等限制** |
+### 建议 Stage 1.5/2 路径 — 切到 option B（增量 wire route）
 
-→ **远端 TUI 的合理定位**：它是 "Web UI 的 Ink 变体"，不是 Mode A 本地 TUI 的远程镜像。如果用户想要远程 + 完整 TUI 体验，必须自己在远端机器跑 `qwen` 单进程模式（不通过 daemon），或者 SSH 进 daemon 机器跑 Mode A `qwen --serve`。
+**推荐方案**：Stage 1.5 加 sub-stage **1.5c — daemon-side state CRUD routes**（~3-5d），加 6-8 个 HTTP routes 让远端 client 拿到 daemon state 读写能力：
 
-### 三种部署的 Decision Matrix
+| 新 wire route | 替代的 dialog | 工作量 |
+|---|---|---|
+| `GET/POST /workspace/:id/memory` | `/memory` | ~0.5d |
+| `GET /workspace/:id/mcp` + `POST /workspace/:id/mcp/:server/restart` | `/mcp` | ~1d |
+| `GET/POST /workspace/:id/agents` | `/agents` | ~0.5d |
+| `GET/POST /workspace/:id/tools` + `POST /workspace/:id/tools/:name/enable` | `/tools` | ~0.5d |
+| `POST /session/:id/approval-mode` | `/approval-mode` | ~0.5d |
+| `POST /workspace/:id/init` | `/init` | ~0.5d |
+| `POST /workspace/:id/auth/device-flow` 或 Capability RPC | `/auth` | ~2-3d |
+| `/ide` —— 留待场景明确 | `/ide` | TBD |
+
+**总计 ~3-5d**（不含 `/auth` 的话），可让 6/8 项 dialogs 在远端 UI 完整可用，远端 TUI / Web UI 体验对齐 Mode A 本地 TUI。
+
+### 3 种部署的 Decision Matrix（option B 切到后）
 
 | 用户场景 | 推荐部署 | TUI 体验 |
 |---|---|---|
-| 单机本地工作 + 偶尔手机/Web 观察 | **Mode A `qwen --serve`**（本地 super-client TUI + 远端 thin clients）| ✅ 完整 |
+| 单机本地工作 + 偶尔手机/Web 观察 | **Mode A `qwen --serve`** | ✅ 完整 |
 | 远程开发机（VPS / 云 dev box）+ 本地 TUI | SSH 进远程跑 `qwen` 单进程 或 `qwen --serve` | ✅ 完整 |
-| 远程开发机 + 多端协作（团队远端 attach）| `qwen serve` headless on 远端 + 各人远端 thin clients | ⚠️ thin shell only |
-| 完全 headless 部署（容器 / SaaS）| `qwen serve` headless + Web UI / mobile / thin TUI shell | ⚠️ thin shell only |
+| 远程开发机 + 多端协作 | `qwen serve` headless + 各人远端 client | **Stage 1.5c 落地后 ✅ 接近完整**（除 `/auth` `/ide` 等少数 dialogs，其他 daemon-side state 都跨 wire 可访问） |
+| 完全 headless 部署（容器 / SaaS）| `qwen serve` headless + Web UI / mobile / thin TUI shell | 同上 |
 
-**Stage 1.5 must-have 部分缓解**：`POST /session/:id/_meta`（#8）让远端 client 传 per-session context；`POST /capabilities` protocol negotiation（#9）让远端 client 知道 daemon 支持的 mutation 集；`POST /session/:id/load`（#2）让远端 client 能 `/resume`。但 `/memory` / `/mcp` / `/agents` 等需要 daemon-side state read/write 的 dialogs 仍是 Mode A 专属。
+### Stage 1.5c 与 chiga0 finding 5 的协同
 
-> **延伸设计空间（option B 路径）**：如果将来用户强烈需求"远端 TUI 完整体验"，可考虑给 wire 加 `daemon-state` namespace（`GET /workspace/:id/memory` / `POST /workspace/:id/mcp` 等），让远端 TUI 通过 wire mutate daemon-side state。但这就是 LaZzyMan option B（wenshao 已拒绝，理由见上 §〇 末段）——会大幅扩展 wire surface 影响 Stage 2 native in-process 重构。当前定位：远端 TUI 用户接受 thin shell 限制，复杂工作 SSH 到 daemon 机器跑 Mode A。
+chiga0 [finding 5](https://github.com/QwenLM/qwen-code/pull/3889#issuecomment-4427773706) 提议把 `STAGE1_FEATURES` 9-tag 数组改为 plug-in capability registry + `POST /ext/:method` extMethod 桥接。**Stage 1.5c daemon-side state CRUD routes 应作为 capability tag 注册**：
+
+```
+capabilities.features: [
+  'health', 'capabilities', 'session_create', ...,    // Stage 1 既有 9 tags
+  'workspace_memory_crud',    // 🆕 Stage 1.5c
+  'workspace_mcp_management', // 🆕 Stage 1.5c
+  'workspace_agents_crud',    // 🆕 Stage 1.5c
+  'workspace_tools_crud',     // 🆕 Stage 1.5c
+  'session_approval_mode',    // 🆕 Stage 1.5c
+  'workspace_init',           // 🆕 Stage 1.5c
+  'auth_device_flow',         // 🆕 Stage 1.5c（如选 (a) 路径）
+]
+```
+
+远端 client 通过 `GET /capabilities` 协商可用功能集——daemon 不支持的 tag client 优雅降级（gray-out dialog）。
+
+> **决策建议**（与 wenshao PR#3889 当前 option A 选择有分歧）：Stage 1 选 option A 已是既成事实（PR#3889 OPEN），不影响。但 Stage 1.5 路线图应**明示**切到 option B：let remote clients (TUI / Web UI / mobile) get **functional parity with local Mode A TUI** through incremental wire route additions. 这是与同行竞品对齐的方向，也是远端 dev box / 容器化 SaaS / 团队协作场景的真实需求。详 [§06 Stage 1.5c daemon-side state CRUD](./06-roadmap.md#stage-15c--daemon-side-state-crud-远端-client-完整功能等价mode-a-补齐)。
 
 ## 一、TL;DR — 4 层兼容性矩阵
 

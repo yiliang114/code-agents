@@ -13,9 +13,10 @@ qwen-code 主线（~7-10 周 feature complete · Stage 1 merge ~1-2w + Stage 1.5
 │              └─ Mode B headless qwen serve · 1 daemon + M qwen --acp children (1 per workspace)
 │                 + N sessions multiplexed per workspace via QwenAgent.sessions: Map
 │                 + 默认 --max-sessions=20 · --max-connections=256
-├─ Stage 1.5   🆕 (~3-4 周总计, 1.5a 与 1.5b 可并行)
+├─ Stage 1.5   🆕 (~3-4 周总计, 1.5a / 1.5b / 1.5c 可并行)
 │   ├─ Stage 1.5a chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，~2-3 周）
-│   └─ Stage 1.5b Mode A `qwen --serve` flag（~4d 增量）
+│   ├─ Stage 1.5b Mode A `qwen --serve` flag（~4d 增量）
+│   └─ Stage 1.5c daemon-side state CRUD（远端 client 功能等价 Mode A，~3-5d，[§09 §〇·五](./09-tui-compatibility.md#〇五mode-b-远端-client-限制--stage-1-scope-choice建议-stage-152-切到-option-b)）
 └─ Stage 2     🆕 (~3-4 周, 2a-2d 拆分) daemon 完善 · 可选 Stage 2e native in-process（去 qwen --acp child）~1-2w
 
 ────────── qwen-code daemon feature complete ──────────
@@ -237,14 +238,15 @@ qwen-code 主线 HA / 稳定性需求由 PR#3889 + PR#3739 已完整覆盖（详
 
 PR#3889 review 中 chiga0 第 3 轮 review（[#3889 comment 4427875644](https://github.com/QwenLM/qwen-code/pull/3889#issuecomment-4427875644)）从 IM bot / mobile companion / IDE extension 三个 downstream consumer 视角审计 Stage 1 protocol surface，得出结论："**Stage 1 promises 'real workloads' but the protocol surface is sized for demo / single-user / never-crashes**"。作者拒绝把 must-haves 加入 Stage 1（保持 Stage 1 scope honesty），全部推到 Stage 1.5。
 
-### Stage 1.5 拆分（1.5a 必需 + 1.5b 可并行 Mode A + 1.5-prereq 架构 refactor）
+### Stage 1.5 拆分（1.5-prereq + 1.5a + 1.5b 并行 + 1.5c 远端 client 功能等价）
 
 | Sub-stage | 内容 | 工作量 |
 |---|---|---|
 | **Stage 1.5-prereq** | chiga0 6 architecture findings 重构（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包；finding 1-6 见下方）| ~1-2 周 |
 | **Stage 1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，其中 #10 已 shipped）| ~2-3 周 |
 | **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d 增量 |
-| **合计**（1.5-prereq → 1.5a + 1.5b 并行）| | **~4-5 周 / 1 人** |
+| **Stage 1.5c** 🆕 | daemon-side state CRUD routes（远端 client 拿到 Mode A 本地 TUI 的 6-8 项 dialog 能力 — `/memory` / `/mcp` / `/agents` / `/tools` / `/approval-mode` / `/init` 等）| ~3-5d |
+| **合计**（1.5-prereq → 1.5a + 1.5b + 1.5c 并行）| | **~4-5 周 / 1 人** |
 
 ### Stage 1.5-prereq — chiga0 6 架构重构 findings（cross-module unification）
 
@@ -345,6 +347,56 @@ qwen --serve --port 7776 [--token-file ~/.qwen/local-token]
 - ✓ TUI 退出 → HTTP server graceful drain → 整进程退出
 - ✓ 默认 loopback only / no token（本地信任）；远端启用必须显式 `--token`
 - ✓ 与 Stage 1 PR#3889 同 wire 协议（client SDK 不需要改）
+
+---
+
+## Stage 1.5c：daemon-side state CRUD（远端 client 完整功能等价 Mode A，补齐）
+
+### 目标
+
+让 Mode B headless 部署下的远端 client（TUI / Web UI / mobile）拿到与 Mode A 本地 super-client TUI **功能对等**的体验——不再是 thin shell。
+
+### 来源
+
+[§09 §〇·五](./09-tui-compatibility.md#〇五mode-b-远端-client-限制--stage-1-scope-choice建议-stage-152-切到-option-b) 分析显示：Stage 1 option A 让远端 client 是 thin shell（8/9 项 TUI dialogs 不可用），但这**不是技术约束，是 Stage 1 scope choice**——同行竞品（Cursor / Continue / Claude Code / OpenCode / Gemini CLI daemon）都让远端 UI 完整访问 daemon-side state。Qwen Code 当前 thin shell 限制是离群点。
+
+Stage 1.5c 切到 option B（增量 wire route），用 ~3-5d 让 6-8 项 dialogs wire 化。
+
+### 工作清单
+
+| 任务 | 工作量 | 替代的 TUI dialog | capability tag |
+|---|---|---|---|
+| `GET/POST /workspace/:id/memory` —— 读写 `~/.qwen/memory.json` | 0.5d | `/memory` | `workspace_memory_crud` |
+| `GET /workspace/:id/mcp` + `POST /workspace/:id/mcp/:server/restart` | 1d | `/mcp` | `workspace_mcp_management` |
+| `GET/POST /workspace/:id/agents` —— agents 是 registered objects | 0.5d | `/agents` | `workspace_agents_crud` |
+| `GET/POST /workspace/:id/tools` + `POST /workspace/:id/tools/:name/enable` | 0.5d | `/tools` | `workspace_tools_crud` |
+| `POST /session/:id/approval-mode` —— 与 Stage 1 `POST /session/:id/model` 同构 | 0.5d | `/approval-mode` | `session_approval_mode` |
+| `POST /workspace/:id/init` —— daemon-side workspace 初始化 | 0.5d | `/init` | `workspace_init` |
+| `POST /workspace/:id/auth/device-flow` 或 Client Capability OAuth RPC | 2-3d | `/auth` | `auth_device_flow` 或 `auth_via_capability` |
+| `/ide` —— 语义场景明确后再设计 | TBD | `/ide` | TBD |
+| **合计** | **~3-5d** | 6-7 项（除 `/auth` 是 2-3d） | 7-8 capability tags |
+
+### Stage 1.5c 验收
+
+- ✓ 6-8 项新 daemon-side state CRUD routes 落地
+- ✓ 各 route 在 `/capabilities` 注册 capability tag，远端 client 可协商可用功能集
+- ✓ 远端 thin TUI shell 升级为完整 TUI 体验（除 `/ide` 等场景模糊项）
+- ✓ Web UI / mobile 同等获益
+- ✓ Mode A 本地 super-client TUI 实现路径不变（local-jsx 仍是默认；wire 是 fallback / 远端等价路径）
+
+### 与 chiga0 finding 5 capability registry 的协同
+
+Stage 1.5c 7-8 个新 capability tag 作为 [chiga0 finding 5](./06-roadmap.md#stage-15-prereq--chiga0-6-架构重构-findingscross-module-unification) plug-in capability registry 的首批 entries。`STAGE1_FEATURES` 9-tag 数组改造为 registry 后，Stage 1.5c 7-8 tags 注册进去；远端 client 通过 `GET /capabilities` 拿到完整可用 tag 列表，对不支持的 tag gray-out dialog。
+
+### 与同行竞品对齐
+
+Stage 1.5c 落地后 Qwen Code 远端 client 体验：
+
+| 工具 | 远端 UI 完整访问 daemon state |
+|---|---|
+| Cursor / Continue / Claude Code / OpenCode / Gemini CLI daemon | ✅ |
+| **Qwen Code Stage 1.5c 后** | ✅ **对齐**（除 `/ide` / `/auth` 部分场景）|
+| Qwen Code Stage 1（current）| ❌ 离群点（thin shell only）|
 
 ---
 
@@ -518,6 +570,7 @@ qwen-code 主线
    Stage 1       ████ 🟡 PR OPEN（CHANGES_REQUESTED 收敛中）
    Stage 1.5a            ████████ chiga0 10 must-haves（~2-3w）
    Stage 1.5b            ███ Mode A flag（~4d，与 1.5a 并行）
+   Stage 1.5c            ███ daemon-side state CRUD（~3-5d，与 1.5a/1.5b 并行）
    Stage 2                            ████████ 2a-2d（~3-4w）
    Stage 2e（可选）                                ██████ native in-process（~1-2w）
 
