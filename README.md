@@ -89,6 +89,7 @@
 | [OpenCode 对标改进（29 项）](./docs/comparison/qwen-code-opencode-improvements.md) | Provider 系统 + Plugin + Snapshot + 可配置截断 + 编辑器上下文协议 |
 | [Qwen Code 性能优化 Roadmap](./docs/comparison/qwen-code-perf-roadmap.md) | 按 ROI 排序的可执行优化清单 · P0 本周 3 项 + P1 下周 4 项 + P2/P3 备选 + 度量驱动方法 |
 | [ReadFile 工具 Deep-Dive](./docs/comparison/read-file-tool-deep-dive.md) | 12 项 Claude Code FileReadTool 可借鉴能力 · file_unchanged 去重 + token 上限 + 图像 resize + PDF 多策略 + ENOENT 建议等 |
+| [Claude Code vs Qwen Code 内置工具](./docs/comparison/claude-code-vs-qwen-code-builtin-tools.md) | 39 vs 21 工具横向对比 + 11 类 mapping 表 + ToolSearch 延迟加载策略 + Qwen Skill 反超 + Claude 独有 9 项可借鉴 + ToolSearch 与 prefix cache 冲突分析 |
 | [Reasoning Effort Deep-Dive](./docs/comparison/reasoning-effort-deep-dive.md) | Claude Code (`/effort` 4 档) vs Codex CLI (`reasoning_effort` 6 档 + plan-mode 专用) · cache 影响分析 · Qwen Code 设计启发 |
 | [Qwen Code 贡献者页面](./docs/comparison/qwen-code-contributors.md) | 项目治理总览 · Alibaba 内部团队 + 活跃贡献者 + 外部社区 + 上游遗产 + 治理结构图 |
 | [Codex 贡献者页面](./docs/comparison/codex-contributors.md) | OpenAI 主导 + 5,890 commits / 444 贡献者 · ~92% 内部占比（最封闭的开源 Agent）|
