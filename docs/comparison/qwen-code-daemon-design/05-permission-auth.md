@@ -108,7 +108,7 @@ ACP mode 是 stdio 单 client 同步等待；`daemon-http` mode 是多 client + 
 
 - **Permission decisions cache 是 per-`qwen --acp` child（= per-workspace）**
 - 同 workspace N session 各自维护 PermissionManager（每个 ACP `Session` 实例内）
-- `workspace` / `global` scope decisions 文件 **per-workspace 共享**——同 channel N session 并发写时需 in-memory mutex（per-file lock）
+- `workspace` / `global` scope decisions 文件 **per-workspace 共享**——同 bridge N session 并发写时需 in-memory mutex（per-file lock）
 - first-responder vote 路由按 sessionId 隔离——A session 的 `permission_request` 走 EventBus 只 fan-out 到订阅 A session 的 client，不会泄漏到 B session 的订阅者
 
 ### Stage 2e native in-process（可选演进）
@@ -120,7 +120,7 @@ ACP mode 是 stdio 单 client 同步等待；`daemon-http` mode 是多 client + 
 | Scope | 存储 | 生命周期 |
 |---|---|---|
 | `session` | 内存（per-Session）| daemon 退出即失效 |
-| `workspace` | `~/.qwen/workspaces/<wsId>/permissions.json` | 启动时加载，per-channel 共享 |
+| `workspace` | `~/.qwen/workspaces/<wsId>/permissions.json` | 启动时加载，per-bridge 共享 |
 | `global` | `~/.qwen/permissions.json` | 启动时加载，daemon process 全局 |
 
 ---
@@ -182,7 +182,7 @@ type PermissionPolicy =
 
 ### 强制约束
 
-**不可让多 tenant 共一个 workspace channel**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
+**不可让多 tenant 共一个 Workspace Bridge**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
 
 | 隔离层 | 实现 | 适用 |
 |---|---|---|

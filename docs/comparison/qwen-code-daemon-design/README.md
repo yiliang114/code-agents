@@ -5,7 +5,7 @@
 ## 一、TL;DR
 
 ```
-Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transport 抽象
+Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）+ WebUI 包 + SDK Transport 抽象
                                   ↓
         把 ACP NDJSON 协议通过 HTTP+SSE 桥接成 daemon
                                   ↓
@@ -21,7 +21,7 @@ Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transpor
 | **Mode A: CLI + HttpServer** | `qwen --serve [--port N]` | ✅ 本地渲染 | 单用户在终端 + WebUI / IDE / IM bot 同时接入 |
 | **Mode B: Headless Daemon + HttpServer** | `qwen serve [--port N]` | ❌ | 服务器 / 容器 / 远端机器 |
 
-> ✅ **Stage 1 已合并**（2026-05-13 06:47 UTC）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)`，merge commit `870bdf2a`，**+12993/-194 / 84 commits**。Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags / channel-per-workspace + N session multiplexed 全部已实现。
+> ✅ **Stage 1 已合并**（2026-05-13 06:47 UTC）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)`，merge commit `870bdf2a`，**+12993/-194 / 84 commits**。Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags / bridge-per-workspace + N session multiplexed 全部已实现。
 
 > ⏳ **Stage 1.5 / 2 后续**：chiga0 10 must-haves（pair tokens / unsubscribe API / lifecycle audit）+ 6 architecture findings（PermissionMediator / EventBus / FileSystemService / capability registry / AcpChannel lift / dualOutput-remoteInput convergence）+ Mode A 本地 TUI super-client wire 平权 + Mode B 远端 client option B daemon-side state CRUD（详见 [§06 Roadmap](./06-roadmap.md)）。
 
@@ -33,7 +33,7 @@ Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transpor
 
 | # | 文档 | 核心内容 | 行数 |
 |---|---|---|---:|
-| **01** | [Overview](./01-overview.md) | TL;DR + 3 层术语（daemon process / channel / session）+ 架构图 + 双 mode 对照 + Stage 进展 + 阅读指南 | 135 |
+| **01** | [Overview](./01-overview.md) | TL;DR + 3 层术语（daemon process / Workspace Bridge / session）+ 架构图 + 双 mode 对照 + Stage 进展 + 阅读指南 | 135 |
 | **02** | [Architectural Decisions](./02-architectural-decisions.md) | 7 个核心决策：session 共享语义 P1/P2 / 进程模型 / MCP 生命周期 / FileReadCache / Permission flow / 多 client 并发 / Mode A vs Mode B（含老 §04 进程模型 + §13 单 vs 多 session 决策树）| 286 |
 | **03** | [HTTP API & Protocol](./03-http-api.md) | Route table（含 Stage 1.5c daemon-side state CRUD）+ ACP wire 4 层兼容性矩阵 + SSE + Last-Event-ID + 双向 RPC 异步化 + Capability negotiation（含老 §08 协议兼容性）| 289 |
 | **04** | [Deployment & Client](./04-deployment-and-client.md) | Mode A/B 对照 + TUI super-client vs thin shell 9 dialogs 分析 + P1 多 client 协调（subscriber protocol）+ Remote CLI 3 拓扑 + Client Capability 反向 RPC（含老 §09 TUI / §10 远端 CLI / §11 多 client 协调）| 295 |
@@ -59,8 +59,8 @@ Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transpor
 | 层 | 数量 | 边界 | 共享资源 |
 |---|---|---|---|
 | **Daemon process** | 1 | OS 进程 | TLS / Bearer token / Express server / HTTP transport |
-| **Channel** | M（per workspace）| 独立 `qwen --acp` child process | settings / OAuth / FileReadCache / CLAUDE.md / MCP children |
-| **Session** | N（per channel）| `QwenAgent.sessions: Map<sessionId, Session>` | per-session transcript / pending tool calls / cancellation token |
+| **Workspace Bridge**（≡ 代码 `ChannelInfo`）| M（per workspace）| 独立 `qwen --acp` child process | settings / OAuth / FileReadCache / CLAUDE.md / MCP children |
+| **Session** | N（per bridge）| `QwenAgent.sessions: Map<sessionId, Session>` | per-session transcript / pending tool calls / cancellation token |
 
 详见 [§01](./01-overview.md) + [§02 §〇 术语](./02-architectural-decisions.md)。
 
@@ -68,8 +68,8 @@ Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transpor
 
 | 决策 | 选择 | 理由 |
 |---|---|---|
-| Session 共享语义 | 默认 P1（多 client 同 session live collaboration）+ P2（N 独立 session per channel）| P1 = OpenCode "watch-from-anywhere"；P2 = SDK "N parallel jobs" |
-| 进程模型 | Stage 1 channel-per-workspace + N session multiplexed | `acpAgent.ts:600 loadSettings(cwd)` 跨 workspace 污染前 N session per workspace 已足够省 |
+| Session 共享语义 | 默认 P1（多 client 同 session live collaboration）+ P2（N 独立 session per bridge）| P1 = OpenCode "watch-from-anywhere"；P2 = SDK "N parallel jobs" |
+| 进程模型 | Stage 1 bridge-per-workspace + N session multiplexed | `acpAgent.ts:600 loadSettings(cwd)` 跨 workspace 污染前 N session per workspace 已足够省 |
 | MCP 生命周期 | per-`qwen --acp` child | 同 workspace N session 共享 MCP children，跨 workspace 隔离 |
 | FileReadCache | session-private（PR#3717 已实现）| daemon 不破坏 cache 语义 |
 | Permission flow | 复用 PR#3723 + daemon 作为第 4 种 mode | bug 修一处全 mode 受益 |
@@ -82,7 +82,7 @@ Qwen Code 已有 ACP agent + Channels 多路由设施 + WebUI 包 + SDK Transpor
 
 | Stage | 状态 | 范围 |
 |---|:---:|---|
-| **Stage 1** | ✅ MERGED | PR#3889 - channel-per-workspace + N session multiplexed |
+| **Stage 1** | ✅ MERGED | PR#3889 - bridge-per-workspace + N session multiplexed |
 | Stage 1.5a | ⏳ 待开 | chiga0 10 must-haves（Blockers / Reliability / Ergonomics）|
 | Stage 1.5b | ⏳ 待开 | Mode A TUI super-client wire 平权 |
 | Stage 1.5c | ⏳ 待开 | Mode B daemon-side state CRUD 切 option B（~3-5d，6-8 wire 路由）|

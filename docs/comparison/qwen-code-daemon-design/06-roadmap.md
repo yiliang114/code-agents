@@ -54,7 +54,7 @@ qwen-code 主线
 | `a8ce5e08d` | /workspace/:id/sessions + /session/:id/model + errorMessage helper |
 | `ad0e6ec06` | audit round 1: timing-safe bearer + IPv6 loopback ergonomics + failOnError |
 | `27a164c` | Stage 1 文档补全（用户 quickstart + HTTP 协议 reference + SDK ts 示例 591 行）|
-| **`6a170ef8`** 🌟 | **架构重构**：channel-per-workspace + N session multiplexed via `QwenAgent.sessions: Map`；N=5 内存 300-500MB → 60-100MB |
+| **`6a170ef8`** 🌟 | **架构重构**：bridge-per-workspace + N session multiplexed via `QwenAgent.sessions: Map`；N=5 内存 300-500MB → 60-100MB |
 | `f29353a2` | N:1 framing 修正 docs |
 | `bbc7b8b6` + `b1767903` | chiga0 第 3 轮 review：Stage 1 scope honesty + 10 must-haves for Stage 1.5+ + Durability model |
 | `734d833b` / `e18b8fa6` / `b37cc01c` | 多轮 ~30 review threads close（atomic write / read-size cap / 6 critical bugs + 6 follow-ups）|
@@ -67,7 +67,7 @@ qwen-code 主线
 | 工作量 | ~7-8 天 / 1 人 | 多周（84 commits 跨 5 轮 multi-model audit + chiga0 三轮 + LaZzyMan + tanzhenxin reviews + 维护者 N:1 framing 反馈 + 架构重构）| 几周 vs 1 周 |
 | Review threads close | — | ~60+ | — |
 
-**超出原因**：EventBus 完整实现（提前到 Stage 1）+ Timing-safe bearer + IPv6 loopback ergonomics + 多 reviewer 多轮 audit + 架构重构（`6a170ef8`）+ Stage 1 docs 补全。**最 expensive 的 follow-up 是 `6a170ef8` channel-per-workspace 重构**（reviewer 反馈触发的架构反思）。
+**超出原因**：EventBus 完整实现（提前到 Stage 1）+ Timing-safe bearer + IPv6 loopback ergonomics + 多 reviewer 多轮 audit + 架构重构（`6a170ef8`）+ Stage 1 docs 补全。**最 expensive 的 follow-up 是 `6a170ef8` bridge-per-workspace 重构**（reviewer 反馈触发的架构反思）。
 
 ### Stage 1 已实现的 HA / 稳定性机制
 
@@ -76,8 +76,8 @@ qwen-code 主线
 | Daemon crash 自动重启 | 外部进程管理器（systemd / k8s）|
 | Transcript-first fork resume | PR#3739（但 Stage 1 不在 HTTP 暴露 `loadSession` —— Stage 1.5 must-have #2）|
 | SSE Last-Event-ID 重连 | commit `41aa95094` |
-| Crash isolation 半径 | 同 channel（workspace）全部 N session；跨 workspace 进程级隔离 |
-| `killSession` 引用计数清理 channel | sessionIds set 空才 kill `qwen --acp` child |
+| Crash isolation 半径 | 同 bridge（workspace）全部 N session；跨 workspace 进程级隔离 |
+| `killSession` 引用计数清理 bridge | sessionIds set 空才 kill `qwen --acp` child |
 | timing-safe bearer auth + 401 uniform | commit `ad0e6ec06` |
 | Durability model | 显式 documented as ephemeral（chiga0 must-have #10）|
 
@@ -91,7 +91,7 @@ qwen-code 主线
 
 | Sub-stage | 内容 | 工作量 |
 |---|---|---|
-| **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）| ~1-2 周 |
+| **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）；顺便统一代码 `ChannelInfo` 与文档 Workspace Bridge 命名 | ~1-2 周 |
 | **1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）| ~2-3 周 |
 | **1.5b** | Mode A `qwen --serve` flag（TUI co-host HTTP server） | ~4d |
 | **1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A） | ~3-5d |
@@ -130,7 +130,7 @@ qwen-code 主线
 
 `qwen --serve` flag 解析 + TUI 启动后挂 HttpServer + TUI 作为 in-process subscriber + 默认 auth/CORS 区分本地 vs 远端 + 生命周期协同（Ctrl+C drain HTTP）+ e2e 测试 = **~4 天 / 1 人**。
 
-Mode A daemon 同样能持 N session（继承 Stage 1 channel multiplexing）；TUI 绑定其中一个 session（详 [§04 §三 TUI](./04-deployment-and-client.md)）。
+Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；TUI 绑定其中一个 session（详 [§04 §三 TUI](./04-deployment-and-client.md)）。
 
 ### 1.5c — daemon-side state CRUD（远端 client 等价 Mode A）
 
@@ -199,7 +199,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 channel multiplexing）；
 
 ### 5.2 Multi-tenancy + OIDC + Quota + Audit
 
-> 🚨 **Multi-Tenant 关键约束**（Stage 1 commit `6a170ef8` 后）：daemon 同 workspace channel 内 N session **共享同 `qwen --acp` child 的 OS 权限**。**不可让多 tenant 共一个 workspace channel**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
+> 🚨 **Multi-Tenant 关键约束**（Stage 1 commit `6a170ef8` 后）：daemon 同 Workspace Bridge 内 N session **共享同 `qwen --acp` child 的 OS 权限**。**不可让多 tenant 共一个 Workspace Bridge**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
 > - **Workspace 层（推荐）**：1 tenant ↔ 1 workspace
 > - **Daemon process 层（高安全）**：1 tenant ↔ 独立 daemon process
 
@@ -238,7 +238,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 channel multiplexing）；
 
 | 维度 | OpenCode | Qwen Daemon |
 |---|---|---|
-| 进程模型 | 单 daemon 多 session 跨 workspace 共享 | **PR#3889 Stage 1 = channel per workspace + N session multiplexed**（同 workspace in-process N-session 与 OpenCode 对齐；跨 workspace OS 进程级隔离；Stage 2e 可选演进解决跨 workspace 共享）|
+| 进程模型 | 单 daemon 多 session 跨 workspace 共享 | **PR#3889 Stage 1 = bridge per workspace + N session multiplexed**（同 workspace in-process N-session 与 OpenCode 对齐；跨 workspace OS 进程级隔离；Stage 2e 可选演进解决跨 workspace 共享）|
 | `process.cwd()` | 永不改变 | 同款 |
 | 上下文传播 | Effect-TS `LocalContext` | Stage 1 wire 自带 sessionId 路由；Stage 2e 需 Node 内建 `AsyncLocalStorage`（不引 Effect-TS）|
 | HTTP 框架 | Hono | Express 5（复用 vscode-ide-companion）/ Hono 可选 |
@@ -250,18 +250,18 @@ Mode A daemon 同样能持 N session（继承 Stage 1 channel multiplexing）；
 ### 5 大独有选择
 
 1. **复用 ACP zod schema 而非自创 OpenAPI**——0 设计成本 + 与 IDE/Zed 生态天然兼容
-2. **多 channel 路由**（IM / VSCode / Web / SDK 全走 SessionRouter）—— Qwen Channels 已有
+2. **IM Channels 多渠道路由**（IM / VSCode / Web / SDK 全走 SessionRouter）—— Qwen `packages/channels/` 已有（注：这里的 "Channels" 是 IM 消息渠道概念，与本系列 Workspace Bridge 不同）
 3. **PR#3723 应用层权限流**（4 mode 共享 evaluatePermissionFlow）
 4. **默认 0.0.0.0 + 无 token = 拒绝启动**（比 OpenCode 严格）
-5. **Multi-expose 路径 convergence**（Stage 1.5-prereq finding 1）—— 抽 `AcpChannel` 到 `@qwen-code/acp-bridge` 让 6 条 expose 路径共享同一组多 session primitives
+5. **Multi-expose 路径 convergence**（Stage 1.5-prereq finding 1）—— 抽 `AcpChannel`（reviewer 提议命名，作用 = 本系列 Workspace Bridge 的接口形态）到 `@qwen-code/acp-bridge` 让 6 条 expose 路径共享同一组多 session primitives
 
 ### 性能对比预期
 
-| 维度 | OpenCode（实测）| Qwen Stage 1 channel-per-workspace | Qwen Stage 2e native in-process |
+| 维度 | OpenCode（实测）| Qwen Stage 1 bridge-per-workspace | Qwen Stage 2e native in-process |
 |---|---|---|---|
 | 启动时间 | ~2-3s | ~2-3s | 类似 |
 | 首 session 创建（新 workspace）| <100ms | ~1-3s（spawn child）| <100ms |
-| 同 workspace 第 N session | <50ms | **<200ms**（attach channel）| <50ms |
+| 同 workspace 第 N session | <50ms | **<200ms**（attach bridge）| <50ms |
 | 跨 workspace 第二个 session | <50ms | ~1-3s（不同 child）| <50ms（如解 cwd 污染）|
 | 100 同 workspace session 内存 | ~100-150MB | 类似 ~100-150MB | 类似 |
 | 100 跨 workspace session 内存 | ~200MB | ~6-10GB（100 child）| 类似 OpenCode |
@@ -278,21 +278,21 @@ Mode A daemon 同样能持 N session（继承 Stage 1 channel multiplexing）；
 
 ### 架构哲学相似性
 
-Anthropic Managed Agents 的内部模型很可能是 per-session container/process（云原生隔离的最自然形态）；**Qwen daemon Stage 1 channel-per-workspace 在同 workspace 内偏离纯 per-session 隔离**（共 OS 权限 + 共 MCP），跨 workspace 仍保持进程级隔离。Anthropic 内部具体实现未公开，可能也走类似 hybrid 模型节省 container baseline。
+Anthropic Managed Agents 的内部模型很可能是 per-session container/process（云原生隔离的最自然形态）；**Qwen daemon Stage 1 bridge-per-workspace 在同 workspace 内偏离纯 per-session 隔离**（共 OS 权限 + 共 MCP），跨 workspace 仍保持进程级隔离。Anthropic 内部具体实现未公开，可能也走类似 hybrid 模型节省 container baseline。
 
 | 维度 | Anthropic Managed Agents | Qwen daemon |
 |---|---|---|
 | 本质 | 云托管 SaaS agent runtime | 自托管 agent daemon |
 | 代码 | 闭源 | Apache-2.0 开源 |
 | 模型 | Claude only | 任意 provider（DashScope / Claude / OpenAI / 自训练）|
-| 进程模型 | 推测 per-session container/process 或 hybrid | channel-per-workspace + N session multiplexed |
+| 进程模型 | 推测 per-session container/process 或 hybrid | bridge-per-workspace + N session multiplexed |
 | Session 共享 | per call 独立 / 持久化跨 call | sessionScope:single 多 client 共享 |
 | 多租户 | Anthropic 管理 | 由 External orchestrator 做 1 tenant 1 workspace / daemon process |
 
 ### 关键差异
 
 - **自托管 vs 云托管**：Qwen 走 building block 路线；Anthropic 提供托管服务
-- **多 channel 生态**：Qwen 通过 Channels 包 + IM 路由原生支持 Telegram / 微信 / 钉钉 / Slack；Anthropic 只暴露 API
+- **IM 多渠道生态**：Qwen 通过 `packages/channels/` + IM 路由原生支持 Telegram / 微信 / 钉钉 / Slack；Anthropic 只暴露 API
 - **Java SDK 直连**：Qwen 唯一有 Java acp-sdk，daemon 后跨语言更顺
 - **Background tasks 4 kinds 跨 client 可见**：Qwen kind framework（PR#3836）能在 daemon 模式下让所有 client 看到所有后台任务（agent/shell/monitor/dream）
 
