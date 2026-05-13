@@ -108,7 +108,7 @@ ACP mode 是 stdio 单 client 同步等待；`daemon-http` mode 是多 client + 
 
 - **Permission decisions cache 是 per-`qwen --acp` child（= per-workspace）**
 - 同 workspace N session 各自维护 PermissionManager（每个 ACP `Session` 实例内）
-- `workspace` / `global` scope decisions 文件 **per-workspace 共享**——同 bridge N session 并发写时需 in-memory mutex（per-file lock）
+- `workspace` / `global` scope decisions 文件 **per-workspace 共享**——同 daemon N session 并发写时需 in-memory mutex（per-file lock）
 - first-responder vote 路由按 sessionId 隔离——A session 的 `permission_request` 走 EventBus 只 fan-out 到订阅 A session 的 client，不会泄漏到 B session 的订阅者
 
 ### Stage 2e native in-process（可选演进）
@@ -120,7 +120,7 @@ ACP mode 是 stdio 单 client 同步等待；`daemon-http` mode 是多 client + 
 | Scope | 存储 | 生命周期 |
 |---|---|---|
 | `session` | 内存（per-Session）| daemon 退出即失效 |
-| `workspace` | `~/.qwen/workspaces/<wsId>/permissions.json` | 启动时加载，per-bridge 共享 |
+| `workspace` | `~/.qwen/workspaces/<wsId>/permissions.json` | 启动时加载，per-daemon 共享 |
 | `global` | `~/.qwen/permissions.json` | 启动时加载，daemon process 全局 |
 
 ---
@@ -178,20 +178,22 @@ type PermissionPolicy =
 
 ## 六、Multi-Tenant 关键约束
 
-> 🚨 **同 daemon 同 workspace N session 共 OS 权限**（同 `qwen --acp` child，共 user UID + fs 视图 + MCP children）—— 多 tenant 必须避开此边界。
+> ✅ **1 daemon = 1 workspace 模式下天然 OS 进程级隔离**：跨 tenant = 跨 daemon process，无需应用层 tenant 抽象。
 
-### Default mode 下 = 天然 1 tenant per daemon
+### 隔离形态
 
-[§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策) Default = 1 daemon = 1 workspace 模式下，**多 tenant 走 OS 进程级真隔离**（1 daemon = 1 tenant × 1 workspace），无需应用层 tenant 抽象。systemd `MemoryMax=` / cgroup / docker `--memory` 直接 = per-tenant quota。这是 Qwen 主推的多 tenant 部署形态。
+[§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策) 1 daemon = 1 workspace × N session 模式下：
 
-### Advanced `--multi-workspace` 模式下的约束
+- **跨 tenant 部署 = 多 daemon process**：1 daemon = 1 tenant × 1 workspace，OS 进程级真隔离
+- **systemd `MemoryMax=` / cgroup / docker `--memory` 直接 = per-tenant quota**——不需要 daemon 内部抽象
+- **同 daemon N session 共 OS 权限**（同 `qwen --acp` child，共 user UID + fs 视图 + MCP children）——天然 1 tenant 内 N session 共信任域
 
-**不可让多 tenant 共一个 Workspace Bridge**（同 `qwen --acp` child 内 N session 共 OS 权限）——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
+### 同 daemon N session 边界（注意）
 
-| 隔离层 | 实现 | 适用 |
-|---|---|---|
-| **Workspace 层** | 1 tenant ↔ 1 workspace（或多 workspace 但全归同 tenant）| advanced 模式默认场景；orchestrator 在创建 daemon 时绑 workspace → tenant |
-| **Daemon process 层（推荐高安全）** | 1 tenant ↔ 独立 daemon process（= default mode）| 高合规场景；跨 tenant 走 OS 进程级隔离 + per-tenant resource quota |
+⚠️ 同 daemon N session 共享 OS 权限——即同 tenant 内 N session 共信任域。**不可让多 tenant 共一个 daemon**：
+
+- 1 daemon 启动时绑定 1 tenant 的 1 workspace（启动 cwd + 启动用户）
+- 多 tenant 必须各自独立 daemon process（orchestrator 在创建 daemon 时绑 daemon → tenant）
 
 详 [§06 §5.2 Multi-tenancy](./06-roadmap.md#52-multi-tenancy--oidc--quota--audit)。
 

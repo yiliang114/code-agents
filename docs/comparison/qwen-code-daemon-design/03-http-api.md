@@ -37,27 +37,27 @@ POST   /session/:id/heartbeat              client-initiated 心跳（Stage 1.5 m
 # Permission 流（first-responder）
 POST   /permission/:requestId              vote on permission request
 
-# Workspace（per-bridge state）
-GET    /workspace/:id                       workspace info
-GET    /workspace/:id/sessions              list sessions on this workspace
-GET    /workspace/:id/skills                已加载 skill
-GET    /workspace/:id/mcp                   MCP server 状态
-GET    /workspace/:id/lsp                   LSP 状态
-GET    /workspace/:id/tasks                 background tasks（4 kinds）
-GET    /workspace/:id/file                  read file
-POST   /workspace/:id/file                  write file（PR#3774 prior-read 守卫）
-POST   /workspace/:id/file/edit             edit file
-POST   /workspace/:id/pty                   open PTY（Upgrade: websocket）
+# Workspace（daemon 启动时绑定 cwd，无需 :id 参数）
+GET    /workspace                           workspace info（cwd + 启动参数）
+GET    /workspace/sessions                  list sessions
+GET    /workspace/skills                    已加载 skill
+GET    /workspace/mcp                       MCP server 状态
+GET    /workspace/lsp                       LSP 状态
+GET    /workspace/tasks                     background tasks（4 kinds）
+GET    /workspace/file                      read file
+POST   /workspace/file                      write file（PR#3774 prior-read 守卫）
+POST   /workspace/file/edit                 edit file
+POST   /workspace/pty                       open PTY（Upgrade: websocket）
 
 # Stage 1.5c daemon-side state CRUD（远端 client 等价 Mode A 本地 TUI）
-GET    /workspace/:id/memory                read ~/.qwen/memory.json
-POST   /workspace/:id/memory                update memory
-POST   /workspace/:id/mcp/:server/restart   restart MCP server
-GET    /workspace/:id/agents                list agents
-POST   /workspace/:id/agents                add / remove agents
-POST   /workspace/:id/tools/:name/enable    enable/disable tool
+GET    /workspace/memory                    read ~/.qwen/memory.json
+POST   /workspace/memory                    update memory
+POST   /workspace/mcp/:server/restart       restart MCP server
+GET    /workspace/agents                    list agents
+POST   /workspace/agents                    add / remove agents
+POST   /workspace/tools/:name/enable        enable/disable tool
 POST   /session/:id/approval-mode           set approval mode
-POST   /workspace/:id/init                  workspace init
+POST   /workspace/init                      workspace init
 POST   /session/:id/_meta                   per-session context（Stage 1.5 must-have #8）
 
 # Stage 2a — Protocol Completion
@@ -65,11 +65,13 @@ POST   /ext/:method                         ACP extMethod 桥接（给 vendor ze
 WS     /session/:id                         WebSocket bidi 升级（与 SSE 并存）
 ```
 
-### `:id` 校验语义（commit `6a170ef8` 后）
+### `:id` 校验语义
 
-- `sessionId` 必须存在于 `byWorkspaceChannel` 内某 bridge 的 `sessionIds` set；不匹配 `404 session_not_found`
-- `workspaceId` 必须存在于 `byWorkspaceChannel` map key；不匹配 `404 workspace_not_found`
-- 保留 ID 在 URL 是 fail-fast 防御（防 client 拿错 daemon URL）
+- `sessionId` 必须存在于 `QwenAgent.sessions: Map` 内；不匹配 `404 session_not_found`
+- daemon 启动时绑定单 workspace（cwd 启动参数）；多 workspace 部署 = 多 daemon process 各占独立 port
+- 保留 sessionId 在 URL 是 fail-fast 防御（防 client 拿错 daemon URL）
+
+> **PR#3889 现状**：commit `6a170ef8` 实现的是 `/workspace/:id/*` multi-workspace 路由（要求 client 提供 cwd path 作 `:id`）；follow-up PR 简化为 `/workspace/*` 单 workspace 路由（client 不再传 cwd，daemon 启动时已绑定）。
 
 ---
 
@@ -131,7 +133,7 @@ data: {"id":42,"v":1,"type":"session_update","data":{"sessionUpdate":"agent_mess
 | `permission_already_resolved` | vote loser 收到（Stage 1.5 must-have #5）|
 | `model_switched` | model 切换成功 |
 | `model_switch_failed` | model 切换失败 |
-| `session_died` | bridge `channel.exited` cleanup → 该 workspace 全部 session 死亡 |
+| `session_died` | daemon 内嵌 `qwen --acp` child 退出 → 该 daemon 全部 session 死亡 |
 | `client_evicted` | 该 subscriber queue overflow，被踢 |
 | `slow_client_warning` | overflow 前 soft 警告（Stage 1.5 must-have #7）|
 

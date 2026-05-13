@@ -54,7 +54,7 @@ qwen-code 主线
 | `a8ce5e08d` | /workspace/:id/sessions + /session/:id/model + errorMessage helper |
 | `ad0e6ec06` | audit round 1: timing-safe bearer + IPv6 loopback ergonomics + failOnError |
 | `27a164c` | Stage 1 文档补全（用户 quickstart + HTTP 协议 reference + SDK ts 示例 591 行）|
-| **`6a170ef8`** 🌟 | **架构重构**：bridge-per-workspace + N session multiplexed via `QwenAgent.sessions: Map`；N=5 内存 300-500MB → 60-100MB |
+| **`6a170ef8`** 🌟 | **架构重构（第一轮）**：bridge-per-workspace + N session multiplexed via `QwenAgent.sessions: Map`；N=5 内存 300-500MB → 60-100MB（注：follow-up PR 第二轮简化为 1 daemon = 1 workspace × N session，去掉 multi-workspace 路由）|
 | `f29353a2` | N:1 framing 修正 docs |
 | `bbc7b8b6` + `b1767903` | chiga0 第 3 轮 review：Stage 1 scope honesty + 10 must-haves for Stage 1.5+ + Durability model |
 | `734d833b` / `e18b8fa6` / `b37cc01c` | 多轮 ~30 review threads close（atomic write / read-size cap / 6 critical bugs + 6 follow-ups）|
@@ -67,7 +67,7 @@ qwen-code 主线
 | 工作量 | ~7-8 天 / 1 人 | 多周（84 commits 跨 5 轮 multi-model audit + chiga0 三轮 + LaZzyMan + tanzhenxin reviews + 维护者 N:1 framing 反馈 + 架构重构）| 几周 vs 1 周 |
 | Review threads close | — | ~60+ | — |
 
-**超出原因**：EventBus 完整实现（提前到 Stage 1）+ Timing-safe bearer + IPv6 loopback ergonomics + 多 reviewer 多轮 audit + 架构重构（`6a170ef8`）+ Stage 1 docs 补全。**最 expensive 的 follow-up 是 `6a170ef8` bridge-per-workspace 重构**（reviewer 反馈触发的架构反思）。
+**超出原因**：EventBus 完整实现（提前到 Stage 1）+ Timing-safe bearer + IPv6 loopback ergonomics + 多 reviewer 多轮 audit + 架构重构（`6a170ef8`）+ Stage 1 docs 补全。**最 expensive 的 follow-up 是 `6a170ef8` multi-workspace 重构**（reviewer 反馈触发的架构反思）；第二轮 follow-up PR 进一步简化为 1 daemon = 1 workspace，与 `qwen --acp` stdio 1:1 心智完全对齐。
 
 ### Stage 1 已实现的 HA / 稳定性机制
 
@@ -76,8 +76,8 @@ qwen-code 主线
 | Daemon crash 自动重启 | 外部进程管理器（systemd / k8s）|
 | Transcript-first fork resume | PR#3739（但 Stage 1 不在 HTTP 暴露 `loadSession` —— Stage 1.5 must-have #2）|
 | SSE Last-Event-ID 重连 | commit `41aa95094` |
-| Crash isolation 半径 | 同 bridge（workspace）全部 N session；跨 workspace 进程级隔离 |
-| `killSession` 引用计数清理 bridge | sessionIds set 空才 kill `qwen --acp` child |
+| Crash isolation 半径 | 单 daemon 全部 N session；跨 workspace 部署 = 跨 daemon process OS 进程级隔离 |
+| `killSession` 简化 | follow-up PR：单 daemon 单 child，无引用计数；最后一个 session 退出 = daemon 进入 idle，可选 graceful exit |
 | timing-safe bearer auth + 401 uniform | commit `ad0e6ec06` |
 | Durability model | 显式 documented as ephemeral（chiga0 must-have #10）|
 
@@ -91,7 +91,7 @@ qwen-code 主线
 
 | Sub-stage | 内容 | 工作量 |
 |---|---|---|
-| **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）；顺便统一代码 `ChannelInfo` 与文档 Workspace Bridge 命名 | ~1-2 周 |
+| **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）。注：在 multi-workspace 路由移除（Stage 1.5a #11-#16）后，`AcpChannel` 抽象简化为"`qwen --acp` connection wrapper"，不再含 multi-workspace 路由逻辑 | ~1-2 周 |
 | **1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）+ **default mode flip: 1 daemon = 1 workspace（详 [§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策)）+ `--multi-workspace` opt-in flag** | ~2-3 周 |
 | **1.5b** | Mode A `qwen --serve` flag（TUI co-host HTTP server） | ~4d |
 | **1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A） | ~3-5d |
@@ -126,22 +126,31 @@ qwen-code 主线
 | 9 | `/capabilities` actual feature negotiation（`protocol_versions`）| 待做 |
 | 10 | First-class durability documentation | ✅ shipped (commit `bbc7b8b6`) |
 
-#### 🔧 Default flip — single-workspace 心智对齐（新增）
+#### 🔧 Multi-workspace 路由代码移除（关键 follow-up PR）
 
 | # | task | 设计 |
 |---|---|---|
-| 11 | **Default mode = 1 daemon = 1 workspace** | `qwen serve` 默认绑定启动时 cwd（与 `qwen --acp` stdio 1:1 心智）；daemon 内部跳过 `byWorkspaceChannel: Map` 初始化（省 ~200 LOC 启动代码）；多 daemon 部署天然走 OS 进程级隔离；K8s / cgroup quota / blast radius / observability 自然 per-workspace |
-| 12 | **`--multi-workspace` opt-in flag** | 显式开启时复用 PR#3889 已实现的 `byWorkspaceChannel: Map` + `getOrCreateChannel` 路由；适用本地多项目并行 / IM bot 跨 workspace 路由 / Mode A 本地 TUI 多 workspace |
-| 13 | **HTTP 401 提示**：尝试访问非启动 workspace | default 模式下 `GET /workspace/:other-id` 返回 `403 single_workspace_mode` + 提示 `--multi-workspace` |
-| 14 | **Docs**：更新 quickstart / SDK 示例反映新 default | quickstart 默认单 workspace；advanced section 介绍 `--multi-workspace` |
+| 11 | **删除 `byWorkspaceChannel: Map<string, ChannelInfo>`** | daemon 启动时直接 spawn 单 `qwen --acp` child；不维护 workspace → bridge 映射 |
+| 12 | **删除 `interface ChannelInfo` + 引用计数清理逻辑** | `killSession` 简化为直接 kill；`channel.exited` cleanup 改为 daemon-wide（daemon 进入终态）|
+| 13 | **删除 `getOrCreateChannel` / `inFlightChannelSpawns` / `liveChannels`** | 启动时一次性 spawn，无 lazy 创建 / coalesce 逻辑 |
+| 14 | **HTTP routes 简化**：`/workspace/:id/*` → `/workspace/*` | client 不传 cwd（daemon 启动时已绑定）；保留 sessionId 路由 |
+| 15 | **Tests 简化**：删 multi-workspace 场景测试 | `httpAcpBridge.test.ts` ~200-300 LOC 删除 |
+| 16 | **Docs**：更新 quickstart / SDK 示例 + Stage 1.5 release note | 反映新心智：1 daemon = 1 workspace，多 workspace 部署 = 多 daemon |
 
-**设计依据**：详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)——Qwen 主场景（IM Channels / External Reference 多 tenant SaaS / K8s 部署）对强隔离 / quota / blast radius 要求高，default single-workspace 与这些场景天然契合；advanced multi-workspace 是显式 opt-in（本地多项目场景）。**与 OpenCode 设计哲学不同的关键决策**——Qwen 不 copy OpenCode default。
+**预计改动**：删 ~500-700 LOC + 简化 ~100-200 LOC + 测试 ~200-300 LOC = **~1 周 / 1 人**
+
+**设计依据**：详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)——Qwen 主场景（IM Channels / External Reference 多 tenant SaaS / K8s 部署）对强隔离 / quota / blast radius 要求高，1 daemon = 1 workspace 与这些场景天然契合；多 workspace 部署 = 多 daemon process，由 orchestrator 层（External Reference Architecture）或 client 侧（IM bot 路由表）处理。**与 OpenCode 设计哲学不同的关键决策**——Qwen 不 copy OpenCode default。
+
+**对依赖方影响评估**：
+- ✅ `yiliang114` VSCode 插件——用的是 stdio multi-session 单 workspace，不受影响
+- ✅ `packages/channels/` IM 路由——每 IM channel 当前已是独立 daemon，不依赖 multi-workspace
+- ⚠️ 需 audit 的：WebUI 包 / SDK / vscode-ide-companion 是否假设了 multi-workspace 路由
 
 ### 1.5b — Mode A `qwen --serve` flag
 
 `qwen --serve` flag 解析 + TUI 启动后挂 HttpServer + TUI 作为 in-process subscriber + 默认 auth/CORS 区分本地 vs 远端 + 生命周期协同（Ctrl+C drain HTTP）+ e2e 测试 = **~4 天 / 1 人**。
 
-Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；TUI 绑定其中一个 session（详 [§04 §三 TUI](./04-deployment-and-client.md)）。
+Mode A daemon 同样能持 N session（继承 Stage 1 `QwenAgent.sessions: Map` multiplexing）；TUI 绑定其中一个 session（详 [§04 §三 TUI](./04-deployment-and-client.md)）。
 
 ### 1.5c — daemon-side state CRUD（远端 client 等价 Mode A）
 
@@ -187,7 +196,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；T
 
 ### 可选 Stage 2e — Native in-process
 
-去掉 `qwen --acp` child 桥接，daemon 直接 import `QwenAgent`——省 ~50MB/workspace bridge child 开销 + IPC 延迟。需解决 `acpAgent.ts:601 loadSettings(cwd)` 跨 workspace 污染。工作量 ~1-2 周。**仅在大规模 SaaS（500+ session / 机）必需时推进**。
+去掉 `qwen --acp` child 桥接，daemon 直接 import `QwenAgent`——省 ~50MB child 开销 + IPC 延迟。工作量 ~1-2 周。**仅在大规模 SaaS（500+ session / 机）必需时推进**。
 
 ---
 
@@ -210,7 +219,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；T
 
 ### 5.2 Multi-tenancy + OIDC + Quota + Audit
 
-> 🚨 **Multi-Tenant 关键约束**（Stage 1 commit `6a170ef8` 后）：daemon 同 Workspace Bridge 内 N session **共享同 `qwen --acp` child 的 OS 权限**。**不可让多 tenant 共一个 Workspace Bridge**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
+> 🚨 **Multi-Tenant 关键约束**（1 daemon = 1 workspace 模式下天然 OS 进程级隔离）：daemon 同 workspace 内 N session **共享同 `qwen --acp` child 的 OS 权限**。**不可让多 tenant 共一个 daemon**——orchestrator 必须在 daemon process 层做 1:1 tenant 绑定（1 daemon = 1 tenant × 1 workspace）：
 > - **Workspace 层（推荐）**：1 tenant ↔ 1 workspace
 > - **Daemon process 层（高安全）**：1 tenant ↔ 独立 daemon process
 
@@ -262,29 +271,30 @@ Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；T
 ### 6 大独有选择
 
 1. **复用 ACP zod schema 而非自创 OpenAPI**——0 设计成本 + 与 IDE/Zed 生态天然兼容
-2. **IM Channels 多渠道路由**（IM / VSCode / Web / SDK 全走 SessionRouter）—— Qwen `packages/channels/` 已有（注：这里的 "Channels" 是 IM 消息渠道概念，与本系列 Workspace Bridge 不同）
+2. **IM Channels 多渠道路由**（IM / VSCode / Web / SDK 全走 SessionRouter）—— Qwen `packages/channels/` 已有（IM 消息渠道，与 daemon 进程概念不同；多 workspace 部署时各 IM channel 配独立 daemon）
 3. **PR#3723 应用层权限流**（4 mode 共享 evaluatePermissionFlow）
 4. **默认 0.0.0.0 + 无 token = 拒绝启动**（比 OpenCode 严格）
-5. **Multi-expose 路径 convergence**（Stage 1.5-prereq finding 1）—— 抽 `AcpChannel`（reviewer 提议命名，作用 = 本系列 Workspace Bridge 的接口形态）到 `@qwen-code/acp-bridge` 让 6 条 expose 路径共享同一组多 session primitives
+5. **Multi-expose 路径 convergence**（Stage 1.5-prereq finding 1）—— 抽 `AcpChannel`（reviewer 提议命名，作用 = `qwen --acp` connection wrapper）到 `@qwen-code/acp-bridge` 让 6 条 expose 路径共享同一组多 session primitives
 6. **Default = 1 daemon = 1 workspace**（不 copy OpenCode default）—— Qwen 主场景（IM Channels / 多 tenant SaaS / K8s）对强隔离 / quota / blast radius 要求高；advanced multi-workspace 是显式 opt-in，给本地多项目场景用
 
 ### 性能对比预期
 
-| 维度 | OpenCode（多 workspace default）| Qwen default（1 daemon = 1 workspace）| Qwen advanced `--multi-workspace` | Qwen Stage 2e native in-process |
-|---|---|---|---|---|
-| 启动时间 | ~2-3s | ~2-3s | ~2-3s | 类似 |
-| 首 session 创建（新 workspace）| <100ms | ~1-3s（spawn child）| ~1-3s（spawn child）| <100ms |
-| 同 workspace 第 N session | <50ms | **<200ms**（attach existing daemon）| **<200ms**（attach bridge）| <50ms |
-| 跨 workspace 第 1 session | <50ms（同 daemon 内）| ~2-3s（启新 daemon）| ~1-3s（新 bridge child） | <50ms（如解 cwd 污染） |
-| 100 同 workspace session 内存 | ~100-150MB | 类似 ~100-150MB | 类似 ~100-150MB | 类似 |
-| 100 跨 workspace session 内存 | ~200MB | ~10-15GB（100 daemon）| ~6-10GB（100 child）| 类似 OpenCode |
-| Blast radius | 全部 workspace | **1 workspace** | 全部 workspace | 全部 workspace |
+| 维度 | OpenCode（多 workspace ALS）| **Qwen (1 daemon = 1 workspace)** | Qwen Stage 2e native in-process |
+|---|---|---|---|
+| 启动时间 | ~2-3s | ~2-3s | 类似 |
+| 首 session 创建（新 workspace）| <100ms（同 daemon 内）| ~2-3s（启新 daemon）| <100ms |
+| 同 workspace 第 N session | <50ms | **<200ms**（attach existing child）| <50ms |
+| 跨 workspace 第 1 session | <50ms（同 daemon 内）| ~2-3s（启新 daemon）| ~2-3s |
+| 100 同 workspace session 内存 | ~100-150MB | 类似 ~100-150MB | 类似 |
+| 100 跨 workspace session 内存 | ~200MB | ~10-15GB（100 daemon）| ~5-8GB |
+| Blast radius | 全部 workspace | **1 workspace** | 全部 workspace |
+| 隔离强度 | 应用层 ALS | **OS 进程级**（最强）| 应用层 |
+| Quota 颗粒度 | 需应用层抽象 | **cgroup / systemd 直接套** | 需应用层抽象 |
 
 **结论**：
-- 同 workspace 高密度场景：default / advanced / OpenCode 经济性近似
-- 跨 workspace 高密度场景：OpenCode > advanced > default；但 Qwen 的 default 换得 OS 进程级隔离 + cgroup quota + K8s 天然契合 + blast radius 最小
-- advanced `--multi-workspace` 是省 baseline 的本地多项目方案
-- Stage 2e native in-process 是省 child 进程开销的可选演进
+- 同 workspace 高密度场景：OpenCode / Qwen 经济性近似
+- 跨 workspace 高密度场景：OpenCode 内存更省；但 Qwen 换得 OS 进程级隔离 + cgroup quota + K8s 天然契合 + blast radius 最小
+- Stage 2e native in-process 是省 child 进程开销的可选演进——不解决跨 workspace 共享（仍是 1 daemon = 1 workspace × N session 形态，只是省 child）
 
 ---
 
@@ -296,14 +306,14 @@ Mode A daemon 同样能持 N session（继承 Stage 1 bridge multiplexing）；T
 
 ### 架构哲学相似性
 
-Anthropic Managed Agents 的内部模型很可能是 per-session container/process（云原生隔离的最自然形态）；**Qwen daemon Stage 1 bridge-per-workspace 在同 workspace 内偏离纯 per-session 隔离**（共 OS 权限 + 共 MCP），跨 workspace 仍保持进程级隔离。Anthropic 内部具体实现未公开，可能也走类似 hybrid 模型节省 container baseline。
+Anthropic Managed Agents 的内部模型很可能是 per-session container/process（云原生隔离的最自然形态）；**Qwen daemon 1 daemon = 1 workspace × N session 在 daemon 内偏离纯 per-session 隔离**（共 OS 权限 + 共 MCP），跨 daemon（= 跨 workspace）仍保持进程级隔离。Anthropic 内部具体实现未公开，可能也走类似 hybrid 模型节省 container baseline。
 
 | 维度 | Anthropic Managed Agents | Qwen daemon |
 |---|---|---|
 | 本质 | 云托管 SaaS agent runtime | 自托管 agent daemon |
 | 代码 | 闭源 | Apache-2.0 开源 |
 | 模型 | Claude only | 任意 provider（DashScope / Claude / OpenAI / 自训练）|
-| 进程模型 | 推测 per-session container/process 或 hybrid | bridge-per-workspace + N session multiplexed |
+| 进程模型 | 推测 per-session container/process 或 hybrid | 1 daemon = 1 workspace × N session multiplexed |
 | Session 共享 | per call 独立 / 持久化跨 call | sessionScope:single 多 client 共享 |
 | 多租户 | Anthropic 管理 | 由 External orchestrator 做 1 tenant 1 workspace / daemon process |
 
