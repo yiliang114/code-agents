@@ -38,7 +38,7 @@
 | **Crash 半径** | 同 workspace channel 全部 N session（其他 workspace 独立）| 整 daemon |
 | **Subagent isolation** | 同 workspace 内应用层；跨 workspace 进程级 | 应用层 5 PR 套路 |
 | **大规模 SaaS（500+ session/机）** | 需 Stage 2e native in-process（去 child + 跨 ws 共享）| 原生支持 |
-| **qwen-code 当前状态** | PR#3889 Stage 1 OPEN (commit `6a170ef8`)；同 workspace N session 已 in-process | 上游 OpenCode 已上线 |
+| **qwen-code 当前状态** | **PR#3889 Stage 1 ✅ MERGED 2026-05-13**（merge commit `870bdf2a`，含 `6a170ef8`）；同 workspace N session 已 in-process | 上游 OpenCode 已上线 |
 
 **实务建议**：Stage 1 当前模型 **同 workspace 高密度场景已完美**（共享 OAuth/Cache/parse/LSP/MCP），跨 workspace 场景在 N < 200 同样可接受；只有 cross-workspace 高密度才需要 Stage 2e native in-process 重构。
 
@@ -168,7 +168,7 @@ N 个 cold session 启动总成本：
 
 ### 3.6 与现实约束的对齐
 
-**PR#3889 当前状态**（+12393/-194 / **78 commits** / OPEN / CHANGES_REQUESTED）：Stage 1 bridge **已重构为 channel-per-workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）—— 这是 Stage 1 真正的事实标准。
+**PR#3889 当前状态**（**✅ MERGED 2026-05-13 06:47 UTC** / merge commit `870bdf2a` / +12993/-194 / **84 commits**）：Stage 1 bridge **已重构为 channel-per-workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）—— 这是 Stage 1 真正的事实标准。
 
 | 选择 | 改造范围 | 状态 |
 |---|---|---|

@@ -155,7 +155,7 @@ capabilities.features: [
 
 远端 client 通过 `GET /capabilities` 协商可用功能集——daemon 不支持的 tag client 优雅降级（gray-out dialog）。
 
-> **决策建议**（与 wenshao PR#3889 当前 option A 选择有分歧）：Stage 1 选 option A 已是既成事实（PR#3889 OPEN），不影响。但 Stage 1.5 路线图应**明示**切到 option B：let remote clients (TUI / Web UI / mobile) get **functional parity with local Mode A TUI** through incremental wire route additions. 这是与同行竞品对齐的方向，也是远端 dev box / 容器化 SaaS / 团队协作场景的真实需求。详 [§06 Stage 1.5c daemon-side state CRUD](./06-roadmap.md#stage-15c--daemon-side-state-crud-远端-client-完整功能等价mode-a-补齐)。
+> **决策建议**（与 wenshao PR#3889 当前 option A 选择有分歧）：Stage 1 选 option A 已是既成事实（**PR#3889 ✅ MERGED 2026-05-13**），不影响。但 Stage 1.5 路线图应**明示**切到 option B：let remote clients (TUI / Web UI / mobile) get **functional parity with local Mode A TUI** through incremental wire route additions. 这是与同行竞品对齐的方向，也是远端 dev box / 容器化 SaaS / 团队协作场景的真实需求。详 [§06 Stage 1.5c daemon-side state CRUD](./06-roadmap.md#stage-15c--daemon-side-state-crud-远端-client-完整功能等价mode-a-补齐)。
 
 ## 一、TL;DR — 4 层兼容性矩阵
 

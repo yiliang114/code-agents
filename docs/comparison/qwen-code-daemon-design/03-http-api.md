@@ -549,7 +549,7 @@ data: {"method":"dashscope.quotaWarning","params":{"remaining":50000}}
 
 ## 八、API 总览：Daemon 层 vs Orchestrator 层
 
-> **PR#3889 Stage 1 commit `6a170ef8` channel-per-workspace + N session multiplexed** 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§13 设计对比](./13-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 OPEN，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
+> **PR#3889 Stage 1 commit `6a170ef8` channel-per-workspace + N session multiplexed** 模型下（[§02 §2](./02-architectural-decisions.md#2-状态进程模型) + [§13 设计对比](./13-single-vs-multi-session-design.md)），HTTP API 分两层：**daemon 层**（PR#3889 ✅ MERGED 2026-05-13，主线）+ **orchestrator 层**（External Reference Architecture，由外部实施）。
 >
 > **Stage 2e native in-process** 下两层结构不变，只是 daemon 层去除 `qwen --acp` child 桥接（直接 import `QwenAgent`），orchestrator 层职责保持（仍需跨 daemon process / 跨 workspace 聚合）。
 

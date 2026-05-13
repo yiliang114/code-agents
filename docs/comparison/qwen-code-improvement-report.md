@@ -449,7 +449,23 @@
 
 ## 六、更新日志
 
-### 2026-05-13 增量（~24h · 1 项关键新 OPEN · **`/goal` slash command PR#4088 新 OPEN**（+1800/-24 · 跟进 Claude Code v2.1.139 2026-05-11 引入的 `/goal` 命令，比 Anthropic 实现晚 ~24h；本质回追 Codex 2026-04-25 merged 的 5-PR `/goal` 系列设计）
+### 2026-05-13 增量（~24h · 1 项关键合并 + 1 项关键新 OPEN · **🌟 PR#3889 qwen serve daemon Stage 1 MERGED**（+12993/-194 / 84 commits / merge commit `870bdf2a` / 06:47 UTC merge · 收敛 5 轮 multi-model audit + chiga0 三轮 follow-up + LaZzyMan/tanzhenxin reviews）+ `/goal` slash command **PR#4088 新 OPEN**（+1800/-24 · 跟进 Claude Code v2.1.139 2026-05-11 引入的 `/goal` 命令，比 Anthropic 实现晚 ~24h；本质回追 Codex 2026-04-25 merged 的 5-PR `/goal` 系列设计）
+
+#### 🌟 PR#3889 daemon Stage 1 MERGED — 系列追踪以来最大单 PR
+
+[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` ✅ **MERGED 2026-05-13 06:47 UTC**（merge commit `870bdf2a`，+12993/-194 / 84 commits）—— 系列追踪以来最大单 PR（超过 PR#3684 Phase C event monitor +6297/-147）。
+
+**最终设计要点**（详 [§06 Stage 1 实现 audit](./qwen-code-daemon-design/06-roadmap.md#stage-1-pr3889-实现-audit最近更新-2026-05-12-第三轮)）：
+
+- **架构**：commit `6a170ef8` 重构后是 "1 daemon HTTP front + M `qwen --acp` children (1 per workspace) + N session multiplexed per workspace via `QwenAgent.sessions: Map`"——同 workspace 内 in-process N-session 经济性已对齐 OpenCode
+- **9 STAGE1_FEATURES**：health / capabilities / session_create / session_list / session_prompt / session_cancel / session_events / session_set_model / permission_vote
+- **N=5 同 workspace session 内存**：300-500MB（早期）→ **60-100MB**（commit `6a170ef8` 后）
+
+**deferred 到 Stage 1.5**：chiga0 10 must-haves（详 [§06 Stage 1.5a](./qwen-code-daemon-design/06-roadmap.md#stage-15a--chiga0-10-must-haves)）+ Mode A `qwen --serve` flag（Stage 1.5b）+ daemon-side state CRUD（Stage 1.5c，[§09 §〇·五](./qwen-code-daemon-design/09-tui-compatibility.md)）+ chiga0 6 architecture findings refactor（Stage 1.5-prereq）。
+
+**经验沉淀**：78 commits 中 ~25 轮 audit + ~60+ review threads close + **架构能在 Stage 1 内重构**（commit `6a170ef8` 是最 expensive 但最有价值的 follow-up）。详 [§06 §5️⃣ 经验沉淀](./qwen-code-daemon-design/06-roadmap.md#5%EF%B8%8F⃣-经验沉淀)。
+
+---
 
 [**PR#4088**](https://github.com/QwenLM/qwen-code/pull/4088) `feat(cli): add session-scoped /goal command with judge-driven turn continuation`（qqqys，2026-05-12 OPEN，+1800/-24，closes [#4074](https://github.com/QwenLM/qwen-code/issues/4074)）—— 跟随 Claude Code v2.1.139（2026-05-11）+ Codex 5-PR 系列（2026-04-25 merged）的 `/goal` 设计模式：
 

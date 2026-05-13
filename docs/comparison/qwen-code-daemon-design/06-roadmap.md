@@ -8,7 +8,7 @@
 
 ```
 qwen-code 主线（~7-10 周 feature complete · Stage 1 merge ~1-2w + Stage 1.5 ~3-4w + Stage 2 ~3-4w）：
-├─ Stage 1     🟡 (PR#3889 OPEN, 78 commits / +12393/-194, code complete + 多轮 multi-model audit + CHANGES_REQUESTED 收敛中)
+├─ Stage 1     ✅ **MERGED 2026-05-13** (PR#3889 merge commit `870bdf2a`, 84 commits / +12993/-194, 经 5 轮 multi-model audit + chiga0 三轮 follow-up + LaZzyMan/tanzhenxin reviews 收敛)
 │              │
 │              └─ Mode B headless qwen serve · 1 daemon + M qwen --acp children (1 per workspace)
 │                 + N sessions multiplexed per workspace via QwenAgent.sessions: Map
@@ -36,7 +36,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 
 ---
 
-## Stage 1：Mode B headless `qwen serve`（PR#3889 OPEN · 78 commits · +12393/-194 · CHANGES_REQUESTED）
+## Stage 1：Mode B headless `qwen serve`（PR#3889 ✅ MERGED 2026-05-13 · 84 commits · +12993/-194）
 
 ### 目标
 
@@ -82,9 +82,9 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 
 ### Stage 1 PR#3889 实现 audit（最近更新 2026-05-12 第三轮）
 
-> 累计更新历程：commits 23 → 32 → 78 / +7698/-46 → +8883/-4 → **+12393/-194** / 经历 5 轮 multi-model audit + LaZzyMan / tanzhenxin reviews + chiga0 三轮 follow-up + 维护者 N:1 framing 反馈。
+> 累计更新历程：commits 23 → 32 → 78 → **84** / +7698/-46 → +8883/-4 → +12993/-194 → **+12993/-194 (final)** / 经历 5 轮 multi-model audit + LaZzyMan / tanzhenxin reviews + chiga0 三轮 follow-up + 维护者 N:1 framing 反馈 → **2026-05-13 06:47 UTC merged (merge commit `870bdf2a`)**。
 
-[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— **OPEN / CHANGES_REQUESTED**，**+12393/-194 / 78 commits** —— Stage 1 scope 代码完成 + 文档 100% 补全 + 多轮 audit 持续收敛中。
+[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)` —— **✅ MERGED 2026-05-13 06:47 UTC**（merge commit `870bdf2a`）**+12993/-194 / 84 commits** —— Stage 1 scope 代码完成 + 文档 100% 补全 + 5 轮 multi-model audit + chiga0 三轮 follow-up + LaZzyMan/tanzhenxin reviews 全部收敛。
 
 #### 最新关键 commits（2026-05-12）
 
@@ -102,8 +102,8 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | 维度 | 预估（本节工作清单）| 实际（PR#3889 2026-05-12）| 倍数 |
 |---|---|---|---|
 | LOC | ~700-1000 行 | **+12393 / -194**（含测试 + 文档；剔除测试 + 文档 ~7000 LOC）| **7x-12x** |
-| 工作量 | ~7-8 天 / 1 人 | 多周（78 commits 跨 5 轮 multi-model audit + LaZzyMan/tanzhenxin/chiga0 reviews + N:1 framing 重构）| 几周 vs 1 周 |
-| 提交数 | — | **78 commits**：7 实现 + 多轮 self-audit / review round（claude-opus-4-7 / gpt-5.5 / deepseek 多模型）+ chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 维护者 N:1 framing 反馈 + 架构重构（6a170ef8 channel per workspace） + Stage 1 docs + merge/lint | — |
+| 工作量 | ~7-8 天 / 1 人 | 多周（84 commits 跨 5 轮 multi-model audit + LaZzyMan/tanzhenxin/chiga0 reviews + N:1 framing 重构）| 几周 vs 1 周 |
+| 提交数 | — | **84 commits**：7 实现 + 多轮 self-audit / review round（claude-opus-4-7 / gpt-5.5 / deepseek 多模型）+ chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 维护者 N:1 framing 反馈 + 架构重构（6a170ef8 channel per workspace） + Stage 1 docs + merge/lint | — |
 
 **超出原因**（设计 → 实现的工程现实）：
 
@@ -113,7 +113,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | **Timing-safe bearer compare** | §05 设计为 Bearer，PR#3889 加 SHA-256 + `crypto.timingSafeEqual` + 401 uniform across no-header/bad-scheme/wrong-token，对应 §05 side-channel 防御（设计在 §05 但 Stage 1 实现）|
 | **IPv6 loopback ergonomics** | `::1` / `[::1]` / `host.docker.internal` 等 LOOPBACK_BINDS 边界，原设计未具体化 |
 | **EventBus correctness** | `client_evicted` overflow / replay ring / AsyncIterable abort handling 等几百行 |
-| **Self-audit + multi-model reviewer rounds + 多 reviewer follow-up** | 78 commits 中 ~25 轮 audit（self-audit 1-10 + reviewer rounds 1-7 + chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 后续 multi-model review threads close）—— PR#3889 体量超出的最大来源；多模型审（claude-opus-4-7 + gpt-5.5 + deepseek）累计 close ~60+ review threads |
+| **Self-audit + multi-model reviewer rounds + 多 reviewer follow-up** | 84 commits 中 ~25 轮 audit（self-audit 1-10 + reviewer rounds 1-7 + chiga0 三轮 follow-up + LaZzyMan reviews + tanzhenxin reviews + 后续 multi-model review threads close）—— PR#3889 体量超出的最大来源；多模型审（claude-opus-4-7 + gpt-5.5 + deepseek）累计 close ~60+ review threads |
 | **🌟 架构重构（commit `6a170ef8` 2026-05-12）** | Stage 1 bridge 重构为 multiplex sessions on one `qwen --acp` child per workspace（复用 `QwenAgent.sessions: Map`）；新增 `ChannelInfo` 类型 + `byWorkspaceChannel: Map` + `getOrCreateChannel(workspaceKey)` coalesce + `connection.newSession({cwd, mcpServers})` 多 session 多路复用 + `killSession` 引用计数清理。这是最 expensive 的 follow-up（原设计完全没料到这个能力可以在 Stage 1 实现）|
 | **DaemonClient SDK** | §03 没单独估算 SDK 端，但 sibling 同步实现 `parseSseStream` / `DaemonHttpError` |
 | **child-crash recovery** | reviewer round 4 加，原设计未含 |
@@ -179,7 +179,7 @@ External Reference Architecture（外部 / 商业层，参考实现）：
 | §10 远端 CLI / Capability 反向 RPC | **0%**（Stage 1 不含；External 范畴）|
 | **Stage 1 文档**（user guide + HTTP 协议 reference + SDK 示例）| **100%**（commit `27a164c` 补全 §06 §"Documentation + examples + e2e tests" 1d 任务）|
 
-**综合**：100% Stage 1 范畴内的设计决策 1:1 实现；文档 100% 补全；少数偏差都是**设计向更严格演进**（timing-safe SHA-256 + crypto.timingSafeEqual / 401 uniform across no-header/bad-scheme/wrong-token / IPv6 loopback ergonomics），不是简化。**Stage 1 code complete + CHANGES_REQUESTED**——PR 仍在 multi-model audit 收敛中（chiga0 第 3 轮 + LaZzyMan/tanzhenxin reviews + 维护者反馈），merge 后开 Stage 1.5（chiga0 10 must-haves + Mode A `qwen --serve`）follow-up。
+**综合**：100% Stage 1 范畴内的设计决策 1:1 实现；文档 100% 补全；少数偏差都是**设计向更严格演进**（timing-safe SHA-256 + crypto.timingSafeEqual / 401 uniform across no-header/bad-scheme/wrong-token / IPv6 loopback ergonomics），不是简化。**✅ Stage 1 已合并 2026-05-13 06:47 UTC**（merge commit `870bdf2a`），收敛了 chiga0 三轮 follow-up + LaZzyMan/tanzhenxin reviews + 维护者反馈。下一步开 Stage 1.5（chiga0 10 must-haves + Mode A `qwen --serve` + daemon-side state CRUD）follow-up。
 
 #### 5️⃣ 经验沉淀
 
@@ -567,7 +567,7 @@ PR#3889 已实现的 `BridgeClient` file-proxy 方法（`readTextFile` / `writeT
 ```
                   Week 1-2     Week 3-6        Week 7-10        Week 11-12
 qwen-code 主线
-   Stage 1       ████ 🟡 PR OPEN（CHANGES_REQUESTED 收敛中）
+   Stage 1       ████ ✅ MERGED 2026-05-13（PR#3889 merge commit 870bdf2a）
    Stage 1.5a            ████████ chiga0 10 must-haves（~2-3w）
    Stage 1.5b            ███ Mode A flag（~4d，与 1.5a 并行）
    Stage 1.5c            ███ daemon-side state CRUD（~3-5d，与 1.5a/1.5b 并行）
@@ -575,7 +575,7 @@ qwen-code 主线
    Stage 2e（可选）                                ██████ native in-process（~1-2w）
 
 里程碑:
-   end Week 2:   Stage 1 PR#3889 merge（收敛 review threads）
+   end Week 2:   Stage 1 PR#3889 merge ✅ 2026-05-13 06:47 UTC（收敛 chiga0 + LaZzyMan + tanzhenxin reviews）
    end Week 6:   Stage 1.5 GA（1.5a must-haves + 1.5b Mode A 并行完成）
    end Week 10:  Stage 2 GA（daemon protocol surface 锁定）
    end Week 12:  可选 Stage 2e native in-process（去 child 桥接）
