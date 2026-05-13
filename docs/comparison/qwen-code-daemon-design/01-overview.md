@@ -33,7 +33,7 @@
 
 ## 一、术语表
 
-> ⚠️ **PR#3889 当前实现状态**（2026-05-13 MERGED）：commit `6a170ef8` 引入了 `byWorkspaceChannel: Map<workspace, ChannelInfo>` multi-workspace 路由，但根据简化原则将通过 follow-up PR 移除——daemon 启动时直接 spawn 单 `qwen --acp` child（绑定启动时 cwd）+ N session multiplexed。
+> ⚠️ **PR#3889 当前实现状态**（2026-05-13 MERGED）：commit `6a170ef8` 引入了 `byWorkspaceChannel: Map<workspace, ChannelInfo>` multi-workspace 路由，根据简化原则通过 [**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（OPEN，+1121/-374）移除——daemon 启动时直接 spawn 单 `qwen --acp` child（绑定 `--workspace <path>` 或启动时 cwd）+ N session multiplexed；cross-workspace 请求返回 `400 workspace_mismatch`。
 
 | 术语 | 定义 | 源码 anchor |
 |---|---|---|
@@ -47,7 +47,7 @@
 
 > **废弃术语**：
 > - "Daemon Instance"（早期 PR#3889 设计中等同 "1 daemon = 1 session"）
-> - "Workspace Bridge / ChannelInfo / byWorkspaceChannel"（PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由抽象，将通过 follow-up PR 移除）
+> - "Workspace Bridge / ChannelInfo / byWorkspaceChannel"（PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由抽象，由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 移除）
 
 ---
 
@@ -130,8 +130,8 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 
 | Stage | 范围 | 状态 |
 |---|---|---|
-| **Stage 1** | Mode B headless `qwen serve` + N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) — 但当前包含 multi-workspace 路由代码（待 follow-up PR 移除）|
-| **Stage 1.5a** | chiga0 10 must-haves + **follow-up PR: 移除 multi-workspace 路由代码**（删 `byWorkspaceChannel: Map` / `getOrCreateChannel` / `ChannelInfo` ~500-700 LOC）| ~2-3 周 |
+| **Stage 1** | Mode B headless `qwen serve` + N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) — 当前含 multi-workspace 路由（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) OPEN 移除中）|
+| **Stage 1.5a** | chiga0 10 must-haves + **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace`**（删 `byWorkspaceChannel: Map` / `getOrCreateChannel` / `ChannelInfo` + 加 `WorkspaceMismatchError` + `--workspace` flag）| ~2-3 周 |
 | **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d |
 | **Stage 1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A）| ~3-5d |
 | **Stage 1.5-prereq** | chiga0 6 architecture findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到 `@qwen-code/acp-bridge`）| ~1-2 周 |

@@ -38,7 +38,7 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 
 > ✅ **Stage 1 已合并**（2026-05-13 06:47 UTC）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)`，merge commit `870bdf2a`，**+12993/-194 / 84 commits**。Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags 全部已实现。
 
-> 🔧 **Follow-up PR（Stage 1.5a #11-#16）**：PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由（`byWorkspaceChannel: Map<string, ChannelInfo>` / `getOrCreateChannel` / `inFlightChannelSpawns` 等 ~500-700 LOC）将通过 follow-up PR 移除，简化为 "1 daemon = 1 workspace × N session"。设计依据详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)。
+> 🔧 **Follow-up [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（OPEN，+1121/-374 across 13 files）：PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由（`byWorkspaceChannel: Map<string, ChannelInfo>` / `getOrCreateChannel` / `inFlightChannelSpawns` 等）通过 PR#4113 移除，bridge state 折叠为单 slot（`channelInfo?: ChannelInfo`）+ 新增 `BridgeOptions.boundWorkspace` required + `WorkspaceMismatchError` 400 + `--workspace <path>` CLI flag + `CapabilitiesEnvelope.workspaceCwd` 暴露。设计依据详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)。
 
 > ⏳ **Stage 1.5 / 2 后续**：chiga0 10 must-haves（pair tokens / unsubscribe API / lifecycle audit）+ 6 architecture findings + Mode A 本地 TUI super-client + Mode B 远端 client option B daemon-side state CRUD（详见 [§06 Roadmap](./06-roadmap.md)）。
 
@@ -53,7 +53,7 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 | **03** | [HTTP API & Protocol](./03-http-api.md) | Route table（`/workspace/*` 单 workspace 路由）+ ACP wire 4 层兼容性矩阵 + SSE + Last-Event-ID + 双向 RPC 异步化 + Capability negotiation |
 | **04** | [Deployment & Client](./04-deployment-and-client.md) | Mode A/B 对照 + TUI super-client vs thin shell 9 dialogs 分析 + 多 client 协调（subscriber protocol）+ Remote CLI 3 拓扑 + Client Capability 反向 RPC |
 | **05** | [Security & Permission](./05-permission-auth.md) | Bearer token + Host allowlist + 0.0.0.0 拒绝 / PR#3723 4-mode evaluatePermissionFlow / first-responder vote + per-session 隔离 / Multi-tenant = 1 daemon 1 tenant OS 进程级隔离 |
-| **06** | [Roadmap & Ecosystem](./06-roadmap.md) | Timeline + Stage 1 audit + **Stage 1.5a multi-workspace 路由移除 follow-up PR** + chiga0 10 must-haves + Mode A + daemon-side state CRUD + 6 architecture findings + Stage 2 + External Reference Architecture + vs OpenCode + vs Anthropic |
+| **06** | [Roadmap & Ecosystem](./06-roadmap.md) | Timeline + Stage 1 audit + **Stage 1.5a [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) multi-workspace 路由移除** + chiga0 10 must-haves + Mode A + daemon-side state CRUD + 6 architecture findings + Stage 2 + External Reference Architecture + vs OpenCode + vs Anthropic |
 
 ## 三、阅读路径
 
@@ -94,8 +94,8 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 
 | Stage | 状态 | 范围 |
 |---|:---:|---|
-| **Stage 1** | ✅ MERGED | PR#3889 - 含 multi-workspace 路由（待 Stage 1.5a follow-up 移除）|
-| **Stage 1.5a** | ⏳ 待开 | chiga0 10 must-haves + **multi-workspace 路由移除 follow-up PR**（删 ~500-700 LOC，回归 1 daemon = 1 workspace × N session 心智）|
+| **Stage 1** | ✅ MERGED | PR#3889 - 含 multi-workspace 路由（PR#4113 OPEN 移除中）|
+| **Stage 1.5a** | 🔧 OPEN | **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** multi-workspace 路由移除（bridge state collapse + `WorkspaceMismatchError` + `--workspace` flag）+ chiga0 10 must-haves |
 | Stage 1.5b | ⏳ 待开 | Mode A `qwen --serve` flag |
 | Stage 1.5c | ⏳ 待开 | Mode B daemon-side state CRUD（~3-5d，6-8 wire 路由）|
 | Stage 1.5-prereq | ⏳ 待开 | chiga0 6 architecture findings（PermissionMediator / EventBus / FileSystemService / capability registry / `AcpChannel` lift / dualOutput-remoteInput）|
@@ -112,7 +112,8 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 | **PR#3723** ✅ | 共享 L3→L4 permission flow | Interactive / Non-Interactive / ACP 三模式权限决策合一，daemon 是第 4 种 |
 | **PR#3739** ✅ | Background agent resume + transcript-first fork resume | daemon 重启 / failover 后 session 可恢复（SSE 重连协议的隐藏基础设施）|
 | **PR#3810** ✅ | FileReadCache invalidation 5 路径修复 | 长 session 正确性保障 |
-| **PR#3889** ✅ | qwen serve daemon Stage 1 | 本系列设计落地（multi-workspace 路由待 follow-up PR 移除）|
+| **PR#3889** ✅ | qwen serve daemon Stage 1 | 本系列设计落地（multi-workspace 路由由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 移除中）|
+| **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** 🔧 | `refactor(serve): 1 daemon = 1 workspace` | 移除 multi-workspace 路由，bridge state 折叠为单 slot + `WorkspaceMismatchError` + `--workspace` flag（OPEN）|
 
 ## 六、决策与文档对应
 
