@@ -1,285 +1,135 @@
-# 01 — 架构总览
+# 01 — Overview
 
-> [← 返回 README](./README.md) · [下一篇：架构决策 →](./02-architectural-decisions.md)
+> [← 返回 README](./README.md) · [下一篇：Design Decisions →](./02-architectural-decisions.md)
 
-## 一、daemon 模型 vs Qwen 当前的 subprocess 模型
+## TL;DR
 
-Qwen Code 当前的程序化访问形态：
+**qwen serve** 是 Qwen Code 的 HTTP daemon 模式——把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何 client / orchestrator 消费的服务。**PR#3889 Stage 1 ✅ 已合并 2026-05-13**（merge commit `870bdf2a`，+12993/-194 / 84 commits）。
 
-```
-┌─────────────────────┐  spawn  ┌────────────────────────┐
-│ SDK 客户端           │────────▶│ qwen CLI 子进程（短生命）│
-│ (TS/Python/Java)    │  stdin  │ ├─ ProcessTransport     │
-│                     │  stdout │ │  NDJSON 流             │
-│                     │         │ └─ core (库调用)         │
-└─────────────────────┘         └────────────────────────┘
+**核心架构**（commit `6a170ef8`）：1 daemon process → M channels（per workspace）→ N sessions per channel（多路复用 via `QwenAgent.sessions: Map`）。
 
-每次 SDK query() / Client 实例 = 1 个 CLI 子进程
-```
+**两种部署**：
+- **Mode A** `qwen --serve` — 本地 TUI + HTTP front 同进程（super-client）
+- **Mode B** `qwen serve` — headless HTTP front（远端 client 是 thin shell）
 
-引入 daemon 后（commit `6a170ef8` 后：daemon 内 channel-per-workspace + N session multiplexed；跨 daemon process / 跨机器场景由外部 orchestrator 管，不在 qwen-code 主线范围）：
-
-```
-                                   ┌──────────────────────────────┐
-                                   │ Orchestrator（External 实施）  │
-                                   │ - cross-daemon-process routing│
-                                   │ - daemon process discovery    │
-                                   │ ⚠️ 项目范围外（参考 §13/§14）  │
-                                   └──────────────┬───────────────┘
-                                                  │ spawn / route
-                                                  ↓
-┌─────────────────────┐  HTTP/WS  ┌──────────────────────────────┐
-│ SDK 客户端 1         │──────────▶│ daemon process (qwen serve)  │
-└─────────────────────┘           │ ├─ Express 5 + express-ws     │
-                                   │ ├─ EventBus（多 client fan-out）│
-┌─────────────────────┐  HTTP/WS  │ ├─ byWorkspaceChannel: Map<>  │
-│ Web UI / VSCode     │──────────▶│ │  ├─ Channel-A (workspace=A) │
-└─────────────────────┘           │ │  │  └─ Sessions: Map<sid>   │
-                                   │ │  ├─ Channel-B (workspace=B) │
-┌─────────────────────┐  HTTP/WS  │ │  │  └─ Sessions: Map<sid>   │
-│ Channel adapters    │──────────▶│ │  └─ Channel-C (workspace=C) │
-│ (IM / Telegram)     │           │ │     └─ Sessions: Map<sid>   │
-└─────────────────────┘           │ └─ Per-channel: LSP/MCP/cache │
-                                   └──────────────────────────────┘
-                                       qwen-code 主线 scope
-                                       （Stage 1 ✅ MERGED + 1.5/2 路线图）
-
-Mode A: daemon process 同时含本地 TUI 客户端（qwen --serve）
-Mode B: daemon process 无 TUI 全 HTTP（qwen serve）
-
-启动 daemon 一次 → 单 daemon process 内 M channels × N sessions per channel；
-   - 同 workspace 多 client → 共享同一 channel 同一 session（live collaboration）
-   - 跨 workspace 多 session → 走独立 channel（不同 qwen --acp child）
-   - 跨 daemon process 多 session → 由 External orchestrator spawn / route
-```
-
-> **术语**：本系列统一使用 `daemon process`（`qwen serve` HTTP front）/ `channel`（`qwen --acp` child = 1 workspace）/ `session`（per-channel `sessions: Map` 内一条）三层术语。详 [§02 §〇 术语表](./02-architectural-decisions.md#〇术语表commit-6a170ef8-之后)。
-
-## 二、本质差异（与 OpenCode 共识 + Qwen 特色）
-
-### 2.1 与 OpenCode 共识的 4 条原则
-
-| 原则 | OpenCode | Qwen Daemon（本设计）|
-|---|---|---|
-| daemon 不再 spawn CLI | core 直接 import | 同样 |
-| 多 session 模型 | `Map<directory, InstanceContext>`（同进程 N session 跨 workspace）| **PR#3889 Stage 1 (commit `6a170ef8`) = channel per workspace + N session multiplexed per workspace**——同 workspace 内 in-process N-session 已达 OpenCode 同款经济性；跨 workspace 走独立 child 进程级隔离；Stage 2e native in-process 是可选演进 |
-| `process.cwd()` 不变 | `AsyncLocalStorage` 上下文传播 | Stage 1：HTTP route handler dispatch 到 ACP channel，channel 内多 session 走 ACP wire 自带 sessionId 路由；Stage 2e（去 child）需引入 Node 内建 `AsyncLocalStorage` per-request session ctx（不引 Effect-TS）（详见 [04-进程模型](./04-process-model.md)）|
-| 持久化关键状态 | SQLite + drizzle-orm（`session.sql.ts:SessionTable`）| 主线沿用 JSONL（PR#3739）；SQLite 用于外部 orchestrator 聚合 audit / permission decisions（详见 [§14 持久化栈](./14-orchestrator-multi-tenancy.md#四持久化栈大致方向)）|
-
-### 2.2 Qwen 独有的 3 条特色
-
-#### 特色 1：复用 ACP NDJSON schema 作为内部 RPC
-
-OpenCode 自创 OpenAPI schema（13525 行 `openapi.json`），Qwen Code 已经有 838 行的 ACP agent 实现完整 NDJSON 协议（`packages/cli/src/acp-integration/acpAgent.ts`）。
-
-**daemon HTTP 路由的请求/响应 body 直接复用 ACP 的 zod schema**：
-
-```ts
-// 现有 ACP request:  PromptRequest / NewSessionRequest / SetSessionModelRequest 等
-// daemon HTTP body 沿用同结构，仅把传输层从 stdio NDJSON 换成 HTTP
-
-POST /session                  body: NewSessionRequest
-POST /session/:id/prompt       body: PromptRequest
-POST /session/:id/model        body: SetSessionModelRequest
-```
-
-详见 [04-HTTP API 设计](./03-http-api.md)。
-
-**好处**：协议层 0 设计成本（ACP 已经把 session 生命周期、permission 流、cancel、resume、fork 验证过），唯一新增的是传输层桥接。
-
-#### 特色 2：Channels SessionRouter 天然适配多 client
-
-OpenCode 是 daemon 的"单租户"——只有 SDK 客户端连。Qwen Code 的 `packages/channels/base/src/SessionRouter.ts` 已经为多用户 / 多 IM 平台设计：
-
-```ts
-// SessionRouter.ts 现有能力
-private toSession: Map<string, string>    // routing key → session ID
-private toTarget: Map<string, SessionTarget>
-private channelScopes: Map<string, SessionScope>  // 'thread' | 'single' | 'user'
-```
-
-daemon 模式下，**HTTP/WS 客户端就是另一种 channel**——直接复用 SessionRouter 的多路由能力，IM / WebUI / IDE / SDK 都走同一个路由层。
-
-#### 特色 3：双轨认证（bearer token + 复用 PR#3723 权限流）
-
-OpenCode 用单一 `OPENCODE_SERVER_PASSWORD`（粗粒度访问控制）。Qwen 设计采用**两层权限**：
-
-| 层 | 作用 | 复用 |
-|---|---|---|
-| **传输层 bearer token** | 阻止未授权访问 daemon | env var + middleware（参考 OpenCode）|
-| **应用层 permission flow** | 工具调用是否需要审批 / domain allowlist | **直接复用 PR#3723 的 `evaluatePermissionFlow()`** —— Interactive / Non-Interactive / ACP 三模式已合并，daemon 是第 4 种 |
-
-详见 [07-权限/认证](./05-permission-auth.md)。
-
-## 三、整体架构图
-
-**核心原则**（[§02 §〇 术语表](./02-architectural-decisions.md#〇术语表commit-6a170ef8-之后)）：
-- 1 daemon process 持 M channels（每 workspace 1 channel via `byWorkspaceChannel: Map`）+ 每 channel N sessions（via `QwenAgent.sessions: Map`）
-- **Mode A（CLI + HttpServer）/ Mode B（Headless Daemon）双部署模式**（[§02 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver)）—— 区别仅在 daemon process 是否同时承载本地 TUI
-- **单机多 session 已被 daemon 自身 in-daemon orchestration 解决**（commit `6a170ef8`：`byWorkspaceChannel: Map` + workspace channel pool + N session multiplexed per workspace via `QwenAgent.sessions: Map`）；**跨 daemon process / 跨机器 / 多 tenant SaaS 场景**才由 External orchestrator（`qwen-coordinator` 角色）spawn 多 daemon —— **不在 qwen-code 主线路线图**，由商业平台 / k8s operator / 云厂商基于 daemon building block 实现，参考 [§13 设计对比](./13-single-vs-multi-session-design.md) / [§14 多租户配额](./14-orchestrator-multi-tenancy.md) / [§03 §8.2 orchestrator API](./03-http-api.md#82-orchestrator-层-apiexternal-reference-architecture)
-
-### 3.1 单 Daemon Process 内部架构（Mode A / Mode B 共用）
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  qwen daemon process（M channels × N sessions per channel）      │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ HTTP / WebSocket 入口（Express 5 + express-ws）            │  │
-│  │ ├─ Auth middleware（Mode A 默认 loopback / Mode B bearer） │  │
-│  │ ├─ /session/:id/prompt /cancel /events /permission ...    │  │
-│  │ └─ SSE / WebSocket 流式事件 + Last-Event-ID 重连            │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↓                                      │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ HTTP → ACP Adapter（HttpAcpBridge）                       │  │
-│  │ - HTTP body ↔ ACP NDJSON 双向桥接                         │  │
-│  │ - SessionNotification stream → SSE/WS fan-out             │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↓                                      │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ EventBus（多 client 协作）                                 │  │
-│  │ ├─ Mode A 本地 TUI 是 super-client（持完整 Ink dialogs    │  │
-│  │ │  + local-jsx slash commands；in-process subscribe        │  │
-│  │ │  agent↔user conversation 流）                            │  │
-│  │ ├─ HTTP/SSE subscriber（远端 client：CLI / WebUI / IDE）   │  │
-│  │ │  看到的是 strict subset，不是 TUI mirror                  │  │
-│  │ └─ first-responder permission vote（任何 client 可应答）   │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↓                                      │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ core（in-process 库调用 · 直接绑唯一 session）              │  │
-│  │ - SessionService（PR#3739 transcript-first resume）        │  │
-│  │ - FileReadCache（per-daemon · PR#3717+3810 invalidation）  │  │
-│  │ - Permission flow（PR#3723 + daemon 第 4 mode）            │  │
-│  │ - MCP client manager（PR#3818 coalesce + 30s health check）│  │
-│  │ - Background tasks（PR#3471/3488/3642/3791/3836 4 kinds）  │  │
-│  │   注：无需 AsyncLocalStorage Instance ctx                │  │
-│  │      —— daemon 进程本身就是 session ctx                    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                          ↓                                      │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ 子进程层（per-daemon · 不再跨 session 共享）                │  │
-│  │ - LSP server（1 个 · 此 daemon 的 workspace）              │  │
-│  │ - MCP servers（per-daemon · 不与其他 daemon 共享）          │  │
-│  │ - PTY / Bash 工具调用（按工具调用粒度）                     │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 3.2 跨 daemon process 场景：External Orchestrator + 多 daemon processes
-
-> **⚠️ 此节描述的 Orchestrator 不在 qwen-code 主线路线图**——是给外部集成方（商业平台 / k8s operator / 云厂商）的设计参考蓝图。qwen-code 主线（Stage 1/1.5/2）只交付 daemon building block；下面的多 session 拓扑由外部基于 [§03 §8.2 Orchestrator API](./03-http-api.md#82-orchestrator-层-apiexternal-reference-architecture) 实现。详见 [§13 设计对比](./13-single-vs-multi-session-design.md) + [§14 多租户配额](./14-orchestrator-multi-tenancy.md) + [§06 External Reference Architecture](./06-roadmap.md#external-reference-architecture参考实现非项目路线图)。
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  External Orchestrator (qwen-coordinator) ⚠️ 项目范围外             │
-│  - sessionScope routing: single / user / thread                    │
-│  - daemon process discovery / spawn / cleanup                      │
-│  - cross-daemon aggregate API（Web UI 跨 session 聚合视图）         │
-│  - daemon pool / warm pool（External SaaS 资源池化优化）        │
-└────────────────────┬───────────────────────────────────────────────┘
-                     │ spawn / route
-       ┌─────────────┼─────────────┬──────────────┐
-       ↓             ↓             ↓              ↓
-   ┌────────┐    ┌────────┐    ┌────────┐    ┌────────┐
-   │daemon-1│    │daemon-2│    │daemon-3│    │daemon-N│  ← qwen-code
-   │sess-A  │    │sess-B  │    │sess-C  │    │  ...   │     主线 scope
-   │        │    │        │    │        │    │        │
-   │ Mode A │    │ Mode B │    │ Mode B │    │        │
-   │ (含TUI)│    │(headl) │    │(headl) │    │        │
-   │        │    │        │    │        │    │        │
-   │ + LSP  │    │ + LSP  │    │ + LSP  │    │ + LSP  │
-   │ + MCP  │    │ + MCP  │    │ + MCP  │    │ + MCP  │
-   │ + cache│    │ + cache│    │ + cache│    │ + cache│
-   └───┬────┘    └───┬────┘    └───┬────┘    └───┬────┘
-       │             │             │              │
-   ┌───┴─────────────┴─────────────┴──────────────┴───┐
-   │  client 层（CLI / WebUI / IDE / IM bot）           │
-   │  - client 通过 External orchestrator discovery 找目标 daemon│
-   │  - 之后直连 daemon process HTTP 端口（少一跳）       │
-   │  - 同 session 多 client 共享同一 daemon 的 EventBus  │
-   └──────────────────────────────────────────────────┘
-```
-
-**关键性质**：
-- **Channel 内同 workspace N session 共享应用层 ACP `sessions: Map`；跨 workspace 走独立 channel 进程级隔离**（commit `6a170ef8` 后，qwen-code 主线 scope）——daemon process 不需要 AsyncLocalStorage 跨 channel 路由（HTTP route handler 通过 URL `sessionId` 直接定位 channel；channel 内 sessionId 路由通过 ACP wire 自带）
-- **进程级隔离免费**——一 daemon crash 只影响其 session，由外部 orchestrator（或 systemd / k8s 等进程管理器）重启
-- **资源池化在 External 层做**（External SaaS 资源池化：用户级 LSP daemon / 共享 MCP / 共享 cache）—— N ≥ 50 时再投，单 session 模型 N < 50 已够用
-
-## 四、关键设计决策预告
-
-| # | 决策 | 选择 | 详细 |
-|---|---|---|---|
-| 1 | session 是否跨 client 共享 | **默认 sessionScope:single 同 workspace 多 client 共享 channel 内同一 session**；跨 daemon process scope 由 External orchestrator 路由 | [02 §1](./02-architectural-decisions.md#1-session-是否跨-client-共享) |
-| 2 | 状态进程模型 | **PR#3889 Stage 1 = channel per workspace + N session multiplexed**（commit `6a170ef8`，2026-05-12）；Stage 2e native in-process 是可选演进解决跨 workspace 共享 | [02 §2](./02-architectural-decisions.md#2-状态进程模型) |
-| 3 | MCP server 生命周期 | **per-`qwen --acp` child (= per-workspace)** + PR#3818 in-flight coalesce + 30s 健康检查；同 workspace N session 共享 MCP children，跨 workspace 进程级隔离 | §02 |
-| 4 | FileReadCache 共享 | **per-session 严格私有**（同 workspace N session 各自实例不共享；跨 workspace 自然独立）+ PR#3774 prior-read 守卫 + PR#3810 5 路径 invalidation | §02 §4 |
-| 5 | Permission flow | **复用 PR#3723，daemon 是第 4 种 mode + 任何 client 都能应答** | [07](./05-permission-auth.md) |
-| 6 | 多 client 并发请求 | **同 session prompt 串行 + 事件 fan-out 多 client 协作观察** | [03 §6](./02-architectural-decisions.md#6-多-client-并发请求) |
-| 7 | 部署模式 | **Mode A（CLI + HttpServer）+ Mode B（Headless Daemon + HttpServer）双模式** | [03 §7](./02-architectural-decisions.md#7-daemon-部署模式clihttpserver-vs-headlesshttpserver) |
-
-## 五、最终用户体验
-
-启动 daemon：
-
-```bash
-qwen serve                                # 默认 127.0.0.1:5096，无认证（开发场景）
-QWEN_SERVER_TOKEN=xxx qwen serve --port 8080 --hostname 0.0.0.0  # 远程访问
-```
-
-SDK 用法（无需修改现有 ProcessTransport，新加 HttpTransport）：
-
-```ts
-// 现有 SDK Transport 抽象（packages/sdk-typescript/src/transport/Transport.ts）
-// 注释已经预告: "HttpTransport: Remote CLI via HTTP (future)"
-
-import { query, HttpTransport } from '@qwen-code/sdk'
-
-const q = query({
-  transport: new HttpTransport({
-    baseUrl: 'http://localhost:5096',
-    bearerToken: process.env.QWEN_SERVER_TOKEN,
-    workspaceId: 'my-project',
-    cwd: '/path/to/project',
-  }),
-  prompt: '请帮我重构这个文件',
-})
-
-for await (const msg of q) { ... }
-```
-
-WebUI 用法：
-
-```ts
-// packages/webui 已有 ACPAdapter（packages/webui/src/adapters/ACPAdapter.ts）
-// 把传输层从 stdio 切到 HTTP/WS 即可
-const adapter = new HttpAcpAdapter({ baseUrl: 'http://localhost:5096', ... })
-```
-
-VSCode 用法（替代当前的 ide-server 模式）：
-
-```ts
-// 现状：vscode-ide-companion 自己起 ide-server (express)
-// 新：vscode-ide-companion 直接连 qwen daemon (HTTP)，省去自起 server
-```
-
-Channels（IM / Telegram / 微信）用法：保持不变（ChannelAdapter → AcpBridge → daemon HTTP route，与 stdio 等价）。
-
-## 六、与 OpenCode 设计的核心差异
-
-| 维度 | OpenCode | Qwen Daemon（本设计）|
-|---|---|---|
-| **HTTP 框架** | Hono | **Express 5（复用 vscode-ide-companion 已有栈）**——不强行对齐；Hono 是 External SaaS 高并发场景的可选项 |
-| **Schema 来源** | 自创 OpenAPI（13525 行 codegen）| **复用 ACP NDJSON zod schema** |
-| **多 channel 支持** | 仅 SDK / TUI / Web | **SDK / TUI / Web / IM / IDE 全走 SessionRouter** |
-| **认证** | 单密码 `OPENCODE_SERVER_PASSWORD` | **bearer token + 应用层 PR#3723 权限流** |
-| **mDNS 发现** | ✓ 默认开启 | 🟡 Stage 2 可选（默认关）|
-| **session 跨 client 共享** | 否（每 SDK call 独立 session）| **是（默认 single + 事件 fan-out + 跨 client审批）**——live collaboration 模型 |
-| **WebSocket** | Bun 原生 | 同款 + SSE 兜底 |
-
-详见 [09-与 OpenCode 详细对比](./07-comparison-with-opencode.md)。
+**主线 scope**：daemon building block + 协议表面锁定（Stage 2 后）。多 tenant / 跨 daemon process 路由 / SaaS 部署属 **External Reference Architecture**（外部商业平台实施）。
 
 ---
 
-下一篇：[02-架构决策 →](./02-architectural-decisions.md)
+## 一、术语表（commit `6a170ef8` 之后）
+
+| 术语 | 定义 | 源码 anchor |
+|---|---|---|
+| **Daemon process** | `qwen serve` 或 `qwen --serve` HTTP front 进程；含 Express 5 server + EventBus + `byWorkspaceChannel: Map<workspace, ChannelInfo>` | `packages/cli/src/serve/server.ts` |
+| **Channel** | 1 个 `qwen --acp` 子进程，绑定 1 个 workspace；持 `QwenAgent.sessions: Map<sessionId, Session>` 内 N 个 session | `packages/cli/src/acp-integration/acpAgent.ts:194` |
+| **Session** | ACP `Session` 实例（per-channel `sessions: Map` 内一条）；持 transcript / FileReadCache / PermissionManager | `packages/cli/src/acp-integration/session/Session.ts` |
+
+**核心约束**：
+- 1 daemon process **可有 M channels**（每 workspace 1 channel）
+- 1 channel **严格 1 workspace**（`acpAgent.ts:600` `this.settings = loadSettings(cwd)` 是 instance-wide，跨 workspace 会污染）
+- 1 channel **可持 N sessions**（同 workspace 多路复用）
+
+> **废弃术语**："Daemon Instance" — 早期 PR#3889 设计中等同 "1 channel = 1 session"，commit `6a170ef8` 后此等式被打破。
+
+---
+
+## 二、架构图
+
+### 单机部署（Mode A / Mode B 共用）
+
+```
+qwen serve (1 Daemon process)
+├─ Express 5 HTTP server + bearer auth + Host allowlist
+├─ EventBus（per-session fan-out + ring replay + Last-Event-ID 重连）
+└─ byWorkspaceChannel: Map<workspace, ChannelInfo>
+   ├─ Channel-A (workspace = /work/repo-a) — qwen --acp #1
+   │  ├─ QwenAgent.sessions: Map → {sess-1, sess-2, sess-3}
+   │  └─ LSP + MCP + FileReadCache (per-channel 共享)
+   ├─ Channel-B (workspace = /work/repo-b) — qwen --acp #2
+   │  ├─ QwenAgent.sessions: Map → {sess-4, sess-5}
+   │  └─ LSP + MCP + FileReadCache (per-channel 独立)
+   └─ Channel-C (workspace = /work/repo-c) — qwen --acp #3
+      ├─ QwenAgent.sessions: Map → {sess-7}
+      └─ ...
+```
+
+### 跨 daemon process 部署（External Reference Architecture）
+
+```
+                ┌──────────────────────────────────────────┐
+                │ External Orchestrator (qwen-coordinator) │
+                │   - tenant → daemon-process 1:1 绑定      │
+                │   - cross-daemon routing                 │
+                │   - sticky cookie failover               │
+                └────────────────────┬─────────────────────┘
+                                     │ spawn / route
+       ┌─────────────────┬───────────┴────────────┬──────────────┐
+       ↓                 ↓                        ↓              ↓
+ ┌───────────┐     ┌───────────┐            ┌───────────┐  ┌───────────┐
+ │ daemon-1  │     │ daemon-2  │            │ daemon-N  │  │   ...     │
+ │ (tenant A)│     │ (tenant B)│            │ (tenant C)│  │           │
+ └───────────┘     └───────────┘            └───────────┘  └───────────┘
+```
+
+详 [§06 Roadmap & Ecosystem](./06-roadmap.md)。
+
+---
+
+## 三、双部署模式
+
+| 模式 | 启动命令 | TUI | 适用场景 |
+|---|---|---|---|
+| **Mode A: CLI + HttpServer** | `qwen --serve [--port N]` | ✅ 本地（super-client）| 单用户终端 + WebUI / IDE / IM bot 同时接入 |
+| **Mode B: Headless + HttpServer** | `qwen serve [--port N]` | ❌ | 服务器 / 容器 / 远端机器 |
+
+**Mode A 本地 TUI 是 "super-client"**——保留完整 local interaction layer（~15 Ink dialogs + local-jsx slash commands）；wire 只承载 agent↔user conversation axis。
+
+**Mode B 远端 client 是 "thin shell"**（Stage 1）——只能渲染 wire 流，daemon-side state dialogs（`/memory` / `/mcp` / `/agents` 等）不可用。Stage 1.5c daemon-side state CRUD（~3-5d）补齐后远端 client 与 Mode A 本地 TUI 功能对齐。详 [§04 §三 TUI 体验](./04-deployment-and-client.md)。
+
+---
+
+## 四、资源经济性（commit `6a170ef8` 实测）
+
+| N 同 workspace session | 早期（1 child per session）| 当前（1 channel per workspace）|
+|---|---|---|
+| 1 | ~60-100 MB RSS | ~60-100 MB RSS（相同）|
+| 5 | 300-500 MB RSS | **60-100 MB RSS**（节省 ~5x）|
+| 10 | 600-1000 MB RSS | **80-150 MB RSS**（节省 ~6-7x）|
+| OAuth refresh | N× 独立 | 1× per channel |
+| FileReadCache | N× 独立 | shared per channel |
+| CLAUDE.md parse | N× | parse 一次 per channel |
+| Cold start（同 workspace 第 N session）| ~1-3s | **<200ms**（attach existing channel）|
+
+**适用规模**：单机 N session × M workspace < 200 经济性可接受；更高规模时 Stage 2e native in-process 或 External orchestrator pool 分担。
+
+---
+
+## 五、Stage 演进
+
+| Stage | 范围 | 状态 |
+|---|---|---|
+| **Stage 1** | Mode B headless `qwen serve` + channel-per-workspace + N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) |
+| **Stage 1.5a** | chiga0 10 must-haves（per-request scope override / `loadSession` HTTP / pair tokens / heartbeat / etc.）| ~2-3 周 |
+| **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d |
+| **Stage 1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A）| ~3-5d |
+| **Stage 2** | 协议补齐（WebSocket / mDNS / OpenAPI / Prometheus / `/ext`）| ~3-4 周（拆 2a-2d）|
+| **Stage 2e** | 可选 native in-process（去 `qwen --acp` child）| ~1-2 周 |
+
+详 [§06 Roadmap & Ecosystem](./06-roadmap.md)。
+
+---
+
+## 六、阅读指引
+
+| 角色 | 推荐路径 |
+|---|---|
+| **想知道这是什么** | §01（本章）|
+| **想知道何时 ship 什么** | §06 Roadmap |
+| **想知道为什么这么设计** | §02 Design Decisions |
+| **想集成 client** | §03 HTTP API → §04 Client Experience |
+| **关心安全** | §05 Security & Permission |
+| **商业平台集成方** | §06 §四 External Reference Architecture |
+
+---
+
+下一篇：[02 — Design Decisions →](./02-architectural-decisions.md)
