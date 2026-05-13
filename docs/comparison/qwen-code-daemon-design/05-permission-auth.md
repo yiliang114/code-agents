@@ -180,14 +180,18 @@ type PermissionPolicy =
 
 > 🚨 **同 daemon 同 workspace N session 共 OS 权限**（同 `qwen --acp` child，共 user UID + fs 视图 + MCP children）—— 多 tenant 必须避开此边界。
 
-### 强制约束
+### Default mode 下 = 天然 1 tenant per daemon
 
-**不可让多 tenant 共一个 Workspace Bridge**——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
+[§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策) Default = 1 daemon = 1 workspace 模式下，**多 tenant 走 OS 进程级真隔离**（1 daemon = 1 tenant × 1 workspace），无需应用层 tenant 抽象。systemd `MemoryMax=` / cgroup / docker `--memory` 直接 = per-tenant quota。这是 Qwen 主推的多 tenant 部署形态。
+
+### Advanced `--multi-workspace` 模式下的约束
+
+**不可让多 tenant 共一个 Workspace Bridge**（同 `qwen --acp` child 内 N session 共 OS 权限）——orchestrator 必须在以下两层之一做 1:1 tenant 绑定：
 
 | 隔离层 | 实现 | 适用 |
 |---|---|---|
-| **Workspace 层（推荐）** | 1 tenant ↔ 1 workspace（或多 workspace 但全归同 tenant）| 默认场景；orchestrator 在创建 daemon 时绑 workspace → tenant |
-| **Daemon process 层（高安全）** | 1 tenant ↔ 独立 daemon process | 高合规场景；跨 tenant 走 OS 进程级隔离 + per-tenant resource quota |
+| **Workspace 层** | 1 tenant ↔ 1 workspace（或多 workspace 但全归同 tenant）| advanced 模式默认场景；orchestrator 在创建 daemon 时绑 workspace → tenant |
+| **Daemon process 层（推荐高安全）** | 1 tenant ↔ 独立 daemon process（= default mode）| 高合规场景；跨 tenant 走 OS 进程级隔离 + per-tenant resource quota |
 
 详 [§06 §5.2 Multi-tenancy](./06-roadmap.md#52-multi-tenancy--oidc--quota--audit)。
 

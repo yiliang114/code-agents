@@ -12,7 +12,11 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
               ~2-3 周 MVP，~1.5-2 月对标 OpenCode
 ```
 
-**PR#3889 Stage 1（commit `6a170ef8`, MERGED 2026-05-13）：1 daemon process + M `qwen --acp` children (1 per workspace) + N sessions multiplexed per workspace**——同 workspace 内 N session 共 `QwenAgent.sessions: Map<sessionId, Session>`（OAuth × 1 / FileReadCache × 1 / CLAUDE.md parse × 1 / cold start <200ms after first），与 OpenCode 同款 in-process N-session 经济性；**跨 workspace** 走独立 child 进程级隔离（`acpAgent.ts:600 loadSettings(cwd)` 边界）。
+**核心架构**：
+- **Default（设计主推）**：`qwen serve` = **1 daemon process = 1 workspace × N sessions multiplexed**——与 `qwen --acp` stdio 1:1 心智 + OS 进程级隔离 + systemd/cgroup quota 自然套用 + K8s 云原生天然契合 + blast radius 最小（daemon crash 只影响 1 workspace）
+- **Advanced opt-in（`qwen serve --multi-workspace`）**：1 daemon process + M Workspace Bridges + N sessions per bridge——同 workspace 内 N session 共 `QwenAgent.sessions: Map<sessionId, Session>`（OAuth × 1 / FileReadCache × 1 / CLAUDE.md parse × 1 / cold start <200ms after first）；适用本地多项目并行 / Mode A 本地 TUI 多 workspace / IM bot 跨 workspace 路由
+
+**PR#3889 Stage 1（commit `6a170ef8`, MERGED 2026-05-13）实现的是 advanced multi-workspace 模式**（默认开），Stage 1.5a 改为 opt-in flag。详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策) + [§06 §三 Stage 1.5a default flip](./06-roadmap.md#stage-15chiga0-10-must-haves--mode-a--daemon-side-state-crud3-4-周)。
 
 **双部署模式**：
 

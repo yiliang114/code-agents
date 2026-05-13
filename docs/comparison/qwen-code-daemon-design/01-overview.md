@@ -6,7 +6,9 @@
 
 **qwen serve** 是 Qwen Code 的 HTTP daemon 模式——把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何 client / orchestrator 消费的服务。**PR#3889 Stage 1 ✅ 已合并 2026-05-13**（merge commit `870bdf2a`，+12993/-194 / 84 commits）。
 
-**核心架构**（commit `6a170ef8`）：1 daemon process → M Workspace Bridges（per workspace）→ N sessions per bridge（多路复用 via `QwenAgent.sessions: Map`）。
+**核心架构**：
+- **Default**：1 daemon process = **1 workspace** × N sessions multiplexed（与 `qwen --acp` stdio 1:1 心智 + OS 进程级隔离 + cgroup quota + K8s 云原生契合）
+- **Advanced opt-in**（`qwen serve --multi-workspace`）：1 daemon process + M Workspace Bridges + N sessions per bridge（commit `6a170ef8` PR#3889 已实现，Stage 1.5a 转为 opt-in flag；本地多项目 / IM bot 跨 workspace 路由场景）
 
 **两种部署**：
 - **Mode A** `qwen --serve` — 本地 TUI + HTTP front 同进程（super-client）
@@ -27,7 +29,8 @@
 | **Session** | ACP `Session` 实例（per-bridge `sessions: Map` 内一条）；持 transcript / FileReadCache / PermissionManager | `packages/cli/src/acp-integration/session/Session.ts` |
 
 **核心约束**：
-- 1 daemon process **可有 M Workspace Bridges**（每 workspace 1 bridge）
+- **Default**：1 daemon process = 1 workspace（启动 cwd 绑定）= 1 内嵌 bridge × N sessions
+- **Advanced** opt-in `--multi-workspace`：1 daemon process **可有 M Workspace Bridges**（每 workspace 1 bridge）
 - 1 bridge **严格 1 workspace**（`acpAgent.ts:600` `this.settings = loadSettings(cwd)` 是 instance-wide，跨 workspace 会污染）
 - 1 bridge **可持 N sessions**（同 workspace 多路复用）
 
@@ -37,10 +40,23 @@
 
 ## 二、架构图
 
-### 单机部署（Mode A / Mode B 共用）
+### Default 模式（推荐）：1 daemon = 1 workspace
 
 ```
-qwen serve (1 Daemon process)
+qwen serve (1 Daemon process, 绑定 cwd = /work/repo-a)
+├─ Express 5 HTTP server + bearer auth + Host allowlist
+├─ EventBus（per-session fan-out + ring replay + Last-Event-ID 重连）
+└─ qwen --acp child (workspace = /work/repo-a)
+   ├─ QwenAgent.sessions: Map → {sess-1, sess-2, sess-3}
+   └─ LSP + MCP + FileReadCache（per-daemon 共享）
+```
+
+多 workspace = 多 daemon 各占一 port，systemd / docker / k8s 各 1 process 直接管理。资源 quota / blast radius / observability 自然 per-workspace。
+
+### Advanced 模式：1 daemon + M Workspace Bridges（`--multi-workspace`）
+
+```
+qwen serve --multi-workspace (1 Daemon process)
 ├─ Express 5 HTTP server + bearer auth + Host allowlist
 ├─ EventBus（per-session fan-out + ring replay + Last-Event-ID 重连）
 └─ byWorkspaceChannel: Map<workspace, ChannelInfo>  ← 代码标识，本系列称之为 Workspace Bridge
@@ -54,6 +70,8 @@ qwen serve (1 Daemon process)
       ├─ QwenAgent.sessions: Map → {sess-7}
       └─ ...
 ```
+
+适用：本地多项目（开发者日常）/ Mode A 本地 TUI 多 workspace / IM bot 跨 workspace 路由。
 
 ### 跨 daemon process 部署（External Reference Architecture）
 
@@ -92,7 +110,9 @@ qwen serve (1 Daemon process)
 
 ## 四、资源经济性（commit `6a170ef8` 实测）
 
-| N 同 workspace session | 早期（1 child per session）| 当前（1 bridge per workspace）|
+**同 workspace N session 经济性（default + advanced 共享）**：
+
+| N 同 workspace session | 早期（1 child per session）| 当前（N session 共 1 bridge）|
 |---|---|---|
 | 1 | ~60-100 MB RSS | ~60-100 MB RSS（相同）|
 | 5 | 300-500 MB RSS | **60-100 MB RSS**（节省 ~5x）|
@@ -102,7 +122,20 @@ qwen serve (1 Daemon process)
 | CLAUDE.md parse | N× | parse 一次 per bridge |
 | Cold start（同 workspace 第 N session）| ~1-3s | **<200ms**（attach existing bridge）|
 
-**适用规模**：单机 N session × M workspace < 200 经济性可接受；更高规模时 Stage 2e native in-process 或 External orchestrator pool 分担。
+**Default vs Advanced 多 workspace 内存对比**（M=5 workspace × N=5 session 同机）：
+
+| 维度 | Default（5 daemon × 1 workspace）| Advanced（1 daemon × 5 workspace）|
+|---|---|---|
+| Daemon baseline | 5 × ~30-50MB = **~150-250 MB** | 1 × ~30-50MB = **~30-50 MB** |
+| 同 workspace N session 共享 bridge | ✓ | ✓ |
+| 5 workspace × 5 session bridge | 5 × ~60-100MB | 5 × ~60-100MB |
+| **总内存** | ~450-750 MB | ~330-550 MB |
+| 节省 | baseline | ~120-200 MB |
+| Blast radius | 单 workspace | 全部 workspace |
+| Quota / observability | OS 进程级直接套 cgroup | 需 daemon 内部抽象 |
+
+**Default 适用**：服务器 / 容器 / K8s 部署 / 多 tenant SaaS / blast radius 关键场景  
+**Advanced 适用**：单机本地多项目 / IM bot 跨 workspace 路由 / 资源紧张的本地 dev
 
 ---
 
@@ -110,8 +143,8 @@ qwen serve (1 Daemon process)
 
 | Stage | 范围 | 状态 |
 |---|---|---|
-| **Stage 1** | Mode B headless `qwen serve` + bridge-per-workspace + N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) |
-| **Stage 1.5a** | chiga0 10 must-haves（per-request scope override / `loadSession` HTTP / pair tokens / heartbeat / etc.）| ~2-3 周 |
+| **Stage 1** | Mode B headless `qwen serve` + multi-workspace 路由（默认开）+ N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) — 注意当前 default 是 advanced multi-workspace，Stage 1.5a 改为 opt-in flag |
+| **Stage 1.5a** | chiga0 10 must-haves + **default → single-workspace + `--multi-workspace` opt-in**（与 `qwen --acp` stdio 1:1 心智对齐）| ~2-3 周 |
 | **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d |
 | **Stage 1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A）| ~3-5d |
 | **Stage 1.5-prereq** | chiga0 6 architecture findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到 `@qwen-code/acp-bridge`）—— 顺便收敛代码 `ChannelInfo` ↔ 文档 Workspace Bridge 命名 | ~1-2 周 |
