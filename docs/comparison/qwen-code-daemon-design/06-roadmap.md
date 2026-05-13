@@ -92,7 +92,7 @@ qwen-code 主线
 | Sub-stage | 内容 | 工作量 |
 |---|---|---|
 | **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）。注：在 multi-workspace 路由移除（Stage 1.5a #11-#16）后，`AcpChannel` 抽象简化为"`qwen --acp` connection wrapper"，不再含 multi-workspace 路由逻辑 | ~1-2 周 |
-| **1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）+ **default mode flip: 1 daemon = 1 workspace（详 [§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策)）+ `--multi-workspace` opt-in flag** | ~2-3 周 |
+| **1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）+ **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace`**（移除 multi-workspace 路由代码 ~500-700 LOC + 加 `--workspace <path>` flag + `400 workspace_mismatch`，详 [§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策)）| ~2-3 周 |
 | **1.5b** | Mode A `qwen --serve` flag（TUI co-host HTTP server） | ~4d |
 | **1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A） | ~3-5d |
 | **合计**（并行）| | **~3-4 周** |
@@ -279,7 +279,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 `QwenAgent.sessions: Map` 
 | 维度 | OpenCode | Qwen Daemon |
 |---|---|---|
 | 进程模型 default | 单 daemon 多 session 跨 workspace 共享（多 workspace 是 default）| **Default = 1 daemon = 1 workspace × N session multiplexed**（与 ACP stdio 1:1 心智 + OS 进程级隔离 + K8s 云原生契合）| 
-| 多 workspace 形态 | in-process `Map<workspace, Instance>`（ALS 应用层隔离）| **Advanced opt-in `--multi-workspace`**：1 daemon + M bridges（PR#3889 已实现）；隔离更强（per-workspace `qwen --acp` child OS 进程级 vs ALS）|
+| 多 workspace 形态 | in-process `Map<workspace, Instance>`（ALS 应用层隔离）| **多 daemon process 部署**（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 后）：1 workspace = 1 daemon process，systemd / docker-compose / k8s 各 1 process；跨 workspace 为 OS 进程级隔离（最强）；client 侧或 orchestrator 层做多 endpoint 路由 |
 | `process.cwd()` | 永不改变 | 同款 |
 | 上下文传播 | Effect-TS `LocalContext` | Stage 1 wire 自带 sessionId 路由；Stage 2e 需 Node 内建 `AsyncLocalStorage`（不引 Effect-TS）|
 | HTTP 框架 | Hono | Express 5（复用 vscode-ide-companion）/ Hono 可选 |
@@ -295,7 +295,7 @@ Mode A daemon 同样能持 N session（继承 Stage 1 `QwenAgent.sessions: Map` 
 3. **PR#3723 应用层权限流**（4 mode 共享 evaluatePermissionFlow）
 4. **默认 0.0.0.0 + 无 token = 拒绝启动**（比 OpenCode 严格）
 5. **Multi-expose 路径 convergence**（Stage 1.5-prereq finding 1）—— 抽 `AcpChannel`（reviewer 提议命名，作用 = `qwen --acp` connection wrapper）到 `@qwen-code/acp-bridge` 让 6 条 expose 路径共享同一组多 session primitives
-6. **Default = 1 daemon = 1 workspace**（不 copy OpenCode default）—— Qwen 主场景（IM Channels / 多 tenant SaaS / K8s）对强隔离 / quota / blast radius 要求高；advanced multi-workspace 是显式 opt-in，给本地多项目场景用
+6. **1 daemon = 1 workspace × N session**（不 copy OpenCode default）—— Qwen 主场景（IM Channels / 多 tenant SaaS / K8s）对强隔离 / quota / blast radius 要求高；多 workspace 部署 = 多 daemon process（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 显式拒绝 cross-workspace 请求为 `400 workspace_mismatch`，不再保留 multi-workspace 路由作 opt-in）
 
 ### 性能对比预期
 

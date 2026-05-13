@@ -111,7 +111,7 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 
 **多 workspace 部署成本**（M=5 workspace × N=5 session 同机）：
 
-| 维度 | 同机 5 daemon × 1 workspace | 对比：advanced multi（被拒）|
+| 维度 | **当前设计**：同机 5 daemon × 1 workspace | 对比：PR#3889 multi-workspace（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 已移除）|
 |---|---|---|
 | Daemon baseline | 5 × ~30-50MB = **~150-250 MB** | 1 × ~30-50MB = ~30-50 MB |
 | 5 workspace × 5 session child | 5 × ~60-100MB = **~300-500 MB** | 5 × ~60-100MB = ~300-500 MB |
