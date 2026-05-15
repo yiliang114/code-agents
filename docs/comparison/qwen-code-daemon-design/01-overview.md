@@ -6,26 +6,25 @@
 
 **qwen serve** 是 Qwen Code 的 HTTP daemon 模式——把 ACP NDJSON 协议通过 HTTP+SSE 暴露成可被任何 client / orchestrator 消费的服务。
 
-**核心架构（设计 only 模式）**：
+**核心架构**：
 
 ```
 1 daemon process = 1 workspace × N sessions multiplexed
 ```
 
-与 `qwen --acp` stdio **1:1 心智完全对齐**——daemon 把 ACP stdio 包装成 HTTP，不引入 multi-workspace 这层抽象。多 workspace 部署 = 多 daemon process（systemd / docker / k8s 各 1 process 自然管理）。
+与 `qwen --acp` stdio **1:1 心智对齐**——daemon 把 ACP stdio 包装成 HTTP。多 workspace 部署 = 多 daemon process（systemd / docker / k8s 各 1 process 自然管理）。
 
 **关键设计依据**：
-- **OS 进程级隔离**：跨 workspace = 跨 daemon process = 跨 OS process（最强隔离）
+- **OS 进程级隔离**：跨 workspace = 跨 daemon process = 跨 OS process（最强）
 - **资源 quota 直接对应**：systemd `MemoryMax=` / cgroup / docker `--memory` 直接 = per-workspace quota
-- **多 tenant 真隔离**：1 daemon = 1 user × 1 workspace = OS 进程级 1:1 隔离
 - **K8s 云原生天然契合**：1 pod = 1 daemon = 1 workspace
 - **Blast radius 最小**：daemon crash 只影响 1 workspace
-- **心智简单**：不需要 daemon ↔ workspace 两层概念抽象
 - **Observability 直接**：`htop` / `ps` 列表 1 OS process = 1 workspace
+- **心智简单**：daemon ↔ session 两层（无中间抽象）
 
 **两种部署**：
 - **Mode A** `qwen --serve` — 本地 TUI + HTTP front 同进程（super-client）
-- **Mode B** `qwen serve` — headless HTTP front（远端 client 是 thin shell）
+- **Mode B** `qwen serve` — headless HTTP front（远端 client 是 thin shell，Stage 1.5c 后补齐）
 
 **主线 scope**：daemon building block + 协议表面锁定（Stage 2 后）。多 tenant / 跨 daemon process 路由 / SaaS 部署属 **External Reference Architecture**（外部商业平台实施）。
 
@@ -33,11 +32,9 @@
 
 ## 一、术语表
 
-> ✅ **当前状态**（2026-05-15 MERGED）：[**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（merge commit `790f2d04`，**+2051/-434**）已合入，移除 PR#3889 commit `6a170ef8` 引入的 `byWorkspaceChannel: Map<workspace, ChannelInfo>` multi-workspace 路由——daemon 启动时直接 spawn 单 `qwen --acp` child（绑定 `--workspace <path>` 或启动时 cwd）+ N session multiplexed；cross-workspace 请求返回 `400 workspace_mismatch`。
-
 | 术语 | 定义 | 源码 anchor |
 |---|---|---|
-| **Daemon process** | `qwen serve` 或 `qwen --serve` HTTP front 进程；绑定启动时 cwd = 单 workspace；持 Express 5 server + EventBus + 1 个内嵌 `qwen --acp` child | `packages/cli/src/serve/server.ts` |
+| **Daemon process** | `qwen serve` 或 `qwen --serve` HTTP front 进程；启动时绑定 cwd = 单 workspace；持 Express 5 server + EventBus + 1 个内嵌 `qwen --acp` child | `packages/cli/src/serve/server.ts` |
 | **Session** | ACP `Session` 实例（`QwenAgent.sessions: Map<sessionId, Session>` 内一条）；持 transcript / FileReadCache / PermissionManager | `packages/cli/src/acp-integration/session/Session.ts` |
 
 **核心约束**：
@@ -45,9 +42,7 @@
 - 1 daemon process **可持 N sessions**（`QwenAgent.sessions: Map` 多路复用）
 - 同 workspace N session 共享 OAuth / FileReadCache / CLAUDE.md / MCP children
 
-> **废弃术语**：
-> - "Daemon Instance"（早期 PR#3889 设计中等同 "1 daemon = 1 session"）
-> - "Workspace Bridge / ChannelInfo / byWorkspaceChannel"（PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由抽象，由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 移除）
+> 代码中可能看到的废弃符号：`byWorkspaceChannel` / `ChannelInfo` / `Workspace Bridge`（PR#3889 multi-workspace 路由层，已由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 移除）。
 
 ---
 
@@ -99,30 +94,17 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 
 **同 workspace N session 经济性**（继承 ACP `QwenAgent.sessions: Map` 原生 multi-session）：
 
-| N 同 workspace session | 早期（1 child per session）| 当前（N session 共 1 child）|
+| N 同 workspace session | 内存 RSS | 说明 |
 |---|---|---|
-| 1 | ~60-100 MB RSS | ~60-100 MB RSS（相同）|
-| 5 | 300-500 MB RSS | **60-100 MB RSS**（节省 ~5x）|
-| 10 | 600-1000 MB RSS | **80-150 MB RSS**（节省 ~6-7x）|
-| OAuth refresh | N× 独立 | 1× per daemon |
-| FileReadCache | N× 独立 | shared per daemon |
-| CLAUDE.md parse | N× | parse 一次 per daemon |
-| Cold start（同 daemon 第 N session）| ~1-3s | **<200ms**（attach existing child）|
+| 1 | ~60-100 MB | baseline |
+| 5 | **~60-100 MB** | N session 共 1 `qwen --acp` child |
+| 10 | **~80-150 MB** | 同上 |
+| OAuth refresh | 1× per daemon | 共享 |
+| FileReadCache | shared per daemon | 共享 instance（但 per-session 私有 cache key）|
+| CLAUDE.md parse | 1× per daemon | 共享 |
+| Cold start（同 daemon 第 N session）| **<200ms** | attach existing child |
 
-**多 workspace 部署成本**（M=5 workspace × N=5 session 同机）：
-
-| 维度 | **当前设计**：同机 5 daemon × 1 workspace | 对比：PR#3889 multi-workspace（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 已移除）|
-|---|---|---|
-| Daemon baseline | 5 × ~30-50MB = **~150-250 MB** | 1 × ~30-50MB = ~30-50 MB |
-| 5 workspace × 5 session child | 5 × ~60-100MB = **~300-500 MB** | 5 × ~60-100MB = ~300-500 MB |
-| **总内存** | **~450-750 MB** | ~330-550 MB |
-| 多花成本 | baseline | ~120-200 MB |
-| Blast radius | **单 workspace** | 全部 workspace |
-| Quota / observability | OS 进程级直接套 cgroup | 需 daemon 内部抽象 |
-| 心智复杂度 | 简单（1 daemon = 1 workspace）| 复杂（daemon ↔ workspace 两层）|
-| 路由代码 | 0（启动 cwd 绑定）| ~200+ LOC（`byWorkspaceChannel: Map` 等）|
-
-**Trade-off**：多 daemon 多 ~120-200 MB baseline，换得 OS 进程级隔离 + 直接 cgroup quota + blast radius 最小 + 心智简单——**值得**。
+**多 workspace 部署成本**：M workspace = M daemon process。每 daemon baseline ~30-50 MB Express server + bearer auth + EventBus + Host allowlist。例 5 workspace × 5 session 同机 ≈ ~450-750 MB（5 × baseline + 5 × child）。换得 OS 进程级隔离 + cgroup quota + blast radius 最小 + 心智简单。
 
 ---
 
@@ -131,8 +113,7 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 | Stage | 范围 | 状态 |
 |---|---|---|
 | **Stage 1** | Mode B headless `qwen serve` + N session multiplexed + EventBus + first-responder permission + 9 STAGE1_FEATURES | ✅ **MERGED 2026-05-13** (PR#3889) |
-| **Stage 1.5a 已 ship 部分** | [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace`（删 `byWorkspaceChannel: Map` / `getOrCreateChannel` / `ChannelInfo` + 加 `WorkspaceMismatchError` + `--workspace` flag）| ✅ **MERGED 2026-05-15** |
-| **Stage 1.5a 剩余** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）| ~2-3 周 |
+| **Stage 1.5a** | [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 1 daemon = 1 workspace 收紧（✅ MERGED 2026-05-15）+ chiga0 10 must-haves 剩余 9 项（#10 已 shipped）| 部分 ship；剩余 ~2-3 周 |
 | **Stage 1.5b** | Mode A `qwen --serve` flag | ~4d |
 | **Stage 1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A）| ~3-5d |
 | **Stage 1.5-prereq** | chiga0 6 architecture findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到 `@qwen-code/acp-bridge`）| ~1-2 周 |
