@@ -83,7 +83,7 @@ qwen serve (绑定 cwd = /work/repo-a)
 
 ### 为什么不做 1 daemon + M workspace 路由
 
-**Alternative considered**：PR#3889 commit `6a170ef8` 已实现 multi-workspace 路由（`byWorkspaceChannel: Map<workspace, ChannelInfo>` + `getOrCreateChannel` + per-workspace `qwen --acp` child）。**最终决定移除**——通过 [**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（OPEN，+1121/-374 across 13 files）落地，理由：
+**Alternative considered**：PR#3889 commit `6a170ef8` 已实现 multi-workspace 路由（`byWorkspaceChannel: Map<workspace, ChannelInfo>` + `getOrCreateChannel` + per-workspace `qwen --acp` child）。**最终决定移除**——通过 [**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（✅ MERGED 2026-05-15，merge commit `790f2d04`，+2051/-434 across 13 files）已落地，理由：
 
 | # | 移除 multi-workspace 路由的收益 |
 |---|---|

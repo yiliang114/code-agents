@@ -4,7 +4,7 @@
 
 ## TL;DR
 
-**主线 ~7-10 周 feature complete**：Stage 1 ✅ MERGED 2026-05-13（PR#3889）→ Stage 1.5 (1.5a/1.5b/1.5c 并行 ~3-4 周) → Stage 2 (2a-2d ~3-4 周 + 可选 2e)。**Stage 2 后协议表面锁定**——后续不扩展 wire 协议；平台层（orchestrator / 多租户 / sandbox / SaaS）由 External Reference Architecture 实施。
+**主线 ~7-10 周 feature complete**：Stage 1 ✅ MERGED 2026-05-13（PR#3889）→ Stage 1.5a 已 ship PR#4113 ✅ MERGED 2026-05-15（multi-workspace 移除）→ Stage 1.5 剩余 (1.5a/1.5b/1.5c 并行 ~3-4 周) → Stage 2 (2a-2d ~3-4 周 + 可选 2e)。**Stage 2 后协议表面锁定**——后续不扩展 wire 协议；平台层（orchestrator / 多租户 / sandbox / SaaS）由 External Reference Architecture 实施。
 
 **与竞品定位**：qwen-code daemon = building block + Unix-style 可组合；OpenCode 走端到端 SaaS；Anthropic Managed Agents 是托管服务。详 §五 / §六。
 
@@ -92,7 +92,8 @@ qwen-code 主线
 | Sub-stage | 内容 | 工作量 |
 |---|---|---|
 | **1.5-prereq** | chiga0 6 architecture refactor findings（lift `AcpChannel` / `EventBus` / `PermissionMediator` 到共享包 `@qwen-code/acp-bridge`）。注：在 multi-workspace 路由移除（Stage 1.5a #11-#16）后，`AcpChannel` 抽象简化为"`qwen --acp` connection wrapper"，不再含 multi-workspace 路由逻辑 | ~1-2 周 |
-| **1.5a** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）+ **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace`**（移除 multi-workspace 路由代码 ~500-700 LOC + 加 `--workspace <path>` flag + `400 workspace_mismatch`，详 [§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策)）| ~2-3 周 |
+| **1.5a 已 ship 部分** | ✅ [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace`（MERGED 2026-05-15，merge commit `790f2d04`，+2051/-434）—— 移除 multi-workspace 路由代码 + 加 `--workspace <path>` flag + `400 workspace_mismatch` + symlink canonicalization，详 [§02 §2](./02-architectural-decisions.md#2-状态进程模型核心决策) | ✅ 完成 |
+| **1.5a 剩余** | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）| ~2-3 周 |
 | **1.5b** | Mode A `qwen --serve` flag（TUI co-host HTTP server） | ~4d |
 | **1.5c** | daemon-side state CRUD（远端 client 功能等价 Mode A） | ~3-5d |
 | **合计**（并行）| | **~3-4 周** |
@@ -126,9 +127,9 @@ qwen-code 主线
 | 9 | `/capabilities` actual feature negotiation（`protocol_versions`）| 待做 |
 | 10 | First-class durability documentation | ✅ shipped (commit `bbc7b8b6`) |
 
-#### 🔧 Multi-workspace 路由代码移除（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) OPEN）
+#### ✅ Multi-workspace 路由代码移除（[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) MERGED 2026-05-15）
 
-[**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（OPEN，+1121/-374 across 13 files，closes issue #3803 §02）—— 实施 §02 §2 核心决策：
+[**PR#4113**](https://github.com/QwenLM/qwen-code/pull/4113) `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（✅ MERGED 2026-05-15，merge commit `790f2d04`，+2051/-434 across 13 files，closes issue #3803 §02）—— 实施 §02 §2 核心决策：
 
 **Bridge state 折叠**（`httpAcpBridge.ts`）：
 

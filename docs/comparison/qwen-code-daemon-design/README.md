@@ -38,7 +38,7 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 
 > ✅ **Stage 1 已合并**（2026-05-13 06:47 UTC）：[**PR#3889**](https://github.com/QwenLM/qwen-code/pull/3889) `feat(cli,sdk): qwen serve daemon (Stage 1)`，merge commit `870bdf2a`，**+12993/-194 / 84 commits**。Express 5 server / ACP NDJSON over HTTP+SSE / Bearer + Host allowlist + 0.0.0.0 拒绝默认 / SHA-256 timing-safe / EventBus + ring replay + Last-Event-ID 重连 / first-responder permission vote / DaemonClient SDK / capabilities envelope 9 tags 全部已实现。
 
-> 🔧 **Follow-up [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** `refactor(serve): 1 daemon = 1 workspace (#3803 §02)`（OPEN，+1121/-374 across 13 files）：PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由（`byWorkspaceChannel: Map<string, ChannelInfo>` / `getOrCreateChannel` / `inFlightChannelSpawns` 等）通过 PR#4113 移除，bridge state 折叠为单 slot（`channelInfo?: ChannelInfo`）+ 新增 `BridgeOptions.boundWorkspace` required + `WorkspaceMismatchError` 400 + `--workspace <path>` CLI flag + `CapabilitiesEnvelope.workspaceCwd` 暴露。设计依据详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)。
+> ✅ **Follow-up [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) MERGED 2026-05-15**（merge commit `790f2d04`，**+2051/-434** across 13 files）：`refactor(serve): 1 daemon = 1 workspace (#3803 §02)`——已移除 PR#3889 commit `6a170ef8` 引入的 multi-workspace 路由（`byWorkspaceChannel: Map<string, ChannelInfo>` / `getOrCreateChannel` / `inFlightChannelSpawns` 等），bridge state 折叠为单 slot（`channelInfo?: ChannelInfo` + `aliveChannels: Set` BkUyD invariant）+ `BridgeOptions.boundWorkspace` required + `WorkspaceMismatchError` 400 + `--workspace <path>` CLI flag + `CapabilitiesEnvelope.workspaceCwd` 暴露 + symlink canonicalization（round-1 fix）+ boot 时 absolute/exists/directory 校验。设计依据详 [§02 §2 状态进程模型](./02-architectural-decisions.md#2-状态进程模型核心决策)。
 
 > ⏳ **Stage 1.5 / 2 后续**：chiga0 10 must-haves（pair tokens / unsubscribe API / lifecycle audit）+ 6 architecture findings + Mode A 本地 TUI super-client + Mode B 远端 client option B daemon-side state CRUD（详见 [§06 Roadmap](./06-roadmap.md)）。
 
@@ -94,8 +94,9 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 
 | Stage | 状态 | 范围 |
 |---|:---:|---|
-| **Stage 1** | ✅ MERGED | PR#3889 - 含 multi-workspace 路由（PR#4113 OPEN 移除中）|
-| **Stage 1.5a** | 🔧 OPEN | **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** multi-workspace 路由移除（bridge state collapse + `WorkspaceMismatchError` + `--workspace` flag）+ chiga0 10 must-haves |
+| **Stage 1** | ✅ MERGED | PR#3889（2026-05-13）|
+| **Stage 1.5a 已 ship 部分** | ✅ MERGED | [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)（2026-05-15）multi-workspace 路由移除（bridge state collapse + `WorkspaceMismatchError` + `--workspace` flag + symlink canonicalization）|
+| **Stage 1.5a 剩余** | ⏳ 待开 | chiga0 10 must-haves（blockers 3 + reliability 4 + ergonomics 3，#10 已 shipped）|
 | Stage 1.5b | ⏳ 待开 | Mode A `qwen --serve` flag |
 | Stage 1.5c | ⏳ 待开 | Mode B daemon-side state CRUD（~3-5d，6-8 wire 路由）|
 | Stage 1.5-prereq | ⏳ 待开 | chiga0 6 architecture findings（PermissionMediator / EventBus / FileSystemService / capability registry / `AcpChannel` lift / dualOutput-remoteInput）|
@@ -112,8 +113,8 @@ Qwen Code 已有 ACP agent + IM Channels 多路由设施（packages/channels/）
 | **PR#3723** ✅ | 共享 L3→L4 permission flow | Interactive / Non-Interactive / ACP 三模式权限决策合一，daemon 是第 4 种 |
 | **PR#3739** ✅ | Background agent resume + transcript-first fork resume | daemon 重启 / failover 后 session 可恢复（SSE 重连协议的隐藏基础设施）|
 | **PR#3810** ✅ | FileReadCache invalidation 5 路径修复 | 长 session 正确性保障 |
-| **PR#3889** ✅ | qwen serve daemon Stage 1 | 本系列设计落地（multi-workspace 路由由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 移除中）|
-| **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** 🔧 | `refactor(serve): 1 daemon = 1 workspace` | 移除 multi-workspace 路由，bridge state 折叠为单 slot + `WorkspaceMismatchError` + `--workspace` flag（OPEN）|
+| **PR#3889** ✅ | qwen serve daemon Stage 1 | 本系列设计落地（multi-workspace 路由由 [PR#4113](https://github.com/QwenLM/qwen-code/pull/4113) 后续移除）|
+| **[PR#4113](https://github.com/QwenLM/qwen-code/pull/4113)** ✅ | `refactor(serve): 1 daemon = 1 workspace`（MERGED 2026-05-15）| 移除 multi-workspace 路由，bridge state 折叠为单 slot + `WorkspaceMismatchError` + `--workspace` flag + symlink canonicalization |
 
 ## 六、决策与文档对应
 
