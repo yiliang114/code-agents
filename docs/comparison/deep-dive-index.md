@@ -111,6 +111,7 @@
 | [Agent 恢复续行](./agent-resume-continuation-deep-dive.md) | SendMessage 续行 |
 | [Agent 权限冒泡](./agent-permission-bubble-deep-dive.md) | bubble 模式 |
 | [Agent 创建向导](./interactive-agent-creation-deep-dive.md) | 11 步向导 |
+| [Claude Code `/agents` UI](./claude-code-agents-view-deep-dive.md) | Subagent 定义管理 UI（7-mode + 11-step wizard + AI 生成 + 17+ 字段格式 + 6 source 分层 + Stage 1.5c daemon-side state CRUD 范本）|
 | [Task Management](./task-management-deep-dive.md) | 任务协同 |
 | [Team Memory](./team-memory-deep-dive.md) | 组织级记忆 |
 | [SDK 双向控制](./sdk-bidirectional-control-deep-dive.md) | 控制协议 |

@@ -69,12 +69,12 @@
 
 | Dialog | 真的不能 wire 化？ | Wire 化方案 | 工作量 | 当前 |
 |---|---|---|---|---|
-| `/memory` 编辑 | ❌ 完全可以 | `GET/POST /workspace/:id/memory` 读写 `~/.qwen/memory.json` | ~0.5d | Stage 1.5c |
-| `/mcp` 启停 / 配置 | ❌ 完全可以 | `GET /workspace/:id/mcp` + `POST .../mcp/:server/restart` | ~1d | Stage 1.5c |
-| `/agents` 管理 | ❌ 完全可以 | `GET/POST /workspace/:id/agents` | ~0.5d | Stage 1.5c |
-| `/tools` 启停 | ❌ 完全可以 | `POST /workspace/:id/tools/:name/enable` | ~0.5d | Stage 1.5c |
+| `/memory` 编辑 | ❌ 完全可以 | `GET/POST /workspace/memory` 读写 `~/.qwen/memory.json` | ~0.5d | Stage 1.5c |
+| `/mcp` 启停 / 配置 | ❌ 完全可以 | `GET /workspace/mcp` + `POST /workspace/mcp/:server/restart` | ~1d | Stage 1.5c |
+| `/agents` 管理 | ❌ 完全可以 | `GET/POST /workspace/agents` — 参考实现详 [Claude Code `/agents` Deep-Dive](../claude-code-agents-view-deep-dive.md)（~3042 LOC 完整范本）| ~0.5d | Stage 1.5c |
+| `/tools` 启停 | ❌ 完全可以 | `POST /workspace/tools/:name/enable` | ~0.5d | Stage 1.5c |
 | `/approval-mode` 切换 | ❌ 完全可以 | `POST /session/:id/approval-mode` | ~0.5d | Stage 1.5c |
-| `/init` 项目初始化 | ❌ 完全可以 | `POST /workspace/:id/init` | ~0.5d | Stage 1.5c |
+| `/init` 项目初始化 | ❌ 完全可以 | `POST /workspace/init` | ~0.5d | Stage 1.5c |
 | `/resume <id>` 切换 session | ❌ Stage 1.5 must-have #2 已规划 | `POST /session/:id/load` | 1.5a | ✅ 计划 |
 | `/auth` OAuth 登录 | ⚠️ 部分难点 | device-flow 或 Capability RPC | ~2-3d | Stage 1.5c |
 | `/ide` IDE 集成 | ⚠️ 语义模糊 | "IDE 在哪台机器？" | TBD | TBD |
@@ -82,6 +82,8 @@
 | `SessionPicker` 列 session | ✅ 已 wire 化 | `GET /workspace/:id/sessions` | — | Stage 1 ✓ |
 
 **结论**：6/9 项 ~0.5d；2/9 项有 IPC 难点但 Capability RPC 可解；1/9 项语义模糊。**Stage 1.5c ~3-5d 即可让远端 client 完全等价 Mode A 本地 TUI**——详 [§06 §三 Stage 1.5c](./06-roadmap.md#1.5c--daemon-side-state-crud远端-client-等价-mode-a)。
+
+> 💡 **`/agents` 参考实现**：Claude Code `/agents` slash command 已 ship 完整 ~3042 LOC 的 7-mode 状态机 + 11-step wizard + AI 生成 agent + 6 source 分层——是 daemon-side state CRUD 的最佳设计 anchor。详 [**Claude Code `/agents` UI Deep-Dive**](../claude-code-agents-view-deep-dive.md)（含 P0/P1 借鉴项：`omitClaudeMd` 省 ~5-15 Gtok/周 / `criticalSystemReminder_EXPERIMENTAL` 每 turn 重注入 / `isolation: worktree` agent 隔离 / AI 生成 agent 等）。
 
 ### 同行竞品对标
 
