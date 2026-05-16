@@ -266,8 +266,19 @@ Stage 1 的主链路已经可用：prompt / events / cancel / model / permission
 | `GET /workspace/:id/providers` + `POST /session/:id/model` | provider/model 状态 | TUI / IDE / web |
 | `POST /workspace/:id/auth/device-flow` 或 Capability RPC | auth | TUI / IDE / web |
 | `POST /workspace/:id/init` | project init / trust | TUI / IDE |
+| `GET /workspace/preflight`（**新增**）| daemon 启动 + 配置 readiness 整体检查：providers / MCP / skills / required binaries / egress 检测 | TUI / IDE / web |
+| `GET /workspace/env`（**新增**）| daemon host 关键环境信息：可用 binaries / env vars（masked secrets）/ filesystem mount points / 网络可达性摘要 | TUI / IDE / web（运维）|
 
 这一步的原则：**daemon 是 runtime owner，client 只做 view + command surface**。
+
+**关键 status route 必须返回 actionable failure detail**（chiga0 [comment 4458840712](https://github.com/QwenLM/qwen-code/issues/3803#issuecomment-4458840712) 强调）：
+
+| Route | 必须返回 |
+|---|---|
+| `GET /workspace/:id/mcp` | 每个 MCP server：`status` + `error` + `errorKind`（missing binary / blocked egress / auth/env error / init timeout / protocol error）—— 不能只返回布尔状态 |
+| `GET /workspace/:id/skills` | 每个 skill：`loaded` + `error`（missing file / parse error / required binary not found）|
+
+否则远端 client 会 "silently lose tools"——用户看到工具不可用但不知道是 daemon host 缺 `docker` 还是 pod 网络拦了 egress。详 [§04 §五 Runtime locality / environment contract](./04-deployment-and-client.md#五runtime-locality--environment-contract)。
 
 **兼容性要求**：
 

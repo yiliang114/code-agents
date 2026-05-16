@@ -219,4 +219,36 @@ daemon 模式下完全兼容——`evaluatePermissionFlow()` 已识别此 namesp
 
 ---
 
+## 八、生产部署 best practice — runtime locality + egress 策略
+
+> 来源：chiga0 [Issue #3803 comment 4458840712](https://github.com/QwenLM/qwen-code/issues/3803#issuecomment-4458840712)。Mode B daemon 是 **runtime owner**——所有 MCP / skill / shell / LSP / tool execution / provider auth / file access 在 daemon host 上 evaluate（详 [§04 §五 Runtime locality / environment contract](./04-deployment-and-client.md#五runtime-locality--environment-contract)）。
+
+### 网络 egress 策略
+
+- **默认 deny-by-default + explicit allowlist**：daemon host/pod 只允许 configured providers / MCP servers / skills 实际所需的 network surface
+- **不需要 daemon 开放公网**：根据 provider 端点 / MCP HTTP/SSE endpoints / skill 调用的外部 API 列 allowlist
+- **诊断**：通过 Stage 1.5c 的 `GET /workspace/preflight` route 暴露 daemon-side egress 检测结果让 client 渲染 actionable error
+
+### 凭据 / Secrets 在 daemon host
+
+| 类型 | 位置 |
+|---|---|
+| Provider OAuth tokens | daemon host `~/.qwen/auth/*` |
+| API keys / env vars | daemon process env (从 secret manager / k8s secret 注入) |
+| MCP server credentials | MCP config 中引用或 daemon host env |
+| SSH agent / kubeconfig | daemon host 本地（client 端的不会自动传过来）|
+
+**关键**：client 端的 credentials 不会自动可用——必须 daemon host 自己持有。多 tenant 场景下，1 daemon = 1 tenant 时 credentials per-daemon process 隔离最干净。
+
+### 部署 checklist
+
+- [ ] daemon host 安装 MCP server 所需 runtime（`node` / `uv` / `python` / docker / cloud CLIs）
+- [ ] daemon host env vars / secrets / kubeconfig 等已 provision
+- [ ] Skills 目录（`~/.qwen/skills` / `<workspace>/.qwen/skills`）已同步到 daemon filesystem
+- [ ] daemon host/pod 网络策略允许 configured providers + MCP HTTP/SSE endpoints
+- [ ] Stage 1.5c 后通过 `GET /workspace/preflight` + `GET /workspace/env` 暴露诊断给 client
+- [ ] `GET /workspace/mcp` / `GET /workspace/skills` 返回 actionable error detail（不只是布尔状态）
+
+---
+
 下一篇：[06 — Roadmap & Ecosystem →](./06-roadmap.md)

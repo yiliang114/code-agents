@@ -228,9 +228,77 @@ Laptop                           Remote workstation
 
 ---
 
-## 五、Client Capability 反向 RPC（External Reference Architecture）
+## 五、Runtime locality / environment contract
+
+> 来源：chiga0 [Issue #3803 comment 4458840712](https://github.com/QwenLM/qwen-code/issues/3803#issuecomment-4458840712)（2026-05-15）。Mode B 下 **daemon 是 runtime owner**——MCP / Skills / shell / LSP / tool execution / provider auth / file access 全部在 **daemon host / pod** 上 evaluate，不在 client 机器。这一约束**必须显式 documented**，避免远端 client 误以为自己的 local network / files / tools 仍然适用。
+
+### Daemon 拥有的 runtime 资源
+
+```
+┌────────────────────────────────────────────────────────┐
+│ daemon host / pod                                       │
+│   ├─ filesystem (skills / CLAUDE.md / settings)        │
+│   ├─ network (MCP HTTP/SSE / provider API)             │
+│   ├─ process execution (shell / LSP / MCP children)    │
+│   ├─ credentials (OAuth tokens / API keys)             │
+│   ├─ env vars (cloud CLIs / docker / kubeconfig)       │
+│   └─ Unix sockets / SSH agent / browser profile        │
+└────────────────────────────────────────────────────────┘
+              ↑ HTTP/SSE
+              │
+   ┌──────────┴───────────┐
+   │  client (TUI / web / │  ← 不拥有 runtime；只渲染 + 发 prompt + 应答 permission
+   │  IDE / channels)     │
+   └──────────────────────┘
+```
+
+### 5 项具体含义
+
+| # | 含义 | 例子 |
+|---|---|---|
+| 1 | **stdio MCP servers** 在 daemon host spawn | daemon host 必须有 `node` / `uv` / `python` / docker CLI / cloud CLIs + env vars / secrets / files |
+| 2 | **HTTP/SSE MCP servers** 从 daemon host 访问 | daemon host/pod 需要 outbound egress 到 MCP endpoints 及其调用的 API/databases |
+| 3 | **本地资源** (`localhost` / Unix sockets / mounted volumes / kubeconfig / SSH agent / browser profile) | 全是 **daemon host 本地**，不是 client |
+| 4 | **Personal skills** (`~/.qwen/skills`) / **project skills** (`.qwen/skills`) / **extension skills** | 必须在 **daemon filesystem**；client local skills **不会**自动可见，除非未来通过 sync / mount / install / control-plane push |
+| 5 | **锁定 VPC/pod 无 egress** | SaaS MCP discovery/init 或 tool calls 失败，除非网络策略允许 |
+
+### 这不意味着 "daemon 必须开放公网"
+
+- daemon 只需要 **configured providers / MCP servers / skills 实际所需的** network surface
+- **生产推荐**：deny-by-default egress + explicit allowlist
+- 但**必须明确**：client 端连得通不等于 daemon 端连得通——daemon-side runtime 必须能 reach configured services
+
+### 部署 preflight / 诊断（Stage 1.5c 新增）
+
+为了让远端 client 看到 actionable failures 而非"silent loss of tools"，Stage 1.5c daemon-side state CRUD 必须在 status routes 中返回详细错误信息：
+
+| Route | 必须返回 |
+|---|---|
+| `GET /workspace/mcp` | 每个 MCP server：`status` + `error` + `errorKind`（missing binary / blocked egress / auth/env error / init timeout / protocol error）|
+| `GET /workspace/skills` | 每个 skill：`loaded` + `error`（missing file / parse error / required binary not found）|
+| `GET /workspace/preflight`（**新增 route**）| daemon 启动 + 配置 readiness 整体检查：providers / MCP / skills / required binaries / egress 检测 |
+| `GET /workspace/env`（**新增 route**）| daemon host 关键环境信息：可用 binaries / env vars（masked secrets）/ filesystem mount points / 网络可达性摘要 |
+
+### Reverse RPC scope（与 runtime locality 关系）
+
+[§六 Client Capability 反向 RPC](#六client-capability-反向-rpc) 的 5 类 capability（`editor` / `clipboard` / `browser` / `notification` / `file_picker`）是**显式 delegated 给 client-local 资源**的特定能力——**不是** MCP / skill / shell execution 的 general fallback。
+
+| 用例 | 走 reverse RPC？ |
+|---|:---:|
+| daemon 让 client 打开 editor 编辑文件 | ✅ `open_editor` |
+| daemon 让 client 读 clipboard 内容 | ✅ `clipboard` |
+| daemon 用 client 本地的 docker CLI 跑 MCP server | ❌ **不**——MCP 必须在 daemon 上 |
+| daemon 用 client 本地的 `~/.qwen/skills` | ❌ **不**——skills 必须在 daemon filesystem |
+
+未来若要允许 client-side MCP / skill 兜底，需要**独立设计**（不在当前 Client Capability scope 中）。
+
+---
+
+## 六、Client Capability 反向 RPC（External Reference Architecture）
 
 > daemon 不直接拥有 client 本地资源（editor / clipboard / browser / notification / file_picker），但 agent 有时需要"调起 client 本地能力"。设计 5 类 Client Capability 反向 RPC 协议，让 daemon 通过 SSE event 反向调用 client，client 通过 HTTP callback 回复。
+>
+> **Scope 限定**（详 [§五 Runtime locality](#五runtime-locality--environment-contract)）：5 类 capability 是显式 delegated 给 client-local 资源的能力，**不是** MCP / skill / shell execution 的 general fallback。
 
 ### 协议结构
 
@@ -265,7 +333,7 @@ Laptop                           Remote workstation
 
 ---
 
-## 六、与 PR#3929-3931 (remote-control stack) 的关系
+## 七、与 PR#3929-3931 (remote-control stack) 的关系
 
 2026-05-15 决策后，remote-control 优先级后置。它仍然可以作为 mobile/browser facade 存在，但不应继续拥有 parallel runtime / event log / worker server。正确方向是等 TUI / channels / web / IDE 先收敛到 Mode B daemon contract 后，remote-control 再复用同一 `DaemonSessionClient` + HTTP/SSE typed event contract。
 
