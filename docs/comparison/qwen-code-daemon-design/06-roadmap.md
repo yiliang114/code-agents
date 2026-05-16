@@ -138,7 +138,7 @@ capability registry → DaemonSessionClient → typed events
 | PR | 内容 | 状态 |
 |---|---|:---:|
 | **PR 9** read-only status routes | `GET /workspace/mcp` + `/skills` + `/providers` + `/session/:id/context` + `/session/:id/supported-commands`（依赖 PR 2, 4）| ⏳ |
-| **PR 10** runtime diagnostics route | `GET /workspace/runtime-diagnostics`：MCP missing binaries + failed skill loads + blocked egress hints + auth/env readiness + daemon locality notes（依赖 PR 9；详 [§04 §五 Runtime locality](./04-deployment-and-client.md#五runtime-locality--environment-contract)）| ⏳ |
+| **PR 10** runtime diagnostics 拆 **3 routes**（doudouOUC 在 #4175 [comment 4465031958](https://github.com/QwenLM/qwen-code/issues/4175#issuecomment-4465031958) 拆分；不同 consumer 不同 cache 语义）| `GET /workspace/preflight`（client on connect，strongly cacheable）+ `GET /workspace/env`（operator/runbook，cacheable for daemon lifetime）+ `GET /workspace/runtime-diagnostics`（error UI / debugging，not cacheable，real-time）。3 routes 共享同一 diagnostic data model `{ kind, status, error?, errorKind?, hint? }`（依赖 PR 9；详 [§04 §五 Runtime locality](./04-deployment-and-client.md#五runtime-locality--environment-contract)）| ⏳ |
 | **PR 11** MCP resource guardrails | measurement-backed：MCP child/session budget + warnings 或 controlled refusal（**不是** full shared pool；依赖 PR 1, 9）| ⏳ |
 
 ### Wave 4 — Auth-gated mutation/control routes
@@ -160,7 +160,7 @@ capability registry → DaemonSessionClient → typed events
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 18** `refactor(serve): extract acp bridge primitives` | `httpAcpBridge.ts` 拆为 shared `AcpChannel` + `Transport` + `EventBus` + bridge primitives；CLI route contract 保持（依赖 PR 4, 8）| ⏳ |
+| **PR 18** `refactor(serve): extract acp bridge primitives + lift output sinks` | `httpAcpBridge.ts` 拆为 shared `AcpChannel` + `Transport` + `EventBus` + bridge primitives + **JSONL / stream-json / dual-output 接入 typed-event consumer contract**（避免 3 adapters drift 为独立 runtime drivers）；CLI route contract 保持（依赖 PR 4, 8）| ⏳ |
 | **PR 19** real MCP shared pool | keyed by canonical workspace + server **config hash** + auth/env/runtime inputs；lifecycle/refcount tests（依赖 PR 18, 11）| ⏳ |
 | **PR 20** client pairing revocation + full PermissionMediator | pair tokens + revocation API + audit log + 4 policy strategies（first-responder / designated / consensus / local-only）（依赖 PR 8, 18）| ⏳ |
 
