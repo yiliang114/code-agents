@@ -72,9 +72,11 @@ QWEN_DAEMON_TOKEN=...
 QWEN_DAEMON_WORKSPACE=/repo
 ```
 
-### Stage 1 Session isolation constraint（重要安全 guidance）
+### Session isolation constraint（重要安全 guidance）
 
-Stage 1 daemon 当前是 daemon-wide `sessionScope: 'single'`。**Until per-request `sessionScope` 落地（Issue #4175 Wave 2 PR 5），多 user channel / web 部署必须三选一**：
+> ✅ **2026-05-16 update**：per-request `sessionScope` 已 ship — Wave 2 PR 5 [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) MERGED。channel/web BFF 现在可在 `POST /session` body 携带 `sessionScope: 'thread'` 主动声明 strict isolation；无效值 `400 invalid_session_scope`；新 capability tag `session_scope_override` 暴露在 `/capabilities.features`，client 可 preflight 后再发字段。Review 还修了一个 mixed-scope leak（thread-first 后省略-scope 调用 attach 到隔离 session 的 bug），强烈推荐升级。
+
+历史 Stage 1 daemon 只有 daemon-wide `sessionScope: 'single'`，无 override 路径。**Pre-PR#4209 时代多 user channel / web 部署需三选一**（保留作部署历史参考；现在用 per-request override 即可）：
 
 | 选项 | 含义 |
 |---|---|
@@ -101,13 +103,13 @@ Stage 1 daemon 当前是 daemon-wide `sessionScope: 'single'`。**Until per-requ
 
 [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) 明确：channel / web client 默认切换 daemon 前必须先 ship 以下 5 项（全部来自 [Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) Wave 2-3）：
 
-| # | Blocker | 对应 PR |
-|---|---|---|
-| 1 | Per-request `sessionScope` | Wave 2 PR 5 |
-| 2 | Session metadata + close/delete lifecycle | Wave 2 #8 |
-| 3 | Daemon-stamped client identity | Wave 2 PR 7 |
-| 4 | Session-scoped permission route | Wave 2 PR 8 |
-| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 9 / 10 |
+| # | Blocker | 对应 PR | 状态（2026-05-16）|
+|---|---|---|---|
+| 1 | Per-request `sessionScope` | Wave 2 PR 5 | ✅ MERGED [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) |
+| 2 | Session metadata + close/delete lifecycle | Wave 2.5 PR 11 | ⏳ deps PR 6 + PR 7 |
+| 3 | Daemon-stamped client identity | Wave 2 PR 7 | ⏳ blocked on Wave 1 PR 4 typed events |
+| 4 | Session-scoped permission route | Wave 2 PR 8 | ⏳ blocked on PR 7 |
+| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 9 / 10 | ⏳ deps PR 4 |
 
 详 [§06 §三·一 Wave 2-3](./06-roadmap.md#wave-2--session-lifecycle--minimum-multi-client-safety)。
 
@@ -117,7 +119,7 @@ Stage 1 daemon 当前是 daemon-wide `sessionScope: 'single'`。**Until per-requ
 - ❌ CORS relaxation in adapter PR
 - ❌ Default migration of Telegram / Weixin / Dingtalk / plugin channels
 - ❌ File CRUD / memory CRUD / MCP restart / provider mutation（Wave 4 范围）
-- ❌ Client-side `sessionScope` emulation（必须等 daemon 端 Wave 2 PR 5）
+- ❌ Client-side `sessionScope` emulation（daemon 端 Wave 2 PR 5 已 ship — [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209)，client 直接在 `POST /session` body 携带 `sessionScope` 字段即可）
 
 ---
 

@@ -127,11 +127,13 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 >
 > 💡 **Implementation tracker**：[Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) doudouOUC 的 Mode B v0.16 production-ready 25-PR rollout plan（6 Wave）—— 上表的 Stage 1.5a/c/-prereq 映射到 Wave 1-5；Wave 6 是 release hardening + v0.16。详 [§06 §三·一 Wave breakdown](./06-roadmap.md#三一-issue-4175--25-pr-wave-breakdown-production-ready-tracker)。
 >
-> 🔧 **Wave 1 火力全开**（2026-05-16）：
+> 🔧 **Wave 1-2 并进**（2026-05-16）：
 > - ✅ Wave 1 **PR 2** [PR#4191](https://github.com/QwenLM/qwen-code/pull/4191) capability registry + protocol versions — **MERGED 10:07** (doudouOUC)
-> - 🔧 Wave 1 **PR 1** [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205) baseline harness — OPEN (doudouOUC)
-> - 🔧 Wave 1 **PR 3** [PR#4201](https://github.com/QwenLM/qwen-code/pull/4201) DaemonSessionClient skeleton — OPEN (chiga0；前身 PR#4195 CLOSED 因 review)
-> - 🔧 **Bonus** client adapter spikes：[PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE (chiga0)
+> - ✅ Wave 2 **PR 5** [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) per-request `sessionScope` override — **MERGED 15:54** (doudouOUC, 4h26m open→merge)
+> - ✅ Wave 1 **PR 3** [PR#4201](https://github.com/QwenLM/qwen-code/pull/4201) DaemonSessionClient skeleton — **MERGED 17:01** (chiga0；前身 PR#4195 CLOSED；v2 补 AbortSignal/event-without-id/error-path 测试)
+> - 🔧 Wave 1 **PR 1** [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205) baseline harness — OPEN CHANGES_REQUESTED (doudouOUC, CI lint + 2 Critical 未修)
+> - ⏳ Wave 1 **PR 4** typed event schema — 待开；依赖（PR 2/3）已全 MERGED，**新 block 点**
+> - 🔧 **Bonus** client adapter spikes：[PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE (chiga0)；现可 rebase 走完整 SDK
 
 详 [§06 Roadmap & Ecosystem](./06-roadmap.md)。
 

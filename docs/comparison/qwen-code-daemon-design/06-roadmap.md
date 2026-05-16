@@ -108,8 +108,8 @@ capability registry → DaemonSessionClient → typed events
 
 | Wave | 范围 | PRs | 对应 codeagents Stage |
 |:---:|---|---|---|
-| **1** Protocol foundation（无依赖）| baseline harness + capability registry + DaemonSessionClient skeleton + typed event schema | PR 1-4 — ✅ PR 2 [#4191](https://github.com/QwenLM/qwen-code/pull/4191) MERGED 2026-05-16；🔧 PR 1 [#4205](https://github.com/QwenLM/qwen-code/pull/4205) + PR 3 [#4201](https://github.com/QwenLM/qwen-code/pull/4201) OPEN；PR 4 待开 | 1.5a #9 + 1.5-prereq |
-| **2** Session lifecycle + min multi-client safety | per-request sessionScope + loadSession HTTP + minimal client identity + session-scoped permission | PR 5-8 | 1.5a #1/#2/#3 (minimal)/#5 |
+| **1** Protocol foundation（无依赖）| baseline harness + capability registry + DaemonSessionClient skeleton + typed event schema | PR 1-4 — ✅ PR 2 [#4191](https://github.com/QwenLM/qwen-code/pull/4191) + PR 3 [#4201](https://github.com/QwenLM/qwen-code/pull/4201) MERGED 2026-05-16；🔧 PR 1 [#4205](https://github.com/QwenLM/qwen-code/pull/4205) CHANGES_REQUESTED；PR 4 待开（**新 block 点**，依赖已解锁）| 1.5a #9 + 1.5-prereq |
+| **2** Session lifecycle + min multi-client safety | per-request sessionScope + loadSession HTTP + minimal client identity + session-scoped permission | PR 5-8 — ✅ PR 5 [#4209](https://github.com/QwenLM/qwen-code/pull/4209) MERGED 2026-05-16；PR 6 待开（PR 3 + 5 均 MERGED，完全 unblocked）；PR 7/8 等 Wave 1 PR 4 | 1.5a #1/#2/#3 (minimal)/#5 |
 | **3** Read-only control plane + diagnostics | read-only status routes + `runtime-diagnostics` + MCP guardrails (measurement, not full pool) | PR 9-11 | 1.5c read-only + chiga0 diagnostics |
 | **4** Auth-gated mutation/control routes | **mutation gating helper** + memory/agents CRUD + approval/tools/init + safe file read + file write/edit + auth device-flow | PR 12-17 | 1.5c CRUD + 文件 routes |
 | **5** Architecture extraction + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator | PR 18-20 | 1.5-prereq full + 1.5a #3 full |
@@ -121,8 +121,8 @@ capability registry → DaemonSessionClient → typed events
 |---|---|:---:|
 | **PR 1** `test/perf: daemon baseline harness` | RSS curve + same-workspace attach latency + prompt p50/p99 + MCP child count + SSE replay/backpressure basics — **measure before optimize** | 🔧 **OPEN [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205)** (doudouOUC, 2026-05-16 08:41) |
 | **PR 2** `feat(serve): capability registry + protocol versions` | 替换 hard-coded `STAGE1_FEATURES` 为 additive registry（新 `capabilities.ts` +52 LOC，每 feature `{ since: 'v1' }` descriptor，留 `deprecated` / `requires` 扩展位）+ `/capabilities.protocolVersions: { current, supported }`；`STAGE1_FEATURES` 保留为 `@deprecated` alias；SDK 加 `DaemonProtocolVersions` type；测试验证 backward compat（accepts old v1 envelopes without `protocolVersions`）；关闭 chiga0 finding 5 FIXME | ✅ **MERGED 2026-05-16 10:07** [PR#4191](https://github.com/QwenLM/qwen-code/pull/4191) (doudouOUC, `[codex]` 前缀, +170/-39, 84+43 tests passing) |
-| **PR 3** `feat(sdk): DaemonSessionClient skeleton` | SDK helper over `DaemonClient`：create/attach/prompt/events/cancel/model；tracks `Last-Event-ID` replay state；给 TUI/channels/web/IDE adapters 共用（依赖 PR 2）| 🔧 **OPEN [PR#4201](https://github.com/QwenLM/qwen-code/pull/4201)** (chiga0, 2026-05-16 08:00；前身 [PR#4195](https://github.com/QwenLM/qwen-code/pull/4195) CLOSED 因 review 发现 `event.id` undefined 守卫分支无测试) |
-| **PR 4** `feat(protocol): typed daemon event schema v1` | SDK-layer discriminated union + reducer skeleton；保留 raw `DaemonEvent { data: unknown }` 兼容（依赖 PR 2, 3）| ⏳ 待开（依赖 PR 3 merge）|
+| **PR 3** `feat(sdk): DaemonSessionClient skeleton` | SDK helper over `DaemonClient`：create/attach/prompt/events/cancel/model；tracks `Last-Event-ID` replay state；给 TUI/channels/web/IDE adapters 共用（依赖 PR 2）| ✅ **MERGED 2026-05-16 17:01** [PR#4201](https://github.com/QwenLM/qwen-code/pull/4201) (chiga0；前身 [PR#4195](https://github.com/QwenLM/qwen-code/pull/4195) CLOSED；v2 经 review 补 AbortSignal 转发 / event-without-id guard / error path 三轴 45 cases；wenshao 本地 verify 53 tests + typecheck + build clean) |
+| **PR 4** `feat(protocol): typed daemon event schema v1` | SDK-layer discriminated union + reducer skeleton；保留 raw `DaemonEvent { data: unknown }` 兼容（依赖 PR 2, 3）| ⏳ 待开 — **新 block 点**（PR 2, 3 均已 MERGED，依赖完全解锁；卡 Wave 2 PR 7/8 + Wave 2.5 PR 10 + 多个下游）|
 
 #### Bonus: 提前到 Wave 1 阶段的 client adapter spikes
 
@@ -140,10 +140,10 @@ capability registry → DaemonSessionClient → typed events
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 5** per-request `sessionScope` | `POST /session` 接受 `{ sessionScope: 'single' \| 'thread' }`；默认 `single`；无效值 400（依赖 PR 2）| ⏳ |
-| **PR 6** HTTP load/resume session | `POST /session/:id/load` + `/resume`；SDK methods；保留 ACP direct 行为（依赖 PR 3, 5）| ⏳ |
-| **PR 7** **minimal** daemon-stamped client identity | daemon assigns/stamps `clientId`；emitted events 使用 trusted `originatorClientId`；无 revocation（依赖 PR 3, 4）| ⏳ |
-| **PR 8** session-scoped permission route | `POST /session/:id/permission/:requestId`；保留 legacy `POST /permission/:requestId`；加 `permission_already_resolved` event（依赖 PR 7）| ⏳ |
+| **PR 5** per-request `sessionScope` | `POST /session` 接受 `{ sessionScope: 'single' \| 'thread' }`；默认 `single`；无效值 `400 invalid_session_scope`；新 capability tag `session_scope_override` 暴露在 `/capabilities.features`；review 发现并修 mixed-scope leak（thread-first 后省略-scope 调用 attach 到隔离 session 的 bug）；同时解锁 PR 1 baseline harness 在 thread mode 下诚实测量 per-session cost（依赖 PR 2）| ✅ **MERGED 2026-05-16 15:54** [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) (doudouOUC, +512/-20, 4h26m open→merge, 9 tests + DeepSeek-v4-pro /review APPROVED) |
+| **PR 6** HTTP load/resume session | `POST /session/:id/load` + `/resume`；SDK methods；保留 ACP direct 行为（依赖 PR 3, 5）| ⏳ 待开（PR 3 + 5 均 MERGED，**完全 unblocked**；Wave 2 最划算下一票）|
+| **PR 7** **minimal** daemon-stamped client identity | daemon assigns/stamps `clientId`；emitted events 使用 trusted `originatorClientId`；无 revocation（依赖 PR 3, 4）| ⏳ 等 Wave 1 PR 4 |
+| **PR 8** session-scoped permission route | `POST /session/:id/permission/:requestId`；保留 legacy `POST /permission/:requestId`；加 `permission_already_resolved` event（依赖 PR 7）| ⏳ 间接等 PR 4 |
 
 ### Wave 3 — Read-only control plane + diagnostics
 
