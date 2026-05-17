@@ -107,9 +107,9 @@ QWEN_DAEMON_WORKSPACE=/repo
 |---|---|---|---|
 | 1 | Per-request `sessionScope` | Wave 2 PR 5 | ✅ MERGED [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) |
 | 2 | Session metadata + close/delete lifecycle | Wave 2.5 PR 11 | ⏳ deps PR 6 + PR 7 |
-| 3 | Daemon-stamped client identity | Wave 2 PR 7 | ⏳ blocked on Wave 1 PR 4 typed events |
-| 4 | Session-scoped permission route | Wave 2 PR 8 | ⏳ blocked on PR 7 |
-| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 9 / 10 | ⏳ deps PR 4 |
+| 3 | Daemon-stamped client identity | Wave 2 PR 7 | ⏳ 待开（Wave 1 PR 4 ✅ 已解锁）|
+| 4 | Session-scoped permission route | Wave 2 PR 8 | ⏳ 等 PR 7 |
+| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 9 / 10 | ⏳ 待开（PR 4 ✅ 已解锁）|
 
 详 [§06 §三·一 Wave 2-3](./06-roadmap.md#wave-2--session-lifecycle--minimum-multi-client-safety)。
 
