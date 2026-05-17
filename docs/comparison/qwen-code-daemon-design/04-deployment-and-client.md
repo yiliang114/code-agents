@@ -109,7 +109,7 @@ QWEN_DAEMON_WORKSPACE=/repo
 | 2 | Session metadata + close/delete lifecycle | Wave 2.5 PR 11 | ⏳ deps PR 6 + PR 7 |
 | 3 | Daemon-stamped client identity | Wave 2 PR 7 | ⏳ 待开（Wave 1 PR 4 ✅ 已解锁）|
 | 4 | Session-scoped permission route | Wave 2 PR 8 | ⏳ 等 PR 7 |
-| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 9 / 10 | ⏳ 待开（PR 4 ✅ 已解锁）|
+| 5 | Read-only diagnostics for MCP / skills / providers / environment | Wave 3 PR 12 / 13 | ⏳ 待开（PR 4 ✅ 已解锁）|
 
 详 [§06 §三·一 Wave 2-3](./06-roadmap.md#wave-2--session-lifecycle--minimum-multi-client-safety)。
 

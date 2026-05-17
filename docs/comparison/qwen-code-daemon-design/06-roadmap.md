@@ -93,15 +93,16 @@ qwen-code 主线
 
 > **优先级重排（2026-05-15 决策）**：Mode B 已 ship Stage 1 + PR#4113 §02，需先做完 Mode B 生产化（must-haves + daemon-side state CRUD）让远端 client 完整可用；Mode A 价值依赖 1.5c daemon-side state CRUD（否则 Mode A 也只能服务 thin shell 远端 client），故 1.5b 后置。
 
-> 💡 **Implementation tracker — [Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175)**（doudouOUC，2026-05-15 11:41）：Mode B v0.16 production-ready 完整 25-PR rollout plan，分 6 Wave。本节 Stage 1.5a/c/-prereq/client adapters 等 sub-stage 都映射到 Wave 1-5；Wave 6 为 release hardening + v0.16 production-ready。详 §三·一 Wave breakdown。
+> 💡 **Implementation tracker — [Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175)**（doudouOUC，2026-05-15 11:41 起 + 2026-05-17 重排）：Mode B v0.16 production-ready **31-PR rollout plan**，分 7 Wave（含新增 Wave 2.5）。本节 Stage 1.5a/c/-prereq/client adapters 等 sub-stage 都映射到 Wave 1-5；Wave 6 为 release hardening + v0.16 production-ready。详 §三·一 Wave breakdown。
 
-### 三·一 Issue #4175 — 25-PR Wave breakdown (production-ready tracker)
+### 三·一 Issue #4175 — 31-PR Wave breakdown (production-ready tracker)
 
-按 6 Wave 拆分；critical dependency chain：
+按 7 Wave 拆分；critical dependency chain：
 
 ```
 capability registry → DaemonSessionClient → typed events
   → daemon-stamped clientId → session-scoped permission
+  → heartbeat/replay/lifecycle closure (Wave 2.5)
   → mutation-gating helper → control-plane mutation routes
   → bridge extraction → real MCP pool + full PermissionMediator
 ```
@@ -110,10 +111,11 @@ capability registry → DaemonSessionClient → typed events
 |:---:|---|---|---|
 | **1** Protocol foundation（无依赖）| baseline harness + capability registry + DaemonSessionClient skeleton + typed event schema | PR 1-4 — ✅ **4/4 MERGED**：PR 1 [#4205](https://github.com/QwenLM/qwen-code/pull/4205) + PR 2 [#4191](https://github.com/QwenLM/qwen-code/pull/4191) + PR 3 [#4201](https://github.com/QwenLM/qwen-code/pull/4201) 2026-05-16 / PR 4 [#4217](https://github.com/QwenLM/qwen-code/pull/4217) 2026-05-17 04:31 | 1.5a #9 + 1.5-prereq |
 | **2** Session lifecycle + min multi-client safety | per-request sessionScope + loadSession HTTP + minimal client identity + session-scoped permission | PR 5-8 — ✅ **4/4 MERGED**：PR 5 [#4209](https://github.com/QwenLM/qwen-code/pull/4209) 2026-05-16 + PR 6 [#4222](https://github.com/QwenLM/qwen-code/pull/4222) + PR 7 [#4231](https://github.com/QwenLM/qwen-code/pull/4231) + PR 8 [#4232](https://github.com/QwenLM/qwen-code/pull/4232) 2026-05-17 | 1.5a #1/#2/#3 (minimal)/#5 |
-| **3** Read-only control plane + diagnostics | read-only status routes + `runtime-diagnostics` + MCP guardrails (measurement, not full pool) | PR 9-11 | 1.5c read-only + chiga0 diagnostics |
-| **4** Auth-gated mutation/control routes | **mutation gating helper** + memory/agents CRUD + approval/tools/init + safe file read + file write/edit + auth device-flow | PR 12-17 | 1.5c CRUD + 文件 routes |
-| **5** Architecture extraction + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator | PR 18-20 | 1.5-prereq full + 1.5a #3 full |
-| **6** Release hardening + v0.16 | alpha release docs + npm alpha publish + **production token defaults** (`~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token`) + deployment refs + v0.16 release | PR 21-25 | Stage 2 + release |
+| **2.5** Reliability + session lifecycle closure | client heartbeat + SSE replay sizing + slow-client warnings + session metadata/close-delete lifecycle | PR 9-11 — 🔧 PR 10 [#4237](https://github.com/QwenLM/qwen-code/pull/4237) OPEN (doudouOUC, 2026-05-17 09:11)；PR 9/11 ⏳ | 1.5a #4 reliability + #2 lifecycle closure |
+| **3** Read-only control plane + diagnostics | read-only status routes + preflight/env diagnostics + MCP guardrails (measurement, not full pool) | PR 12-14 — ⏳ 待开（PR 4 ✅ 已解锁，可并行 Wave 2.5）| 1.5c read-only + chiga0 diagnostics |
+| **4** Auth-gated mutation/control routes | **mutation gating helper** + memory/agents CRUD + approval/tools/init/MCP-restart + FileSystemService 边界 + safe file read + file write/edit + auth device-flow | PR 15-21 — 🔧 PR 15 [#4236](https://github.com/QwenLM/qwen-code/pull/4236) OPEN (doudouOUC, 2026-05-17 09:04)；PR 16-21 ⏳ | 1.5c CRUD + 文件 routes |
+| **5** Architecture extraction + output sinks + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator + 独立 output sinks + flag-gated client adapters | PR 22-26 | 1.5-prereq full + 1.5a #3 full + adapter migration |
+| **6** Release hardening + v0.16 | alpha release docs + npm alpha publish + **production token defaults** (`~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token`) + deployment refs + v0.16 release | PR 27-31 | Stage 2 + release |
 
 ### Wave 1 — Protocol foundation（无依赖，可立即开始）
 
@@ -145,62 +147,77 @@ capability registry → DaemonSessionClient → typed events
 | **PR 7** **minimal** daemon-stamped client identity | daemon assigns/stamps `clientId`；emitted events 使用 trusted `originatorClientId`；无 revocation；**header-based echo (`X-Qwen-Client-Id`) only**（防 client 自报伪造）；state-changing routes 拒绝 unknown clientId；live-session scoped（daemon 重启 / session 死 = id 丢失）；新 capability tag `client_identity`；adapter 不切换（只 ship primitive）（依赖 PR 3, 4）| ✅ **MERGED 2026-05-17 08:19** [PR#4231](https://github.com/QwenLM/qwen-code/pull/4231) (chiga0, 1h23m open→merge, 最终 +910/-79；wenshao **9 parallel review agents** 覆盖 correctness/security/code quality/performance/test coverage + 3 audit personas；commit `52295980f4` 修 1 Critical（`InvalidClientIdError` 走 `sendBridgeError` 翻 400 而非 500，避免 client 输入错误冒到 500 internal error）+ 6/7 其他 concern；clientId 用 `randomUUID()` + `client_` 前缀 122 bits entropy unguessable；未来 follow-up：`clientIds` shrink path + `DaemonSessionClient` reconnect-identity gap) |
 | **PR 8** session-scoped permission route | `POST /session/:id/permission/:requestId`；保留 legacy `POST /permission/:requestId`；加 `permission_already_resolved` event；**bounded in-memory record of recent resolutions**（同 PR#4217 "pendingPermissions cap 64/session" 跨 PR pattern 复用）；新 capability tag `session_permission_vote`；SDK 新方法 `respondToSessionPermission()` 与 legacy `respondToPermission()` 共存（依赖 PR 7）| ✅ **MERGED 2026-05-17 09:48** [PR#4232](https://github.com/QwenLM/qwen-code/pull/4232) (chiga0, 2h44m open→merge, 最终 +801/-30；rebase 到 main 后 single-commit `4eae97a33b`；wenshao 4 轮 review 抓 3 项：① barrel re-export 新 type `DaemonPermissionAlreadyResolvedEvent` + `Data` ② 抽 `parsePermissionOutcome(req, res)` 共享 helper 去掉 scoped+legacy 两 route 的 `safeBody`+`isValidOutcome`+catch block 重复 ③ input validation 测试补全；5 test scenarios：accepted / already-resolved / malformed option / wrong-session / unknown-session) |
 
+### Wave 2.5 — Reliability + session lifecycle closure
+
+> 来自 Issue #4175 的 P0 contract gap：在 broad mutation/control-plane 工作之前必须先 close session 重连可信度 + 慢 client 信号 + 显式 close/delete semantics。
+
+| PR | 内容 | 状态 |
+|---|---|:---:|
+| **PR 9** client heartbeat | `POST /session/:id/heartbeat` + SDK helper；daemon 记录 last-seen client/session 时间戳供 diagnostics + 未来 revocation policy 使用（依赖 PR 7）| ⏳ 待开（PR 7 ✅ 已解锁）|
+| **PR 10** SSE replay sizing + `slow_client_warning` backpressure | `DEFAULT_RING_SIZE` 4000 → **8000**（对齐 #3803 §02 chatty session target）；`--event-ring-size <n>` CLI flag fail-CLOSED 校验；**`slow_client_warning` SSE frame** at queue 75% full（hysteresis re-arm 37.5% 防 flap）+ 携带 `{queueSize, maxQueued, lastEventId}`；`?maxQueued=N` query 范围 `[16, 2048]` 默认 256，越界 `400 invalid_max_queued` **before opening SSE**（避 EventSource auto-reconnect）；新 capability tag `slow_client_warning`；SDK 加 typed `DaemonSlowClientWarningEvent` + `slowClientWarningCount` 计数（**non-terminal**，`alive` 保持）（依赖 PR 1, 4）| 🔧 **OPEN [PR#4237](https://github.com/QwenLM/qwen-code/pull/4237)** (doudouOUC, 2026-05-17 09:11, +845/-80 18 文件, 321 tests passing；⚠️ 内存翻倍：default ring 4000 → 8000 在 64 subs × 8000 frames × 500 B ≈ ~256 MB worst-case；operators 紧 budget 可 pin `--event-ring-size 4000`) |
+| **PR 11** session metadata + close/delete lifecycle | `POST /session/:id/_meta` + 显式 close/delete semantics + events；定义 close 是 client detach / model cancellation / ACP session cleanup / 还是 durable session deletion（依赖 PR 6, 7）| ⏳ 待开（PR 6 + 7 ✅ 均已解锁）|
+
 ### Wave 3 — Read-only control plane + diagnostics
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 9** read-only status routes | `GET /workspace/mcp` + `/skills` + `/providers` + `/session/:id/context` + `/session/:id/supported-commands`（依赖 PR 2, 4）| ⏳ |
-| **PR 10** runtime diagnostics 拆 **3 routes**（doudouOUC 在 #4175 [comment 4465031958](https://github.com/QwenLM/qwen-code/issues/4175#issuecomment-4465031958) 拆分；不同 consumer 不同 cache 语义）| `GET /workspace/preflight`（client on connect，strongly cacheable）+ `GET /workspace/env`（operator/runbook，cacheable for daemon lifetime）+ `GET /workspace/runtime-diagnostics`（error UI / debugging，not cacheable，real-time）。3 routes 共享同一 diagnostic data model `{ kind, status, error?, errorKind?, hint? }`（依赖 PR 9；详 [§04 §五 Runtime locality](./04-deployment-and-client.md#五runtime-locality--environment-contract)）| ⏳ |
-| **PR 11** MCP resource guardrails | measurement-backed：MCP child/session budget + warnings 或 controlled refusal（**不是** full shared pool；依赖 PR 1, 9）| ⏳ |
+| **PR 12** read-only status routes | `GET /workspace/mcp` + `/skills` + `/providers` + `/session/:id/context` + `/session/:id/supported-commands`；payload 必须 protocol-versioned + SDK 内 typed（依赖 PR 2, 4）| ⏳ |
+| **PR 13** preflight + env diagnostics routes | `GET /workspace/preflight` + `GET /workspace/env`（**不是** 一个 generic diagnostics blob）；包含 daemon-locality notes + actionable `errorKind`：`missing_binary` / `blocked_egress` / `auth_env_error` / `init_timeout` / `protocol_error` / `missing_file` / `parse_error`。**Constraint**：所有 diagnostic payload across PR 12 + 13 + 14 共享同一 cell shape `{ kind, status, error?, errorKind?, hint? }`，SDK reducer 一套渲染所有 3 routes（否则 3 schemas 会 drift）（依赖 PR 12；详 [§04 §五 Runtime locality](./04-deployment-and-client.md#五runtime-locality--environment-contract)）| ⏳ |
+| **PR 14** MCP resource guardrails | measurement-backed：MCP child/session budget + warnings 或 controlled refusal（**不是** full shared pool；依赖 PR 1, 12）| ⏳ |
 
 ### Wave 4 — Auth-gated mutation/control routes
 
-> ⚠️ 所有 mutation routes 必须用 **PR 12 中心化 mutation gate**，不能 per-route open-code auth check。
+> ⚠️ 所有 mutation routes 必须用 **PR 15 中心化 mutation gate**，不能 per-route open-code auth check。
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 12** **mutation gating helper** + `--require-auth` | 中心化 helper for state-changing routes；`--require-auth` 强制 loopback 也要 auth；mutation routes opt-in stricter checks（依赖 PR 7）| ⏳ |
-| **PR 13** memory + agents CRUD | `GET/POST /workspace/memory` + `/agents`；mutation paths gated + audited（依赖 PR 12, 9）| ⏳ |
-| **PR 14** approval + tools + init control | `POST /session/:id/approval-mode` + `/workspace/tools/:name/enable` + `/workspace/init`（依赖 PR 12, 9）| ⏳ |
-| **PR 15** safe workspace file **read** routes | read/list/stat only；canonicalize paths + workspace boundary + size/binary limits + symlink policy（依赖 PR 9, 10）| ⏳ |
-| **PR 16** file write/edit routes behind auth | 独立 PR：mutation gate + audit log + trust/qwenignore + 显式 symlink policy（依赖 PR 8, 12, 15）| ⏳ |
-| **PR 17** auth device-flow route | `POST /workspace/auth/device-flow` 或 Capability RPC for remote auth；必须 honor runtime locality（依赖 PR 12, 9）| ⏳ |
+| **PR 15** **mutation gating helper** + `--require-auth` | 中心化 `createMutationGate({ tokenConfigured, requireAuth })` helper for state-changing routes；4-cell behavior matrix（`requireAuth: true` 或 token 配 → passthrough；no-token loopback dev + `strict: false` → passthrough；`strict: true` → `401 token_required`）；`--require-auth` CLI flag boot-loud refuse-no-token + 关闭 `/health` 豁免；**conditional `require_auth` capability tag**（仅 operator opt-in 才 emit）+ 新 `CONDITIONAL_SERVE_FEATURES` registry primitive 为未来 per-deployment toggle 建 shape；Wave 1-2 mutation routes opt-in non-strict 作 centralization marker `grep gateMutation`（依赖 PR 7）| 🔧 **OPEN [PR#4236](https://github.com/QwenLM/qwen-code/pull/4236)** (doudouOUC, 2026-05-17 09:04, +523/-23 11 文件, 245/245 serve tests pass，5 new auth.test.ts + 5 server.test.ts) |
+| **PR 16** memory + agents CRUD | `GET/POST /workspace/memory` + `/agents` + agent-type scoped `GET/POST/DELETE /workspace/agents/:agentType`；mutation paths gated + audited（依赖 PR 15, 12）| ⏳ |
+| **PR 17** approval + tools + init + MCP restart controls | `POST /session/:id/approval-mode` + `/workspace/tools/:name/enable` + `/workspace/init` + `/workspace/mcp/:server/restart`（依赖 PR 15, 12, 14）| ⏳ |
+| **PR 18** `refactor(serve): add FileSystemService boundary` | 引入 per-request file-system service 抽象；统一 workspace canonicalization / symlink policy / ignore/trust behavior / size/binary limits / audit hooks —— 必须在 file routes 暴露之前 land（依赖 PR 12, 15）| ⏳ |
+| **PR 19** safe workspace file **read** routes | read/list/stat only；经 `FileSystemService` 路由；canonicalize paths + workspace boundary + size/binary limits + symlink policy + actionable errors（依赖 PR 18）| ⏳ |
+| **PR 20** file write/edit routes behind auth | 独立 PR：mutation gate + audit log + trust/qwenignore + 显式 symlink policy（依赖 PR 8, 15, 19）| ⏳ |
+| **PR 21** auth device-flow route | `POST /workspace/auth/device-flow` 或 Capability RPC for remote auth；必须 honor runtime locality（依赖 PR 15, 12）| ⏳ |
 
-### Wave 5 — Architecture extraction + full multi-client security
+### Wave 5 — Architecture extraction + output sinks + full multi-client security
 
-> 必须等 Protocol skeleton（Wave 1）+ Permission route（Wave 2）稳定后才能开始。
+> 必须等 Protocol skeleton（Wave 1）+ Permission route（Wave 2）+ Lifecycle closure（Wave 2.5）稳定后才能开始。
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 18** `refactor(serve): extract acp bridge primitives + lift output sinks` | `httpAcpBridge.ts` 拆为 shared `AcpChannel` + `Transport` + `EventBus` + bridge primitives + **JSONL / stream-json / dual-output 接入 typed-event consumer contract**（避免 3 adapters drift 为独立 runtime drivers）；CLI route contract 保持（依赖 PR 4, 8）| ⏳ 等 PR 8（PR 4 ✅ 已解锁）|
-| **PR 19** real MCP shared pool | keyed by canonical workspace + server **config hash** + auth/env/runtime inputs；lifecycle/refcount tests（依赖 PR 18, 11）| ⏳ |
-| **PR 20** client pairing revocation + full PermissionMediator | pair tokens + revocation API + audit log + 4 policy strategies（first-responder / designated / consensus / local-only）（依赖 PR 8, 18）| ⏳ |
+| **PR 22** `refactor(serve): extract acp bridge primitives` | `httpAcpBridge.ts` 拆为 shared `AcpChannel` + `Transport` + `EventBus` + bridge primitives；CLI route contract 保持（依赖 PR 4, 8, 11）| ⏳ 等 PR 11（PR 4 + 8 ✅ 已解锁）|
+| **PR 23** `feat(mcp): shared MCP transport/process pool` | 真共享 pool，keyed by canonical workspace + server **config hash** + auth/env/runtime inputs；lifecycle/refcount tests（依赖 PR 22, 14）| ⏳ |
+| **PR 24** `feat(security): client pairing revocation + PermissionMediator` | pair tokens + revocation API + audit log + 4 policy strategies（first-responder / designated / consensus / local-only）（依赖 PR 8, 22）| ⏳ |
+| **PR 25** `refactor(output): daemon-compatible output sinks` | JSONL / stream-json / dual-output behavior 移到 protocol/output sink 边界后；让 CLI + daemon client 共享 event semantics 而不是 duplicate terminal-specific logic（依赖 PR 4, 22）—— PR#4226 doudouOUC 平行 reducer 实现可拆这里提前 | ⏳ |
+| **PR 26** `feat(adapters): flag-gated daemon client adapters` | 开始 TUI / channels / web-debug / IDE adapter migration behind flag，用 `DaemonSessionClient`；如 ownership/review size 需要可按 adapter 拆分；3 bonus spike [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) 已铺路（依赖 PR 3, 4, 25）| ⏳ |
 
 ### Wave 6 — Release hardening + v0.16
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| **PR 21** alpha release docs | README known limits + loopback noauth warning + daemon runtime locality + deployment notes | ⏳ |
-| **PR 22** npm alpha publish | 发布 Mode B alpha 到 npm + post-publish smoke test（依赖 Wave 1/2/3 baseline）| ⏳ |
-| **PR 23** production token defaults | auto-generate daemon token + SDK env/file fallback + `~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token` + stale cleanup（依赖 PR 20）| ⏳ |
-| **PR 24** production deployment references | systemd / docker / k8s examples + supervisor/restart docs + security model（依赖 PR 23）| ⏳ |
-| **PR 25** v0.16 production-ready release | Final release after security defaults + docs + client identity/permission lifecycle complete（依赖 PR 20, 23, 24）| ⏳ |
+| **PR 27** alpha release docs | README known limits + loopback noauth warning + daemon runtime locality + durability semantics + deployment notes | ⏳ |
+| **PR 28** npm alpha publish | 发布 Mode B alpha 到 npm + post-publish smoke test（依赖 selected Wave 1/2/2.5/3 baseline）| ⏳ |
+| **PR 29** production token defaults | auto-generate daemon token + SDK env/file fallback + `~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token` + stale cleanup（依赖 PR 24）| ⏳ |
+| **PR 30** production deployment references | systemd / docker / k8s examples + supervisor/restart docs + security model（依赖 PR 29）| ⏳ |
+| **PR 31** v0.16 production-ready release | Final release after security defaults + docs + client identity/permission lifecycle complete（依赖 PR 24, 29, 30）| ⏳ |
 
 ### 并行 / 关键依赖
 
 可并行的工作：
 - **PR 1 baseline** 可与 PR 2/3 并行
 - **PR 5 sessionScope** 在 PR 2 之后即可（不需要 typed events）
-- **PR 9 read-only routes** 在 PR 2/4 之后可开（PR 7/8 review 中也能进行）
-- **PR 15 read-only file routes** 可在 write/edit (PR 16) 之前 land
-- **Release docs** (PR 21) 可等到 npm publish 计划好
+- **PR 9 heartbeat** 在 PR 7 之后可起，与 **PR 10 replay/backpressure**（依赖 PR 1, 4）并行
+- **PR 12 read-only routes** 在 PR 2/4 之后可开（PR 7/8 review 中也能进行）
+- **PR 15 mutation-gate helper** 在 PR 7 之后即可起，**与 Wave 2.5 并行**（仅 formal dep 是 clientId）；Wave 4 PR 16-21 仅 gate 在 PR 15 自身，不在 Wave 2.5 closure 上
+- **PR 19 read-only file routes** 可在 write/edit (PR 20) 之前 land，但必须在 PR 18 `FileSystemService` boundary 后
+- **Release docs** (PR 27) 可等到 npm publish 计划好
 
 ### Open questions（[Issue #4175 §Open questions](https://github.com/QwenLM/qwen-code/issues/4175)）
 
 | 问题 | 当前推荐 |
 |---|---|
 | 何时 npm alpha publish？ | Wave 1 + 足够的 Wave 2 后 + release docs ready；不阻塞所有 control-plane routes |
-| Loopback 默认 token？ | v0.15 alpha 保持现状 + 加 `--require-auth`（PR 12）；v0.16 改 token-by-default + SDK auto-discovery + explicit opt-out |
+| Loopback 默认 token？ | v0.15 alpha 保持现状 + 加 `--require-auth`（PR 15）；v0.16 改 token-by-default + SDK auto-discovery + explicit opt-out |
 | Token instance path？ | `~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token`（多 daemon 共存）+ PID metadata（替代 port-only 路径）|
 | 如何 align PR#3929-3931 remote-control？ | 等 primary clients 稳定后改为 daemon facade，避免 parallel runtime/protocol fork |
 | Worktree 交互？ | `boundWorkspace` 仍是 boot-time daemon workspace；file routes 默认 bound-workspace safety；worktree-specific 行为必须显式，不是隐式 `process.chdir()` |
