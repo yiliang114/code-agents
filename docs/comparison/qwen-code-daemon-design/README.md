@@ -33,7 +33,7 @@ ACP NDJSON 协议 → HTTP+SSE daemon
 - ✅ [PR#4160](https://github.com/QwenLM/qwen-code/pull/4160) MERGED 2026-05-15（`createInMemoryChannel` helper；从 Mode A stack 中产出，但现在只作为通用 primitive）
 - 🔧 **Mode B 优先**（2026-05-15 决策）：Stage 1.5a must-haves（9 项）+ Stage 1.5c daemon-side state CRUD 优先；Mode A（[Issue #4156](https://github.com/QwenLM/qwen-code/issues/4156)）推迟到 1.5c 后
 - 📋 **Implementation tracker**：[Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) doudouOUC Mode B v0.16 production-ready **25-PR rollout plan**（6 Wave：Protocol foundation → Session lifecycle → Read-only control plane → Auth-gated mutation → Architecture extraction → Release hardening）—— 详 [§06 §三·一](./06-roadmap.md#三一-issue-4175--25-pr-wave-breakdown-production-ready-tracker)
-- ✅ **Wave 1 完整 + Wave 2 PR 5/6 完成**（2026-05-16~17 共 7 MERGED；PR 7/8 待开，**无 block 点**）：
+- ✅ **Wave 1 完整 + Wave 2 PR 5/6 ✅ + PR 7 起**（2026-05-16~17 共 7 MERGED + Wave 2 PR 7 in flight，**无 block 点**）：
   - ✅ [PR#4191](https://github.com/QwenLM/qwen-code/pull/4191) Wave 1 PR 2 capability registry **MERGED 2026-05-16 10:07** (doudouOUC)
   - ✅ [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) Wave 2 PR 5 per-request `sessionScope` override **MERGED 2026-05-16 15:54** (doudouOUC)
   - ✅ [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205) Wave 1 PR 1 baseline harness **MERGED 2026-05-16 16:41** (doudouOUC)
@@ -41,6 +41,7 @@ ACP NDJSON 协议 → HTTP+SSE daemon
   - ✅ Wave 2 follow-up [PR#4214](https://github.com/QwenLM/qwen-code/pull/4214) **MERGED 2026-05-16 17:51** (doudouOUC) — capability registry 三套来源 lockstep 修
   - ✅ [PR#4217](https://github.com/QwenLM/qwen-code/pull/4217) Wave 1 PR 4 typed event schema **MERGED 2026-05-17 04:31** (chiga0, 5 轮 review / 2 轮自我修复；reducer hardening invariants：单调 lastEventId / 64-cap pendingPermissions / 诊断计数 / immutable storage)
   - ✅ [PR#4222](https://github.com/QwenLM/qwen-code/pull/4222) Wave 2 PR 6 HTTP load/resume session **MERGED 2026-05-17 04:58** (doudouOUC, 5 轮 review, 体量翻倍至 +2078/-51 16 文件；核心修：asymmetric coalesce guard bidirectional 收紧)
+  - 🔧 Wave 2 PR 7 [PR#4231](https://github.com/QwenLM/qwen-code/pull/4231) daemon-stamped client identity OPEN (chiga0, 2026-05-17 06:56, +672/-63, header-based echo + state-changing route gate + originatorClientId stamp)
   - 🔧 PR 3 follow-up [PR#4225](https://github.com/QwenLM/qwen-code/pull/4225) DaemonSessionClient hardening OPEN (chiga0, 2026-05-17, eager subscription guard + Last-Event-ID 拒 invalid cursor)
   - ⚠️ [PR#4226](https://github.com/QwenLM/qwen-code/pull/4226) typed event schema 竞品 OPEN (doudouOUC) — 与 PR#4217 重叠，待 close 或拆 reducer 作 Wave 5 PR 25 提前
   - 🔧 Bonus spikes: [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE adapter
