@@ -33,7 +33,7 @@ ACP NDJSON 协议 → HTTP+SSE daemon
 - ✅ [PR#4160](https://github.com/QwenLM/qwen-code/pull/4160) MERGED 2026-05-15（`createInMemoryChannel` helper；从 Mode A stack 中产出，但现在只作为通用 primitive）
 - 🔧 **Mode B 优先**（2026-05-15 决策）：Stage 1.5a must-haves（9 项）+ Stage 1.5c daemon-side state CRUD 优先；Mode A（[Issue #4156](https://github.com/QwenLM/qwen-code/issues/4156)）推迟到 1.5c 后
 - 📋 **Implementation tracker**：[Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) doudouOUC Mode B v0.16 production-ready **25-PR rollout plan**（6 Wave：Protocol foundation → Session lifecycle → Read-only control plane → Auth-gated mutation → Architecture extraction → Release hardening）—— 详 [§06 §三·一](./06-roadmap.md#三一-issue-4175--25-pr-wave-breakdown-production-ready-tracker)
-- 🎉 **Wave 1+2+2.5 完整 + Wave 3/4 双线推进**（2026-05-16~17 共 **16 MERGED + 2 OPEN**：13 Wave PRs + 3 follow-up MERGED + Wave 3 PR 14 + Wave 4 PR 16 在飞；Wave plan 进度 13/31 ≈ 42%；**无 block 点**）：
+- 🎉 **Wave 1+2+2.5 完整 + Wave 3/4 三 PR 同飞**（2026-05-16~17 共 **16 MERGED + 3 OPEN**：13 Wave PRs + 3 follow-up MERGED + Wave 3 PR 14 + Wave 4 PR 16/18 在飞累计 +7412 LOC；Wave plan 进度 13/31 ≈ 42%；**无 block 点**）：
   - ✅ [PR#4191](https://github.com/QwenLM/qwen-code/pull/4191) Wave 1 PR 2 capability registry **MERGED 2026-05-16 10:07** (doudouOUC)
   - ✅ [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) Wave 2 PR 5 per-request `sessionScope` override **MERGED 2026-05-16 15:54** (doudouOUC)
   - ✅ [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205) Wave 1 PR 1 baseline harness **MERGED 2026-05-16 16:41** (doudouOUC)
@@ -51,6 +51,7 @@ ACP NDJSON 协议 → HTTP+SSE daemon
   - ✅ Follow-up [PR#4245](https://github.com/QwenLM/qwen-code/pull/4245) integration test mirror align **MERGED 2026-05-17 14:53** (doudouOUC, 40m 一把过；第三次 drift —— mirror pattern 工程债待解)
   - 🔧 [PR#4247](https://github.com/QwenLM/qwen-code/pull/4247) Wave 3 PR 14 MCP client guardrails OPEN (doudouOUC, 2026-05-17 14:58, 跳过 PR 13；counter + 3-mode budget + slot reservation by name + atomic check-reserve; 引 claude-code prior art)
   - 🔧 [PR#4249](https://github.com/QwenLM/qwen-code/pull/4249) Wave 4 PR 16 workspace memory + agents CRUD OPEN (doudouOUC, 2026-05-17 15:06, +2954/-3 项目第二大 PR；7 routes; Config Proxy fail-loud; whitespace-append suppression; pre-PR 2 specialist agent review)
+  - 🔧 [PR#4250](https://github.com/QwenLM/qwen-code/pull/4250) Wave 4 PR 18 FileSystemService boundary OPEN (doudouOUC, 2026-05-17 15:19, +3270/-68 项目史上最大 PR；pure refactor 给 PR 19/20 chokepoint；8 security/correctness 防线 + SHA-256 path audit + 3 pre-PR agent / 5 P0+1 P1 pre-fix；引 claude-code + opencode prior art)
   - ✅ PR 3 follow-up [PR#4225](https://github.com/QwenLM/qwen-code/pull/4225) DaemonSessionClient hardening **MERGED 2026-05-17 07:05** (chiga0, 多模型 /review 4 轮；chiga0 让步把 eager guard 改回 lazy + cursor monotonicity + abort propagation + event.id validation)
   - ⚠️ [PR#4226](https://github.com/QwenLM/qwen-code/pull/4226) typed event schema 竞品 OPEN (doudouOUC) — 与 PR#4217 重叠，待 close 或拆 reducer 作 Wave 5 PR 25 提前
   - 🔧 Bonus spikes: [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE adapter
