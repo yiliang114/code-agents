@@ -136,6 +136,21 @@ capability registry → DaemonSessionClient → typed events
 | [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) `feat(channel): add daemon bridge spike` | `DaemonChannelBridge` in `@qwen-code/channel-base`：bind daemon session + consume SSE + route permission/cancel/model；server-side BFF only（最终 +2012）| ✅ **MERGED 2026-05-18 02:21** (chiga0) |
 | [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) `feat(ide): add daemon connection spike` | IDE daemon transport behind flag（最终 +1676）| ✅ **MERGED 2026-05-18 02:38** (chiga0) |
 
+#### Stage 1 / 2 adapter wire-up + experimental flag-gated (chiga0, 2026-05-18)
+
+> chiga0 把 adapter migration 工作进一步拆 **3 adapter × 3 stage = 9 PR**。Stage 0 spike 是 protocol primitive（已 ✅ 3/3），Stage 1 是 developer harness（reviewer 手验 + 不替换 production path），Stage 2 是 experimental flag-gated（真接入 production 渲染链，behind `--experimental-daemon-tui` / `qwen-code.experimentalDaemonIde` flag）。
+
+| Stage | PR | 内容 | 状态 |
+|---|---|---|---|
+| **Stage 1 TUI** | [PR#4260](https://github.com/QwenLM/qwen-code/pull/4260) | 新 CLI subcommand `qwen daemon-tui --daemon-url` + harness 测 prompt/cancel/model/permission（+248）| 🔧 OPEN draft + CHANGES_REQUESTED |
+| **Stage 1 channel** | [PR#4261](https://github.com/QwenLM/qwen-code/pull/4261) | `qwen channel start --daemon-url` flag + env vars；channel 改 depend on 结构 `ChannelBridge` interface，可注入 `AcpBridge`（默认）或 `DaemonChannelBridge`（opt-in）（+159/-43）| 🔧 OPEN draft + CHANGES_REQUESTED |
+| **Stage 1 IDE** | [PR#4263](https://github.com/QwenLM/qwen-code/pull/4263) | VS Code 新命令 `Qwen Code: Daemon Smoke Test`：stream daemon session 文本到 output channel + permission quickpick（+165）| 🔧 OPEN draft + CHANGES_REQUESTED |
+| **Stage 2 TUI** | [PR#4266](https://github.com/QwenLM/qwen-code/pull/4266) | CLI flag `--experimental-daemon-tui` —— **真接入 production Ink TUI**：history/pending-item components render daemon SSE（+664/-16）| 🔧 OPEN draft |
+| **Stage 2 IDE** | [PR#4267](https://github.com/QwenLM/qwen-code/pull/4267) | VS Code config `qwen-code.experimentalDaemonIde` —— **真注入 daemon-backed ACP-compatible connection 到 webview**，可替代 child-process ACP spawn（+230/-5）| 🔧 OPEN draft + CHANGES_REQUESTED |
+| **Stage 2 channel** | ⏳ 待开 | (channel stage 2 尚未开 PR) | ⏳ |
+
+chiga0 设计哲学（每 PR 反复出现）：**existing default path remains unchanged + opt-in only + draft for validation, not final replacement**。Wave 5 PR 26 提前覆盖 8/9 阶段。
+
 详 [§04 §一 Channel / Web BFF 适配安全边界](./04-deployment-and-client.md#channel--web-bff-适配安全边界pr4203-摘要)。
 
 ### Wave 2 — Session lifecycle + minimum multi-client safety
