@@ -132,9 +132,9 @@ capability registry → DaemonSessionClient → typed events
 
 | PR | 内容 | 状态 |
 |---|---|:---:|
-| [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) `feat(tui): add daemon adapter spike` | `DaemonTuiAdapter` reduce daemon SSE → TUI updates；forward prompt/cancel/model/permission；default-off layer before touching Ink runtime（+864 LOC）| 🔧 OPEN |
-| [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) `feat(channel): add daemon bridge spike` | `DaemonChannelBridge` in `@qwen-code/channel-base`：bind daemon session + consume SSE + route permission/cancel/model；server-side BFF only（+813 LOC）| 🔧 OPEN |
-| [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) `feat(ide): add daemon connection spike` | IDE daemon transport behind flag | 🔧 OPEN |
+| [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) `feat(tui): add daemon adapter spike` | `DaemonTuiAdapter` reduce daemon SSE → TUI updates；forward prompt/cancel/model/permission；default-off layer before touching Ink runtime（最终 +1970）| ✅ **MERGED 2026-05-18 03:22** (chiga0) |
+| [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) `feat(channel): add daemon bridge spike` | `DaemonChannelBridge` in `@qwen-code/channel-base`：bind daemon session + consume SSE + route permission/cancel/model；server-side BFF only（最终 +2012）| ✅ **MERGED 2026-05-18 02:21** (chiga0) |
+| [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) `feat(ide): add daemon connection spike` | IDE daemon transport behind flag（最终 +1676）| ✅ **MERGED 2026-05-18 02:38** (chiga0) |
 
 详 [§04 §一 Channel / Web BFF 适配安全边界](./04-deployment-and-client.md#channel--web-bff-适配安全边界pr4203-摘要)。
 

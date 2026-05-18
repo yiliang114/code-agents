@@ -127,7 +127,7 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 >
 > 💡 **Implementation tracker**：[Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) doudouOUC 的 Mode B v0.16 production-ready 25-PR rollout plan（6 Wave）—— 上表的 Stage 1.5a/c/-prereq 映射到 Wave 1-5；Wave 6 是 release hardening + v0.16。详 [§06 §三·一 Wave breakdown](./06-roadmap.md#三一-issue-4175--25-pr-wave-breakdown-production-ready-tracker)。
 >
-> 🎉 **Wave 1+2+2.5+3 完整 + Wave 4 过半**（2026-05-16~18 共 **20 MERGED + 2 OPEN**：16 Wave PRs + 4 follow-up + Wave 4 PR 16/21 OPEN；Wave plan 进度 16/31 ≈ **52% 过半**；**无 block 点**）：
+> 🎉 **Wave 1+2+2.5+3 完整 + Wave 4 过半 + 3 bonus spike 全 ship**（2026-05-16~18 共 **23 MERGED + 2 OPEN**：16 Wave PRs + 4 follow-up + 3 bonus adapter spike + Wave 4 PR 16/21 OPEN；Wave plan 进度 16/31 ≈ 52%；**无 block 点**）：
 > - ✅ Wave 1 **PR 2** [PR#4191](https://github.com/QwenLM/qwen-code/pull/4191) capability registry + protocol versions — **MERGED 2026-05-16 10:07** (doudouOUC)
 > - ✅ Wave 2 **PR 5** [PR#4209](https://github.com/QwenLM/qwen-code/pull/4209) per-request `sessionScope` override — **MERGED 2026-05-16 15:54** (doudouOUC, 4h26m open→merge)
 > - ✅ Wave 1 **PR 1** [PR#4205](https://github.com/QwenLM/qwen-code/pull/4205) baseline harness — **MERGED 2026-05-16 16:41** (doudouOUC, 4 Critical 修后；首份 `baseline-stage-1.json` 存档 macOS arm64 / RSS 223.5 MB / attach 1-3 ms / MCP 4 children constant under single-scope)
@@ -150,7 +150,7 @@ External Reference Architecture 提供 orchestrator 层（详 [§06 §五 Extern
 > - ✅ Wave 4 **PR 15** [PR#4236](https://github.com/QwenLM/qwen-code/pull/4236) mutation gating helper + `--require-auth` — **MERGED 2026-05-17 12:10** (doudouOUC, 3h06m, 2-3 轮 review 无 Critical 全 nit suggestion；最终 +620/-24；wenshao 真起 `qwen serve` **端到端 verify 4-cell behavior matrix 各 1 次**（review quality 新基线）；`createMutationGate` clean handoff for Wave 4 routes；`CONDITIONAL_SERVE_FEATURES` registry primitive；**解锁 Wave 4 PR 16-21 (6 个 PR)**)
 > - ✅ PR 3 follow-up [PR#4225](https://github.com/QwenLM/qwen-code/pull/4225) DaemonSessionClient hardening — **MERGED 2026-05-17 07:05** (chiga0, 3h11m open→merge, +323/-18 测试 141→205 行；多模型 /review pipeline：DeepSeek-v4-pro + claude-opus-4-7 + wenshao 4 轮 review；**chiga0 最终让步把 eager guard 改回 lazy**+ 加 `cursor monotonicity via Math.max`（同 PR#4217 reducer hardening pattern）+ abort-signal propagation + SSE `event.id` validation + test 钉 lazy-guard 防 regression)
 > - ⚠️ [PR#4226](https://github.com/QwenLM/qwen-code/pull/4226) typed event schema 竞品 OPEN (doudouOUC, 2026-05-17 03:58, +1398/-18, 测试/生产 1.8x)；与 PR#4217 重叠，开 4 分钟后 PR#4217 即 MERGED；**待 close 或拆 SessionState reducer 部分作 Wave 5 PR 25 提前**
-> - 🔧 **Bonus** client adapter spikes：[PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE (chiga0)；DaemonSessionClient + typed event 两层都已 ship，现可全 typed reducer 切换
+> - ✅ **Bonus** client adapter spikes 全 MERGED 2026-05-18：[PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) channel bridge (chiga0, 02:21, +2012) + [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) IDE connection (chiga0, 02:38, +1676) + [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) TUI adapter (chiga0, 03:22, +1970) —— **chiga0 沉默 14+ 小时后凌晨集中收尾 3 spike**；daemon 协议层（DaemonSessionClient + typed event + clientId + permission route）就位后实装；Wave 5 PR 26 (`flag-gated daemon client adapters`) **提前 3 阶段交付**
 
 详 [§06 Roadmap & Ecosystem](./06-roadmap.md)。
 
