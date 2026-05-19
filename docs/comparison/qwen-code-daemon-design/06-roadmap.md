@@ -114,7 +114,7 @@ capability registry → DaemonSessionClient → typed events
 | **2.5** Reliability + session lifecycle closure | client heartbeat + SSE replay sizing + slow-client warnings + session metadata/close-delete lifecycle | PR 9-11 — ✅ **3/3 MERGED**：PR 9 [#4235](https://github.com/QwenLM/qwen-code/pull/4235) + PR 10 [#4237](https://github.com/QwenLM/qwen-code/pull/4237) + PR 11 [#4240](https://github.com/QwenLM/qwen-code/pull/4240) 2026-05-17 | 1.5a #4 reliability + #2 lifecycle closure |
 | **3** Read-only control plane + diagnostics | read-only status routes + preflight/env diagnostics + MCP guardrails (measurement, not full pool) | PR 12-14 — ✅ **3/3 + PR 14b 全 MERGED**：PR 12 [#4241](https://github.com/QwenLM/qwen-code/pull/4241) + PR 13 [#4251](https://github.com/QwenLM/qwen-code/pull/4251) 2026-05-17 + PR 14 [#4247](https://github.com/QwenLM/qwen-code/pull/4247) 2026-05-18 + follow-up PR 14b [#4271](https://github.com/QwenLM/qwen-code/pull/4271) 2026-05-18 17:06 | 1.5c read-only + chiga0 diagnostics |
 | **4** Auth-gated mutation/control routes | **mutation gating helper** + memory/agents CRUD + approval/tools/init/MCP-restart + FileSystemService 边界 + safe file read + file write/edit + auth device-flow | PR 15-21 — ✅ **7/7 完整 MERGED** 🎉：PR 15/16/17/18/19/20/21 全合 (#4236/#4249/#4282/#4250/#4269/#4280/#4255) | 1.5c CRUD + 文件 routes |
-| **5** Architecture extraction + output sinks + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator + 独立 output sinks + flag-gated client adapters | PR 22-26 — ✅ PR 22a/22b/1/22b/2 MERGED ([#4295](https://github.com/QwenLM/qwen-code/pull/4295)/[#4298](https://github.com/QwenLM/qwen-code/pull/4298)/[#4304](https://github.com/QwenLM/qwen-code/pull/4304))；⏳ **F1** [#4319](https://github.com/QwenLM/qwen-code/pull/4319) (PR 22b/3 + 22b' 合并) OPEN target `daemon_mode_b_main`；PR 23-26 重组为 **F2-F5** feature PRs（maintainer 2026-05-19 分支策略调整）| 1.5-prereq full + 1.5a #3 full + adapter migration |
+| **5** Architecture extraction + output sinks + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator + 独立 output sinks + flag-gated client adapters | PR 22-26 — ✅ PR 22a/22b/1/22b/2 MERGED ([#4295](https://github.com/QwenLM/qwen-code/pull/4295)/[#4298](https://github.com/QwenLM/qwen-code/pull/4298)/[#4304](https://github.com/QwenLM/qwen-code/pull/4304))；✅ **F1** [#4319](https://github.com/QwenLM/qwen-code/pull/4319) (PR 22b/3 + 22b') MERGED 2026-05-19 to `daemon_mode_b_main`；🔧 **F1 follow-up** [#4334](https://github.com/QwenLM/qwen-code/pull/4334) OPEN；🚧 **F2** [#4336](https://github.com/QwenLM/qwen-code/pull/4336) (PR 23 shared MCP pool) WIP 3/6；🔧 **F3** [#4335](https://github.com/QwenLM/qwen-code/pull/4335) (PR 24 PermissionMediator) OPEN；F4-F5 待开 | 1.5-prereq full + 1.5a #3 full + adapter migration |
 | **6** Release hardening + v0.16 | alpha release docs + npm alpha publish + **production token defaults** (`~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token`) + deployment refs + v0.16 release | PR 27-31 | Stage 2 + release |
 
 ### Wave 1 — Protocol foundation（无依赖，可立即开始）
@@ -201,7 +201,7 @@ chiga0 设计哲学（每 PR 反复出现）：**existing default path remains u
 | PR | 内容 | 状态 |
 |---|---|:---:|
 | **PR 22** `refactor(serve): extract acp bridge primitives` | `httpAcpBridge.ts` 拆为 shared `AcpChannel` + `Transport` + `EventBus` + bridge primitives；CLI route contract 保持（依赖 PR 4, 8, 11）| 🟢 **拆 4 阶段 3/4 MERGED + F1 大融合** — PR 22a + 22b/1 + 22b/2 ✅ MERGED；**PR 22b/3 + 22b' 合并打包为 F1** [#4319](https://github.com/QwenLM/qwen-code/pull/4319) OPEN CHANGES_REQUESTED (5 rounds review)，target **`daemon_mode_b_main`** 长期 integration 分支（maintainer-requested 分支策略重组 2026-05-19，剩余 Mode B 工作拆 F1-F5 feature PRs）；详 #F1-PR-22b-3 段 |
-| **PR 23** `feat(mcp): shared MCP transport/process pool` | 真共享 pool，keyed by canonical workspace + server **config hash** + auth/env/runtime inputs；lifecycle/refcount tests（依赖 PR 22, 14）| ⏳ |
+| **PR 23** `feat(mcp): shared MCP transport/process pool` | 真共享 pool，keyed by canonical workspace + server **config hash** + auth/env/runtime inputs；lifecycle/refcount tests（依赖 PR 22, 14）| 🚧 **F2 WIP 3/6** [#4336](https://github.com/QwenLM/qwen-code/pull/4336) OPEN REVIEW_REQUIRED 2026-05-19 23:52（doudouOUC, target `daemon_mode_b_main`, +11848/-802 91 files；3/6 commits foundation only 无 daemon wiring；解 [PR#4306 揭示的 double MCP discovery 架构发现](#)；详 #F2-PR-23 段 |
 | **PR 24** `feat(security): client pairing revocation + PermissionMediator` | pair tokens + revocation API + audit log + 4 policy strategies（first-responder / designated / consensus / local-only）（依赖 PR 8, 22）| 🔧 **拆 2 阶段** — **F3** [#4335](https://github.com/QwenLM/qwen-code/pull/4335) OPEN REVIEW_REQUIRED 2026-05-19 19:34（doudouOUC, +9748/-517 62 files, target `daemon_mode_b_main`）—— 4 strategies 实现 + audit ring + 2 新 SSE 事件 + 3 typed errors + SDK reducer 扩展；pair-token + revocation API 推迟为后续 follow-up（consensus 需要的 voter auth）|
 | **PR 25** `refactor(output): daemon-compatible output sinks` | JSONL / stream-json / dual-output behavior 移到 protocol/output sink 边界后；让 CLI + daemon client 共享 event semantics 而不是 duplicate terminal-specific logic（依赖 PR 4, 22）—— PR#4226 doudouOUC 平行 reducer 实现可拆这里提前 | ⏳ |
 | **PR 26** `feat(adapters): flag-gated daemon client adapters` | 开始 TUI / channels / web-debug / IDE adapter migration behind flag，用 `DaemonSessionClient`；如 ownership/review size 需要可按 adapter 拆分；3 bonus spike [PR#4202](https://github.com/QwenLM/qwen-code/pull/4202) / [PR#4203](https://github.com/QwenLM/qwen-code/pull/4203) / [PR#4199](https://github.com/QwenLM/qwen-code/pull/4199) 已铺路（依赖 PR 3, 4, 25）| ⏳ |
@@ -310,6 +310,47 @@ chiga0 设计哲学（每 PR 反复出现）：**existing default path remains u
 | **#4299 → #4300 ✅** | `mapDomainErrorToErrorKind` regex → typed errors（`BridgeChannelClosedError` + `MissingCliEntryError`） | ~50 |
 | **#4325** | pre-existing channelInfo bug deferred | - |
 | **#4330** | SDK/server timeout coupling declined — 需 npm-publish or test-infra decision | - |
+
+#### PR 23 → F2 ([#4336](https://github.com/QwenLM/qwen-code/pull/4336)) — shared MCP transport pool
+
+🚧 **WIP 3/6 commits checkpoint** OPEN REVIEW_REQUIRED 2026-05-19 23:52Z (doudouOUC, +11848/-802 91 files, target `daemon_mode_b_main`)。**foundation only 无 daemon wiring**——pool 可独立构造但未集成；existing standalone qwen + per-session McpClient path **untouched**（71/71 mcp-client-manager tests pass unchanged）。
+
+**解 [PR#4306 揭示的 "double MCP discovery in ACP child"](#) 架构发现**——`runAcpAgent` bootstrap + per-session `newSessionConfig` 各跑独立 `McpClientManager` 的 2× spawn cost 浪费，F2 用 pool sharing 修。
+
+**已落 3/6 commits**：
+| # | 内容 | LOC | tests |
+|---|---|---|---|
+| 1 | `refactor(core): split McpClient.discover into pure tool/prompt list` | +315 | +8 (44/44) |
+| 2 | `feat(core): McpTransportPool + SessionMcpView` | +2526 | +40 (155/155) |
+| 3 | `feat(core): cross-platform pid sweep + commit-2 review fixes` | +366 | +6 (161/161) |
+
+**余 3/6 commits**（同分支续推）：
+| # | 内容 |
+|---|---|
+| 4 | wire pool 到 `QwenAgent` daemon mode：Config/ToolRegistry/McpClientManager threading + `acpAgent.newSessionConfig` 注入 + `killSession releaseSession` + CLI flags |
+| 5 | pool-aware status + restart routes：`GET /workspace/mcp` 读 pool / `POST .../restart?entryIndex=` / `entryCount` + `entrySummary` + capability tags |
+| 6 | **graduate MCP budget guardrails to workspace scope**：pool inherit PR 14b state machine，snapshot cell `scope:'workspace'`，SDK `scope?` additive |
+
+**关键不变式**（design doc `docs/design/f2-mcp-transport-pool.md` v2.1）：
+
+| 不变式 | 内容 |
+|---|---|
+| Fingerprint key §5.1 | SHA-256 over canonical config；per-session filters (`includeTools`/`excludeTools`/`trust`) **excluded**；OAuth normalized via `canonicalOAuth` (V21-9) |
+| HTTP/SSE opt-in §5.2 V21 C8 | default `pooledTransports = {stdio, websocket}`；HTTP/SSE 走 `createUnpooledConnection` unless operator 显式 opt in |
+| `spawnInFlight` dedupe §6.2 | 5 concurrent acquires for same key → 1 spawn（测试钉） |
+| Drain grace + max-idle hard cap §6.3 | default 30s drain，5min hard cap 抗 flap |
+| `sessionToEntries` reverse index V21-2 | `releaseSession` O(refs) not O(entries) |
+| Spawn-failure slot release V21-4 | `.catch` arm releases reserved slot before re-throwing |
+| Snapshot replay on attach §7.2 V21 C4 | 同步 `applyTools`/`applyPrompts` 防 late attacher 见 empty state；`skipReplay` gate for unpooled bypass path |
+| Generation guard §7.3 | stale `tools/list_changed` handlers from pre-reconnect Client instances 不覆盖 post-reconnect snapshots |
+| Per-session trust copy §7.1 V21 C7 | `tool.withTrust(this.cfg.trust)` clone；trust 不变时 allocation pin |
+| Cross-platform descendant pid sweep §6.4 V21 C6 | Linux/macOS `pgrep -P` recursive / Windows PowerShell CIM；bounded 2s timeout / 256 max / 8 depth；graceful degradation |
+
+**pre-review pass 模式**：commit 2 写完后 background 跑 `code-reviewer` agent，**继续 implement commit 3 期间并行 review**。抓 2 P1 bugs：
+- **P1 #1** `PooledConnection.release()` 是 no-op 漏 refs
+- **P1 #2** `createUnpooledConnection` 双 teardown —— `attach` 的 snapshot replay 调 `removeMcpToolsByServer` 抹掉 `discover()` 刚注册的 tools
+
+都 fold 到 commit 3 with 显式 comment 引用 review pass —— **"review at implement" 工作流**，比 daemon 项目之前的 "review at merge" → "review continuously" 更进一步。
 
 ### Wave 6 — Release hardening + v0.16
 
