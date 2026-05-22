@@ -81,7 +81,7 @@ OpenAI-compatible 请求大致经历以下步骤：
 | Provider | 识别条件 | 主要请求行为 | 主要响应/解析行为 |
 | --- | --- | --- | --- |
 | Default | 其他都不命中 | 加 `User-Agent`；应用输出 token 默认值；合并 `extra_body`；qwen3 模型会把历史里的 `reasoning_content` 镜像到 `reasoning` | 使用通用 OpenAI response converter |
-| DashScope | `authType=qwen-oauth`；无 `baseUrl`；DashScope 官方域名；`*.alibaba-inc.com` / `*.aliyun-inc.com`；或精确匹配 `DASHSCOPE_PROXY_BASE_URL` | 加 `X-DashScope-*` header；加 `metadata.sessionId/promptId/channel`；按配置加 `cache_control`；视觉模型加 `vl_high_resolution_images`；合并 `extra_body` | 仍走通用 converter；缓存统计是否显示取决于响应 usage 字段是否能被 converter 映射 |
+| DashScope | `authType=qwen-oauth`；无 `baseUrl`；DashScope 官方域名；内部企业域名通配；或精确匹配 `DASHSCOPE_PROXY_BASE_URL` | 加 `X-DashScope-*` header；加 `metadata.sessionId/promptId/channel`；按配置加 `cache_control`；视觉模型加 `vl_high_resolution_images`；合并 `extra_body` | 仍走通用 converter；缓存统计是否显示取决于响应 usage 字段是否能被 converter 映射 |
 | DeepSeek | host 是 `api.deepseek.com` 或子域名；或 model 名包含 `deepseek` | message content part 扁平化为字符串；assistant 历史补 `reasoning_content`；官方 DeepSeek host 才把 `reasoning.effort` 改成 `reasoning_effort` | 默认 temperature 为 0；禁用 thinking 时，官方 DeepSeek host 会发送 `thinking: { type: "disabled" }` |
 | OpenRouter | `baseUrl` 包含 `openrouter.ai` | 加 `HTTP-Referer` 和 `X-OpenRouter-Title` | 使用通用 converter |
 | ModelScope | `baseUrl` 包含 `modelscope` | 非流式请求删除 `stream_options`，避免后端不接受 | 使用通用 converter |
@@ -138,24 +138,18 @@ DashScope 会在 request body 中加入：
 
 这只是告诉 DashScope “这些内容可缓存”。是否返回缓存命中，仍取决于服务端实际缓存策略和 usage 返回。
 
-### 4. DataWorks / 内部域名
+### 4. 内部企业域名
 
-PR #4157 合入后，DashScope provider 识别规则增加了内部域名：
-
-```text
-*.alibaba-inc.com
-*.aliyun-inc.com
-```
-
-因此类似下面的 `baseUrl` 会被识别为 DashScope provider：
+PR #4157 合入后，DashScope provider 识别规则增加了内部企业域名通配：
 
 ```text
-https://pre-dw.alibaba-inc.com/...
-https://pre-bff.dw.alibaba-inc.com/...
-https://model-gateway.aliyun-inc.com/...
+*.internal-corp-domain-1.com
+*.internal-corp-domain-2.com
 ```
 
-注意它匹配的是子域名。裸域名 `https://alibaba-inc.com/...` 和 `https://aliyun-inc.com/...` 不会命中。
+因此内部平台的 model gateway、BFF 等子域名会被自动识别为 DashScope provider。
+
+注意它匹配的是子域名，裸域名不会命中。
 
 ### 5. DASHSCOPE_PROXY_BASE_URL
 
@@ -284,7 +278,7 @@ thinking
 
 ```text
 1. authType 是 qwen-oauth？没有 baseUrl？DashScope。
-2. baseUrl hostname 是 DashScope 官方域名、内部 Alibaba 域名，或等于 DASHSCOPE_PROXY_BASE_URL？DashScope。
+2. baseUrl hostname 是 DashScope 官方域名、内部企业域名，或等于 DASHSCOPE_PROXY_BASE_URL？DashScope。
 3. baseUrl hostname 是 api.deepseek.com，或 model 含 deepseek？DeepSeek。
 4. baseUrl 含 openrouter.ai？OpenRouter。
 5. baseUrl 含 modelscope？ModelScope。
@@ -293,4 +287,4 @@ thinking
 8. 否则 Default。
 ```
 
-对 DataWorks 这类域名，在包含 #4157 的版本里，`pre-dw.alibaba-inc.com` / `pre-bff.dw.alibaba-inc.com` 会在第 2 步命中 DashScope。
+对内部平台域名，在包含 #4157 的版本里，企业内部 gateway 子域名会在第 2 步命中 DashScope。
