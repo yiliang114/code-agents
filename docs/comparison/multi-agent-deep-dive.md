@@ -1,0 +1,457 @@
+# 30. 子代理与多代理架构深度对比
+
+> 从"单代理做一切"到"多代理分工协作"，AI 编程代理正在从个体工具进化为代理团队。
+
+## 总览
+
+| Agent | 多代理模式 | 内置代理数 | 并行能力 | 委托方式 | 独特设计 |
+|------|-----------|-----------|---------|---------|---------|
+| **Claude Code** | Teammates 协作 | 子代理按需 | ✓（worktree + tmux） | Agent 工具 | **AI-AI 团队分工** |
+| **Gemini CLI** | 5 内置子代理 | **5** | ✓ | AgentRegistry | **A2A 远程代理** |
+| **Copilot CLI** | 3 内置代理 | **3** | — | YAML 定义 | **"$20 in jeans" 审查标准** |
+| **Qwen Code** | Arena 竞争 | 继承 + Arena | ✓（Tmux/iTerm2） | ArenaManager | **多模型竞争选优** |
+| **Kimi CLI** | 5 代理类型 | **5** | ✓（前台/后台） | Wire 协议 | **D-Mail 时间回溯** |
+| **OpenHands** | 4 复合代理 | **4** | ✓ | AgentDelegate | **EventStream 解耦** |
+| **Aider** | 双模型流水线 | 1（双阶段） | — | 内部委托 | **架构师→编辑器** |
+| **Codex CLI** | Multi-agent v2（v0.117） | 实验性 | — | 逻辑路径地址（如 `/root/agent_a`） | 结构化代理间消息 + Plugins 一等公民 |
+| **Goose** | MCP 工具委托 | — | — | Recipe | **纯 MCP 工作流** |
+| **Hermes Agent** | 主代理 + **后台 Review 子代理** | 1 + `delegate_tool` + `mixture_of_agents_tool` | ✓（asyncio） | spawn_background_review | **双计数器 Nudge + post-response 派发 + max_iter=8** |
+
+---
+
+## 一、Claude Code：Teammates 团队协作
+
+> 来源：02-commands.md（/agents 命令）、二进制分析
+
+### Teammates 架构
+
+```
+Leader Agent（主终端）
+  │
+  ├── claude --teammates "reviewer:审查 PR" "implementer:修复 Bug"
+  │
+  ├── Teammate 1（tmux pane / iTerm2 tab）
+  │   ├── 独立 Git worktree
+  │   ├── 可分配不同模型和角色
+  │   └── 独立工具集和上下文
+  │
+  └── Teammate 2（tmux pane / iTerm2 tab）
+      ├── 独立 Git worktree
+      └── 独立上下文
+```
+
+### Agent 工具（子代理）
+
+```typescript
+// 子代理启动参数
+{
+  prompt: "分析这个模块的性能瓶颈",
+  model: "haiku",        // 可指定不同模型
+  isolation: "worktree"  // 可选 worktree 隔离
+}
+```
+
+- 子代理继承父代理工具集，但有独立对话历史
+- TaskCreate/TaskGet/TaskList/TaskUpdate 支持后台并行任务
+- EnterWorktree/ExitWorktree 支持动态 Git worktree 切换
+
+### /review 插件的多代理编排
+
+```
+Step 1: 前置检查（Haiku）
+Step 2: 收集 CLAUDE.md（Haiku）
+Step 3: 变更摘要（Sonnet）
+Step 4: 并行审查（4 代理同时启动）
+  ├── Agent 1-2（Sonnet）：CLAUDE.md 合规审计
+  ├── Agent 3（Opus）：Bug 扫描
+  └── Agent 4（Opus）：安全/逻辑分析
+Step 5: 并行验证（子代理确认每个问题）
+Step 6-9: 过滤 → 输出 → PR 评论
+```
+
+---
+
+## 二、Gemini CLI：5 内置子代理 + A2A 远程
+
+> 源码：`packages/core/src/agents/`，AgentRegistry
+
+### 5 个内置子代理
+
+| 子代理 | 工具权限 | 模型 | 轮次/超时 | 条件 |
+|--------|---------|------|----------|------|
+| **generalist** | 全部工具 | 继承主模型 | 20 轮 / 10 分钟 | 始终注册 |
+| **codebase_investigator** | 只读（glob/grep/ls/read_file） | Flash | 10 轮 / 3 分钟 | 始终注册 |
+| **memory_manager** | 读写 GEMINI.md | Flash | 10 轮 / 5 分钟 | 需设置启用 |
+| **cli_help** | 内部文档查询 | Flash | 10 轮 / 3 分钟 | 始终注册 |
+| **browser** | Puppeteer Web 自动化 | Flash | 50 轮 / 10 分钟 | 需设置启用 |
+
+### v0.33 新增：Plan Mode 内置研究子代理
+
+v0.33.0（2026-03-11）Plan Mode 扩展为支持内置研究子代理：
+- Plan 阶段可调用 `codebase_investigator` 进行只读代码分析
+- 注解反馈（annotation）支持：用户可在计划项上添加反馈
+- `copy` 子命令：复制计划内容到剪贴板
+
+### 子代理终止模式
+
+`GOAL`（完成目标）、`MAX_TURNS`（达到轮次上限）、`TIMEOUT`（超时）、`ERROR`（错误）、`ABORTED`（中止）、`ERROR_NO_COMPLETE_TASK_CALL`
+
+### A2A 远程代理（v0.33.0+）
+
+```markdown
+<!-- .gemini/agents/remote-reviewer.md -->
+---
+name: remote-reviewer
+agentCardUrl: https://reviewer.example.com/.well-known/agent.json
+---
+远程代码审查代理，通过 A2A 协议通信。
+```
+
+- `@a2a` 工具允许模型向远程 Agent 发送消息
+- HTTP 认证 + Agent Card 自动发现
+- A2A 协议 v0.3（gRPC、安全签名）
+
+---
+
+## 三、Copilot CLI：3 内置代理（YAML 定义）
+
+> 来源：03-architecture.md、EVIDENCE.md
+
+### 三个专用代理
+
+| 代理 | 模型 | 工具权限 | 核心职责 |
+|------|------|---------|---------|
+| **code-review** | Claude Sonnet 4.5 | `["*"]`（全部工具） | 8 维度审查 + 可编译运行测试 |
+| **explore** | Claude Haiku 4.5 | 仅 grep/glob/view/lsp | 只读代码探索，300 字符限制 |
+| **task** | Claude Haiku 4.5 | `["*"]`（全部工具） | 后台任务执行，最小输出 |
+
+### v1.0.10 新增：实验性多并发会话
+
+- SDK 客户端可注册自定义 slash 命令（启动或加入会话时）
+- SDK 支持 `session.ui.elicitation` 向用户展示交互式对话框
+- **实验性支持多并发会话**——同一终端运行多个独立代理
+
+### code-review 代理审查标准
+
+Prompt 中的核心指令：
+
+> "Finding a review feedback should feel like finding a $20 bill in the pocket of jeans you are about to throw in the washing machine."
+
+8 个审查维度：bugs、security、race conditions、memory leaks、error handling、assumptions、breaking changes、performance。
+
+**明确排除假阳性**：代码风格、格式化、主观建议一律不报。
+
+---
+
+## 四、Qwen Code：Arena 竞争模式
+
+> 来源：EVIDENCE.md（ArenaManager.ts）
+
+### Arena 架构
+
+```
+用户任务
+  │
+  ArenaManager
+  ├── Agent 1（Model A）── 独立 Git worktree ── iTerm2 pane
+  ├── Agent 2（Model B）── 独立 Git worktree ── Tmux pane
+  └── Agent 3（Model C）── 独立 Git worktree ── InProcess
+  │
+  所有完成后 → 用户选择最佳方案
+```
+
+### 终端后端
+
+| 后端 | 适用 | 特点 |
+|------|------|------|
+| iTerm2 | macOS | 原生分屏 |
+| Tmux | Linux/macOS | 通用 |
+| InProcess | 所有平台 | 无 UI，纯后台 |
+
+### v0.12 新增：`ask_user_question` 交互式提问
+
+AI 代理在任务执行中可主动向用户提问，实时收集偏好：
+
+```
+Agent 执行任务 → 遇到歧义 → ask_user_question("你希望用 REST 还是 GraphQL？")
+  → 用户回答 → Agent 继续执行
+```
+
+### Arena vs Teammates
+
+| 维度 | Qwen Arena | Claude Teammates |
+|------|-----------|-----------------|
+| 模式 | **竞争**（选最优） | **协作**（分工） |
+| 任务 | 同一任务多模型执行 | 不同子任务分配 |
+| 模型 | 必须不同 | 可以相同或不同 |
+| 输出 | 用户选择胜者 | 合并所有结果 |
+
+---
+
+## 五、Kimi CLI：5 代理类型 + D-Mail
+
+> 源码：`soul/slash.py`、Wire v1.6 协议
+
+### 5 种代理类型
+
+| 类型 | 工具权限 | 用途 |
+|------|---------|------|
+| **default** | 全部 | 主代理 |
+| **coder** | 读/写/执行 | 软件工程任务 |
+| **explore** | 只读 | 代码探索 |
+| **plan** | 纯分析（无 shell） | 架构规划 |
+| **okabe** | 全部 + SendDMail | 实验性时间回溯 |
+
+### Agent 工具委托
+
+```python
+# 参数
+description: str       # 任务描述
+prompt: str            # 详细提示
+subagent_type: str     # 代理类型
+model: str             # 可选模型覆盖
+run_in_background: bool  # 前台/后台
+```
+
+- 前台代理：等待结果后返回
+- 后台代理：立即返回，通过 `agent_id` 后续查询
+- 会话持久化：通过 `agent_id` 恢复
+
+### D-Mail（时间回溯，实验性）
+
+`okabe` 代理中的 `SendDMail` 工具，向过去检查点发送消息，回滚上下文。灵感来自 Steins;Gate 的 D-Mail 概念。
+
+---
+
+## 六、OpenHands：4 复合代理 + EventStream
+
+> 来源：openhands.md
+
+### 4 种代理
+
+| 代理 | 核心能力 |
+|------|---------|
+| **CodeAct** | 主代理，代码执行 |
+| **BrowsingAgent** | 文本 Web 导航 |
+| **VisualBrowsingAgent** | 视觉 Web（Playwright + BrowserGym + SOM） |
+| **ReadOnlyAgent** | 只读分析 |
+
+### AgentDelegate 委托
+
+```
+CodeAct
+  ├── 代码任务 → 直接执行
+  ├── Web 任务 → AgentDelegate → BrowsingAgent
+  └── 分析任务 → AgentDelegate → ReadOnlyAgent
+```
+
+### EventStream 架构
+
+```
+Action → EventStream（发布/订阅总线）→ Runtime → Observation → 订阅者通知
+```
+
+完全解耦的事件模型，支持异步多代理协作。
+
+---
+
+## 七、Aider：双模型流水线（非多代理）
+
+> 源码：`aider/coders/architect_coder.py`
+
+```
+用户请求 → [架构师模型（主模型）] → 生成方案（自然语言）
+                    ↓
+             [编辑器模型] → 执行修改（diff）
+```
+
+- `ArchitectCoder` 继承自 `AskCoder`（只读）
+- 编辑器 Coder 的 `map_tokens=0`（不重复加载仓库地图）
+- 不是真正的多代理，而是**同一代理内的双模型管道**
+
+---
+
+## 设计模式对比
+
+### 协作 vs 竞争 vs 评估 vs 委托
+
+| 模式 | 代表 | 优势 | 劣势 |
+|------|------|------|------|
+| **协作分工** | Claude Teammates | 任务并行，效率高 | 协调复杂 |
+| **竞争选优** | Qwen Arena | 多视角，质量高 | 资源浪费（N 倍成本） |
+| **独立评估者模式** | Anthropic Harness（Planner→Generator→Evaluator） | 独立评估，质量可控 | 延迟高，成本高 |
+| **专用委托** | Gemini 5 子代理 | 职责清晰，资源可控 | 灵活性有限 |
+| **事件解耦** | OpenHands EventStream | 最灵活，异步 | 架构最复杂 |
+| **流水线** | Aider Architect | 简单高效 | 非并行 |
+
+### 独立评估者模式 vs Arena 竞争（来源：[Anthropic Engineering Blog](https://www.anthropic.com/engineering/harness-design-long-running-apps)，2026-03-24）
+
+两种解决"Agent 自评失败"问题的不同路径：
+
+| 维度 | 独立评估者模式（Anthropic Harness） | Arena 竞争（Qwen Code） |
+|------|-------------------------------|----------------------|
+| **核心思路** | 1 个 Generator + 1 个独立 Evaluator | N 个 Generator 竞争同一任务 |
+| **质量保证** | Evaluator 按标准打分，不达标则退回重做 | 用户从 N 个结果中选最优 |
+| **成本模型** | 固定（1 生成 + 1 评估 × 迭代次数） | 线性（N 倍生成成本） |
+| **适用场景** | 长任务、主观质量（前端设计、UX） | 短任务、客观质量（代码正确性） |
+| **关键发现** | "调校独立评估者比让生成者自我批评**容易得多**" | 多模型视角减少单一模型偏见 |
+
+**Anthropic 的三代理架构**：
+
+```
+Planner（规划）
+  → 将 1-4 句用户需求扩展为完整产品规格
+  → 重范围界定，轻技术细节
+
+Generator（生成）
+  → 增量式实现，React/Vite/FastAPI/SQLite + Git
+  → Sprint 分解：v0/v1 harness 使用（含 Opus 4.5），v2（Opus 4.6）已移除
+
+Evaluator（评估）
+  → 通过 Playwright 测试运行中的应用
+  → 前端设计评估 4 维度：设计质量、原创性、技术工艺（craft）、功能
+    （设计+原创性权重更高——因为 Claude 在工艺和功能性上已默认表现良好）
+  → 全栈应用评估 4 维度：产品深度、功能完整性、视觉设计、代码质量
+  → Few-shot 校准 + 显式怀疑指令
+```
+
+**关键洞察**：
+- Generator 自评时倾向"自信地夸赞平庸作品"——与人类 code review 中的"自审盲区"一致
+- Evaluator 天然倾向宽松，需要显式"怀疑指令" + few-shot 校准
+- 评估标准的措辞会**隐式引导 Generator**（如"museum quality"导致视觉趋同）
+- **Sprint 分解不是永恒的**——Sprint 最初用于所有模型（含 Opus 4.5），Opus 4.6 的长任务能力提升使得 Sprint 机制可以被完全移除（原文："I removed the sprint construct entirely"）
+
+### Progress File 模式：跨会话状态传递（来源：[Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)，Justin Young，2025-11-26）
+
+> **注**：本节来源与上方 独立评估者模式章节（[Harness Design for Long-Running Application Development](https://www.anthropic.com/engineering/harness-design-long-running-apps)，Prithvi Rajasekaran，2026-03-24）是**两篇独立文章**。前者聚焦长任务 Agent 的运维实践（Progress File、Feature List、Incremental Commit），后者聚焦多代理评估架构（Planner→Generator→Evaluator）。两者互为补充但方案不同。
+
+Anthropic 在长任务 harness 开发中发现：多代理系统的关键挑战是**跨会话状态传递**——当上下文重置后，新 Agent 如何快速了解之前的工作进展？
+
+**解决方案：`claude-progress.txt` + Git 历史**
+
+```
+Initializer Agent（首次会话）
+  → 创建 init.sh
+  → 创建 claude-progress.txt（空进展日志）
+  → 写入 feature-list.json（200+ 功能点，全部标记 "passes": false）
+  → 初始 Git commit
+
+Coding Agent（后续每次会话）
+  → 读取 claude-progress.txt + git log → 了解当前状态
+  → 选择一个 failing 功能点开始工作
+  → 完成后更新 claude-progress.txt + git commit
+  → 修改 feature-list.json 中对应功能的 "passes": true
+```
+
+> "The key insight here was finding a way for agents to quickly understand the state of work when starting with a fresh context window, which is accomplished with the claude-progress.txt file alongside the git history. Inspiration for these practices came from knowing what effective software engineers do every day."
+
+**为什么用 JSON 而非 Markdown**：
+
+> "After some experimentation, we landed on using JSON for this, as the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files."
+
+**Feature List 防止提前宣告胜利**：
+
+```json
+{
+  "category": "functional",
+  "description": "New chat button creates a fresh conversation",
+  "steps": [
+    "Navigate to main interface",
+    "Click the 'New Chat' button",
+    "Verify a new conversation is created"
+  ],
+  "passes": false
+}
+```
+
+此外，Anthropic 还强调了功能测试列表的不可篡改性——防止 Agent 通过删除或修改测试来"伪造"进度：
+
+> "We use strongly-worded instructions like 'It is unacceptable to remove or edit tests because this could lead to missing or buggy functionality.'"
+
+**各 Agent 的跨会话状态传递实现**：
+
+| Agent | 状态传递机制 | 等价于 progress file |
+|------|------------|-------------------|
+| **Claude Code** | auto-memory + `/compact` 摘要 | 部分等价（记忆系统） |
+| **Gemini CLI** | memory_manager → GEMINI.md | 部分等价（记忆文件） |
+| **Aider** | 递归摘要 `done_messages` | 仅上下文内（非文件） |
+| **Goose** | Recipe 配置 | ✗ |
+| **OpenHands** | EventStream 持久化 | 部分等价（事件日志） |
+
+> **自建 Harness 的完整实现**：如果你从零构建长任务多代理系统（如 Anthropic 的 Harness 方案），可以实现 `claude-progress.txt` + JSON feature list 的完整模式——这是目前最完备的跨会话状态传递方案，但需要自建 Harness 基础设施。现有成品 Agent 的记忆系统（auto-memory、GEMINI.md）是轻量级替代，但缺少 JSON feature list 的"防提前完成"能力。
+
+### Anthropic 多代理研究系统：90.2% 提升（来源：[Anthropic Engineering Blog](https://www.anthropic.com/engineering/multi-agent-research-system)，2025-06-13）
+
+> "We found that a multi-agent system with Claude Opus 4 as the lead agent and Claude Sonnet 4 subagents outperformed single-agent Claude Opus 4 by 90.2% on our internal research eval."
+
+**成本模型**：
+
+> "Agents typically use about 4x more tokens than chat interactions, and multi-agent systems use about 15x more tokens than chats."
+
+**Token 使用解释了 80% 的性能差异**：
+
+> "Token usage by itself explains 80% of the variance, with the number of tool calls and the model choice as the two other explanatory factors."
+
+**工具测试代理**——Agent 自动改进其他 Agent 的工具描述：
+
+Anthropic 还创建了一个**工具测试代理**——当给定一个有缺陷的 MCP 工具时，它反复尝试使用并重写工具描述来避免失败。这一改进工具描述的过程使后续代理的任务完成时间减少了 40%。
+
+### 构建 10 万行编译器：16 个并行 Claude 实例（来源：[Anthropic Engineering Blog](https://www.anthropic.com/engineering/building-c-compiler)，2026-02-05）
+
+> "Over nearly 2,000 Claude Code sessions and $20,000 in API costs, the agent team produced a 100,000-line compiler that can build Linux 6.9 on x86, ARM, and RISC-V."
+
+**关键工程经验**：
+
+| 问题 | 解决方案 |
+|------|---------|
+| **验证器必须近乎完美** | "Claude will work autonomously to solve whatever problem I give it. So it's important that the task verifier is nearly perfect, otherwise Claude will solve the wrong problem." |
+| **上下文窗口污染** | "The test harness should not print thousands of useless bytes. At most, it should print a few lines of output and log all important information to a file." |
+| **时间盲** | "Claude can't tell time and, left alone, will happily spend hours running tests instead of making progress." 解决方案：`--fast` 选项运行 1%-10% 随机采样 |
+
+### 何时该用多代理、何时不该用（来源：[claude.com/blog](https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them)，2026-01-23）
+
+> "Multi-agent systems typically use 3-10x more tokens than single-agent approaches for equivalent tasks."
+
+Anthropic 在实践中发现，很多团队投入数月构建复杂的多代理架构，最终发现改进单代理的 prompt 就能达到同等效果。
+
+**三个适用场景**：
+
+| 场景 | 说明 | 阈值 |
+|------|------|------|
+| **上下文污染** | 不同任务的上下文互相干扰降低推理质量 | 上下文接近容量限制 |
+| **并行化** | 多代理同时探索更大的搜索空间 | 任务可自然分解为独立子任务 |
+| **专业化** | 工具数超过 15-20 导致选择混乱 | 先尝试 Tool Search Tool（可减少 85% token） |
+
+> "Start with the simplest approach that works, and add complexity only when evidence supports it."
+
+### GitHub Squad：共享决策文件的协作模式（来源：[GitHub Blog](https://github.blog/ai-and-ml/github-copilot/how-squad-runs-coordinated-ai-agents-inside-your-repository/)，2026-03-19）
+
+> "You aren't splitting one context among four agents, you're replicating repository context across them."
+
+**Drop-box 模式**：架构决策追加到版本化的 `decisions.md` 文件，提供持久性、可读性和完整的审计跟踪。
+
+**强制独立审查**：编排层阻止原始 Agent 修改自己的产出——测试失败时由不同 Agent 提供全新视角。
+
+### 隔离策略
+
+| Agent | 隔离方式 | 上下文共享 |
+|------|---------|-----------|
+| Claude Code | Git worktree | 独立上下文 |
+| Qwen Code | Git worktree（Arena） | 独立上下文 |
+| Gemini CLI | AgentSession | 独立上下文 + 轮次限制 |
+| Kimi CLI | Wire 协议 | 独立上下文 + 会话持久化 |
+| OpenHands | Docker/K8s | EventStream 共享 |
+
+---
+
+## 证据来源
+
+| Agent | 来源 | 获取方式 |
+|------|------|---------|
+| Claude Code | 02-commands.md + 05-skills.md | 二进制分析 |
+| Gemini CLI | 04-tools.md + 03-architecture.md | 开源 |
+| Copilot CLI | 03-architecture.md + EVIDENCE.md | SEA 反编译 |
+| Qwen Code | EVIDENCE.md（ArenaManager.ts） | 开源 |
+| Kimi CLI | 03-architecture.md + EVIDENCE.md | 开源 |
+| OpenHands | openhands.md | 开源 |
+| Aider | 03-architecture.md | 开源 |
