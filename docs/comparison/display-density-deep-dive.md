@@ -6,9 +6,9 @@
 
 ## 一、实测三家（80×30 tmux，prompt: `list files in this directory`）
 
-### Qwen Code v0.15.2 实测截图
+### Qwen Code v0.16.0 实测截图
 
-`compactMode: true`（用户 `~/.qwen/settings.json` 的实际配置，已是省空间版）+ DashScope API：
+`compactMode: true`（用户 `~/.qwen/settings.json` 的实际配置，已是省空间版）+ DashScope API（v0.15.2 实测，v0.16.0 对照源码无渲染变化）：
 
 ```
   ┌──────────────────────────────────────────────────────────────────────────┐
@@ -177,11 +177,11 @@
 
 | Agent | 实测/构造 | 结构性开销 | 留给对话 | 单工具组开销 |
 |---|---|---|---|---|
-| **Qwen Code** v0.15.2（compactMode=true） | ✅ 实测 | 11 行（header sticky） | **19 行** | 4 行（圆角全 4 边） |
+| **Qwen Code** v0.16.0（compactMode=true） | ✅ 实测（v0.15.2）/ v0.16.0 源码对照无渲染变化 | 11 行（header sticky） | **19 行** | 4 行（圆角全 4 边） |
 | **OpenCode** v1.14.24 | ✅ 实测 | 6 行（无 header） | **24 行** | 0 行额外（`┃` 共线） |
 | **Claude Code** v2.1.120 | ✅ 实测 | 5 行（多轮后 banner 滚出） | **~25 行** | **1 行**（单行描述 + ctrl+o 展开） |
 
-> **关键发现（修正版）**：
+> **关键发现（修正版，v0.16.0 核实）**：
 > - **Qwen 的 header panel 是 sticky 的** ——永远占据顶部 6 行不滚动，加上 Tips + 4 行 tool 框，结构性开销固定 11 行。
 > - **OpenCode 完全无 header**（活动会话路由），只有 composer/footer 占 6 行，对话区天然最大。
 > - **Claude 的 welcome banner 首轮 11 行，但是非 sticky**——随对话滚动消失，多轮稳态后对话区 ~25 行接近 OpenCode。
@@ -378,7 +378,7 @@ OpenCode composer 占 5 行（含 mode/model 行 + ╹ 分隔），比 Claude/Qw
 
 ## 证据来源
 
-- Qwen Code: `/root/git/qwen-code/packages/cli/src/ui/`（v0.15.2 实测，compactMode=true）
+- Qwen Code: `/root/git/qwen-code/packages/cli/src/ui/`（v0.15.2 实测，compactMode=true；2026-05-22 对照 v0.16.0 复核——Header.tsx / Footer.tsx / AsciiArt.ts / ToolGroupMessage.tsx 均无变化，HistoryItemDisplay.tsx 新增 props 但 marginTop=1 逻辑不变；ink 升至 ^7.0.3 但无 altscreen 影响）
 - OpenCode: `/root/git/opencode/packages/opencode/src/cli/cmd/tui/`（v1.14.24 实测）
 - Claude Code v2.1.120 实测（在 tmux 内运行 `claude` CLI 抓取）+ [11. 终端渲染](../tools/claude-code/11-terminal-rendering.md) 等公开文档
 - 截图原始文件：[`screenshots/qwen-code-session-80x30.txt`](./screenshots/qwen-code-session-80x30.txt)、[`screenshots/opencode-home-80x30.txt`](./screenshots/opencode-home-80x30.txt)、[`screenshots/opencode-session-80x30.txt`](./screenshots/opencode-session-80x30.txt)、[`screenshots/claude-code-session-80x30.txt`](./screenshots/claude-code-session-80x30.txt)
@@ -416,4 +416,4 @@ sleep 8
 tmux capture-pane -t cc -p
 ```
 
-> **免责声明**：实测基于 Qwen Code v0.15.2 + compactMode=true，OpenCode v1.14.24 默认配置，Claude Code v2.1.120 默认配置。布局逻辑随版本更新可能变化，2026-04-25 快照。
+> **免责声明**：实测基于 Qwen Code v0.15.2 + compactMode=true，2026-05-22 对照 v0.16.0 源码复核——所有引用的布局文件（Header.tsx / Footer.tsx / AsciiArt.ts / ToolGroupMessage.tsx / HistoryItemDisplay.tsx）渲染相关代码无变化，实测数字（19 行 / 11 行开销）仍然成立。OpenCode v1.14.24 默认配置，Claude Code v2.1.120 默认配置。布局逻辑随版本更新可能变化，原始快照 2026-04-25。

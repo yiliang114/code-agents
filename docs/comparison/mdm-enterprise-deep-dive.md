@@ -1,6 +1,6 @@
 # MDM 企业配置管理 Deep-Dive
 
-> 企业如何集中管控开发者的 AI Agent 配置？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.15.0 开源）的源码分析，对比两者在 MDM（Mobile Device Management）企业策略、配置层级和远程设置管理方面的差异。
+> 企业如何集中管控开发者的 AI Agent 配置？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.16.0 开源）的源码分析，对比两者在 MDM（Mobile Device Management）企业策略、配置层级和远程设置管理方面的差异。
 
 ---
 
@@ -163,4 +163,4 @@ MDM 读取在启动最早阶段通过子进程并行执行（源码: `rawRead.ts
 | `utils/settings/mdm/managedPath.ts` | Drop-in 目录平台路径 |
 | `services/remoteManagedSettings/` | 远程策略获取/缓存/轮询 |
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码，后续版本可能已变更。
+> **免责声明**: 以上分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核（Claude Code v2.1.89、Qwen Code v0.16.0），后续版本可能已变更。

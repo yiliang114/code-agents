@@ -9,7 +9,7 @@
 | Agent | 数据来源 | 工具 / UI 关键文件 |
 |---|---|---|
 | **Claude Code** | **v2.1.133 prod binary 实测**（2026-05-08 安装版）+ leaked 仓（v2.1.81 时点）交叉验证 | binary `strings` 提取 prompt + `tools/TodoWriteTool/TodoWriteTool.ts`（leaked）|
-| **Qwen Code** | v0.15.7 GitHub 公开源码 | `packages/core/src/tools/todoWrite.ts`（470 行）+ `cli/src/ui/components/TodoDisplay.tsx`（72 行）+ **`StickyTodoList.tsx`**（135 行）|
+| **Qwen Code** | v0.16.0 GitHub 公开源码 | `packages/core/src/tools/todoWrite.ts`（606 行）+ `cli/src/ui/components/TodoDisplay.tsx`（72 行）+ **`StickyTodoList.tsx`**（135 行）|
 | **OpenCode** | GitHub 公开源码 | `packages/opencode/src/tool/todo.ts` + `src/session/todo.ts` + `cli/cmd/tui/component/todo-item.tsx` + **`app/src/pages/session/composer/session-todo-dock.tsx`** + `feature-plugins/sidebar/todo.tsx` + `app/e2e/todo.spec.ts` + `ui/src/components/todo-panel-motion.stories.tsx` |
 | **Codex CLI** | GitHub 公开源码 | `codex-rs/core/src/tools/spec_tests.rs`（`update_plan` 注册）+ `codex-rs/tui/src/history_cell.rs:2557 new_plan_update` + `PlanUpdateCell` + `ProposedPlanCell` + `ProposedPlanStreamCell` |
 
@@ -81,15 +81,15 @@ const outputSchema = lazySchema(() =>
 ### 3.2 Qwen Code
 
 ```ts
-// packages/cli/src/ui/components/TodoDisplay.tsx
+// packages/core/src/hooks/types.ts（v0.16.0 移至此处，todoWrite.ts re-export）
 export interface TodoItem {
   id: string;
   content: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: TodoStatus;  // = 'pending' | 'in_progress' | 'completed'
 }
 ```
 
-最简洁 schema：3 字段。
+最简洁 schema：3 字段（字段不变，类型定义从 `todoWrite.ts` 移至 `hooks/types.ts`，通过 `export type { TodoItem } from '../hooks/types.js'` re-export）。v0.16.0 新增 `TodoCreated` / `TodoCompleted` hook 生命周期事件，`todoWrite.ts` 增至 606 行（原 v0.15.7 约 470 行）——增量主要是 hook 验证阶段（Validation Phase）和 postWrite 回调逻辑，不影响 schema 字段和 UI 渲染。
 
 ### 3.3 OpenCode
 
@@ -439,7 +439,8 @@ leaked 仓代码显示 Anthropic 在做"todo 关闭 → 自动启动 verificatio
 | Claude Code 工具 | `tools/TodoWriteTool/TodoWriteTool.ts`（leaked）|
 | Claude Code prompt | `tools/TodoWriteTool/prompt.ts`（9527 字节）|
 | Claude Code types | `utils/todo/types.ts`（leaked 仅此暴露）|
-| Qwen Code 工具 | `packages/core/src/tools/todoWrite.ts`（470 行）|
+| Qwen Code 工具 | `packages/core/src/tools/todoWrite.ts`（606 行，v0.16.0）|
+| Qwen Code TodoItem 类型 | `packages/core/src/hooks/types.ts`（v0.16.0 移至此处）|
 | Qwen Code 内联展示 | `packages/cli/src/ui/components/TodoDisplay.tsx`（72 行）|
 | Qwen Code Sticky | `packages/cli/src/ui/components/StickyTodoList.tsx`（135 行）|
 | Qwen Code Snapshot | `packages/cli/src/ui/utils/todoSnapshot.ts` |
@@ -474,10 +475,11 @@ Code Agent 的 Todo / Plan 展示存在 **4 种设计哲学**：
   - "at least one task is in_progress at all times" 强 prompt 约束
   - `turnsSinceLastTodoWrite` 计数器超阈值时 system reminder 注入
   - VerificationNudge / Auto Mode 集成 / V2 演进 → leaked 仓有但 prod **DCE 掉**
-- **Qwen Code** v0.15.7：走"**视觉一致性**"路线
+- **Qwen Code** v0.16.0：走"**视觉一致性**"路线
   - 独家 `StickyTodoList` 屏幕常驻
   - 简洁 3 状态（pending / in_progress / completed）
   - `TodoDisplay` 内联 + `StickyTodoList` 常驻双展示
+  - v0.16.0 新增 `TodoCreated` / `TodoCompleted` hook 事件（生命周期回调，不影响 UI 渲染）
 - **OpenCode**：走"**多端 UX**"路线
   - CLI + Web dock-tray 动画 + Sidebar 三处展示
   - 4 状态（**含 cancelled**）+ priority 字段（high/medium/low，4 方独家）
@@ -493,4 +495,4 @@ Code Agent 的 Todo / Plan 展示存在 **4 种设计哲学**：
 
 ---
 
-> **数据来源**：本文 4 方源码实测日期 2026-05-07 / 2026-05-08。Claude Code 数据来自 **v2.1.133 prod binary 实测**（`/root/.local/share/claude/versions/2.1.133`）+ leaked 仓（v2.1.81 时点）交叉验证——v2.1.133 prod binary 显著删减 leaked 仓中 feature-gated 代码（VerificationNudge / V2 gate / Auto Mode classifier 集成均 DCE）。Qwen Code v0.15.7 / OpenCode / Codex CLI 来自当前 GitHub 公开源码。可能未涵盖正在研发但未合并的 PR。
+> **数据来源**：本文 4 方源码实测日期 2026-05-07 / 2026-05-08，2026-05-22 对照 Qwen Code v0.16.0 复核。Claude Code 数据来自 **v2.1.133 prod binary 实测**（`/root/.local/share/claude/versions/2.1.133`）+ leaked 仓（v2.1.81 时点）交叉验证——v2.1.133 prod binary 显著删减 leaked 仓中 feature-gated 代码（VerificationNudge / V2 gate / Auto Mode classifier 集成均 DCE）。Qwen Code v0.15.7 → v0.16.0 变化：`TodoItem` 接口移至 `packages/core/src/hooks/types.ts`（字段不变），`todoWrite.ts` 新增 `TodoCreated` / `TodoCompleted` hook 生命周期事件（增至 606 行），`TodoDisplay.tsx`（72 行）与 `StickyTodoList.tsx`（135 行）UI 层无变化。OpenCode / Codex CLI 来自当前 GitHub 公开源码。可能未涵盖正在研发但未合并的 PR。

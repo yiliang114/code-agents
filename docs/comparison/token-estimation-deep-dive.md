@@ -1,6 +1,6 @@
 # Token 估算与 Thinking 模型 Deep-Dive
 
-> Agent 如何在发送 API 请求前估算 token 数？如何支持模型的扩展思维能力？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.15.0 开源）的源码分析，对比两者在 token 计数、thinking 预算管理和多 Provider 适配方面的差异。
+> Agent 如何在发送 API 请求前估算 token 数？如何支持模型的扩展思维能力？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.16.0 开源）的源码分析，对比两者在 token 计数、thinking 预算管理和多 Provider 适配方面的差异。
 
 ---
 
@@ -145,7 +145,7 @@ DEFAULT_TOKEN_LIMIT = 131_072      // 128K（默认输入）
 DEFAULT_OUTPUT_TOKEN_LIMIT = 32_000 // 32K（默认输出）
 ```
 
-**模式匹配算法**（源码: `tokenLimits.ts#L20-L144`）：
+**模式匹配算法**（源码: `tokenLimits.ts`，256 行）：
 
 ```typescript
 // 模型名规范化:
@@ -154,7 +154,7 @@ DEFAULT_OUTPUT_TOKEN_LIMIT = 32_000 // 32K（默认输出）
 // 规范化: 剥离 provider 前缀、版本、日期、量化后缀
 ```
 
-**部分模型映射（82 种模式）**：
+**部分模型映射（82+ 种模式）**：
 
 | 模型 | 输入上限 | 输出上限 |
 |------|:--------:|:--------:|
@@ -162,7 +162,8 @@ DEFAULT_OUTPUT_TOKEN_LIMIT = 32_000 // 32K（默认输出）
 | Claude 全系列 | 200K | 128K（Opus 4.6） |
 | Qwen 3.x（商业 API） | 1M | 32K |
 | Qwen 3.x（开源） | 256K | 32K |
-| DeepSeek | 128K | — |
+| DeepSeek V4 | 1M | 384K（v0.16.0 新增） |
+| DeepSeek（其他） | 128K | — |
 
 ### 4.2 自动检测
 
@@ -177,9 +178,10 @@ if (gc.contextWindowSize === undefined) {
 ### 4.3 Thinking/Reasoning 支持
 
 ```typescript
-// 源码: qwen-code/packages/core/src/core/contentGenerator.ts#L96-L101
+// 源码: qwen-code/packages/core/src/core/contentGenerator.ts
 reasoning?: false | {
-  effort?: 'low' | 'medium' | 'high';
+  // v0.16.0 新增 'max' 档（DeepSeek 扩展，Anthropic 端点自动 clamp 为 'high'）
+  effort?: 'low' | 'medium' | 'high' | 'max';
   budget_tokens?: number;
 }
 ```
@@ -200,8 +202,8 @@ reasoning?: false | {
 | Token 计数精度 | **精确**（API 实时） | **估算**（静态注册表） |
 | 计数时机 | 运行时（每次 API 调用前） | 配置时（初始化） |
 | 回退策略 | 3 层（API → Haiku → 粗估） | 单一默认值 |
-| Thinking 模式 | 3 种（adaptive/enabled/disabled） | 3 档 effort（low/medium/high） |
-| Thinking 预算 | 显式 token 数（`budget_tokens`） | effort 级别（无精确 token 控制） |
+| Thinking 模式 | 3 种（adaptive/enabled/disabled） | 4 档 effort（low/medium/high/max，v0.16.0 新增 max） |
+| Thinking 预算 | 显式 token 数（`budget_tokens`） | effort 级别（无精确 token 控制；max 档仅 DeepSeek 生效） |
 | Adaptive Thinking | ✅（Claude 4.6+ 独有） | ❌ |
 | Token 缓存 | ✅ VCR fixture | ❌ |
 | 预算语言解析 | ✅ "+500k"、"spend 2M" | ❌ |
@@ -224,8 +226,8 @@ reasoning?: false | {
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `packages/core/src/core/tokenLimits.ts` | 233 | 静态 token 限制注册表（82 模式） |
-| `packages/core/src/core/contentGenerator.ts` | L96-L101 | Reasoning 配置接口 |
-| `packages/core/src/models/modelsConfig.ts` | L777-L780 | Token 限制自动检测 |
+| `packages/core/src/core/tokenLimits.ts` | 256 | 静态 token 限制注册表（82+ 模式，v0.16.0 新增 DeepSeek V4） |
+| `packages/core/src/core/contentGenerator.ts` | — | Reasoning 配置接口（v0.16.0 新增 effort:'max'） |
+| `packages/core/src/models/modelsConfig.ts` | — | Token 限制自动检测 |
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码（Claude Code v2.1.89、Qwen Code v0.15.0），后续版本可能已变更。
+> **免责声明**: 以上分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核。Claude Code v2.1.89；Qwen Code v0.16.0。变化：tokenLimits.ts（233→256 行）新增 DeepSeek V4（1M 输入 / 384K 输出）；contentGenerator.ts reasoning effort 新增 `'max'` 档（DeepSeek 扩展，Anthropic 端点自动降级为 high）。

@@ -1,6 +1,6 @@
 # Git 工作流与会话管理 Deep-Dive
 
-> AI Agent 如何追踪代码归属、管理文件历史、支持对话分支？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.15.0 开源）的源码分析，对比两者在 commit attribution、文件历史快照、会话分支和输出模式方面的差异。
+> AI Agent 如何追踪代码归属、管理文件历史、支持对话分支？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.16.0 开源）的源码分析，对比两者在 commit attribution、文件历史快照、会话分支和输出模式方面的差异。
 
 ---
 
@@ -151,7 +151,7 @@ setupWorktrees() → git worktree add（创建独立工作副本）
 
 ### 5.2 Qwen Code
 
-无会话分支功能。`forkedQuery.ts` 用于 speculation/followup 的 cache-aware 二次查询，不是对话分叉。
+无会话分支功能。cache-aware 二次查询（原 `forkedQuery.ts`，v0.16.0 已合并入 `packages/core/src/utils/forkedAgent.ts`）用于 speculation/followup，不是对话分叉。
 
 ---
 
@@ -207,9 +207,9 @@ setupWorktrees() → git worktree add（创建独立工作副本）
 
 ### Qwen Code
 
-| 文件 | 职责 |
-|------|------|
-| `packages/core/src/services/gitWorktreeService.ts` | Git worktree checkpoint |
-| `packages/core/src/followup/forkedQuery.ts` | Cache-aware 二次查询（非对话分叉） |
+| 文件 | 行数 | 职责 |
+|------|------|------|
+| `packages/core/src/services/gitWorktreeService.ts` | 1,491 | Git worktree checkpoint（v0.16.0 大幅扩展：Phase C 含 session 持久化、hooksPath、三模式 --resume 恢复） |
+| `packages/core/src/utils/forkedAgent.ts` | — | Cache-aware 二次查询（`forkedQuery.ts` 在 v0.16.0 已合并入此文件，非对话分叉） |
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码，后续版本可能已变更。
+> **免责声明**: 以上分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核（Claude Code v2.1.89、Qwen Code v0.16.0），后续版本可能已变更。

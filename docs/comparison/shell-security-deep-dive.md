@@ -1,6 +1,6 @@
 # Shell 安全模型 Deep-Dive
 
-> AI Agent 执行 Shell 命令时，如何防止注入攻击、越权操作和恶意代码执行？本文基于 Claude Code（v2.1.89 反编译）和 Qwen Code（v0.15.0 开源）的源码分析，对比两者在命令验证、AST 分析和权限决策方面的安全哲学差异。
+> AI Agent 执行 Shell 命令时，如何防止注入攻击、越权操作和恶意代码执行？本文基于 Claude Code（v2.1.89 反编译）和 Qwen Code（v0.16.0 开源）的源码分析，对比两者在命令验证、AST 分析和权限决策方面的安全哲学差异。
 
 ---
 
@@ -163,7 +163,7 @@ override async getDefaultPermission(): Promise<PermissionDecision> {
 ### 3.2 AST 解析器
 
 ```typescript
-// 源码: qwen-code/packages/core/src/utils/shellAstParser.ts（1,248 行）
+// 源码: qwen-code/packages/core/src/utils/shellAstParser.ts（1,156 行）
 // 使用 web-tree-sitter + tree-sitter-bash.wasm
 await Parser.init({ locateFile: () => resolveWasmPath('tree-sitter.wasm') })
 parserInstance.setLanguage(await Parser.Language.load(
@@ -233,7 +233,7 @@ extractCommandRules('git clone foo && npm install')
 
 ### 3.7 PTY 执行模型
 
-Qwen Code 使用 PTY（伪终端）执行命令（源码: `shellExecutionService.ts`，1,032 行）：
+Qwen Code 使用 PTY（伪终端）执行命令（源码: `shellExecutionService.ts`，1,937 行；v0.16.0 新增前台→后台 promote、post-promote 回调等机制）：
 
 ```typescript
 // 源码: shellExecutionService.ts#L596-L609
@@ -355,11 +355,11 @@ Qwen Code:   "这些模式是安全的" → 枚举安全 → 未匹配则询问
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `packages/core/src/utils/shellAstParser.ts` | 1,248 | AST 解析 + 只读判定 + 子命令映射 + 规则提取 |
+| `packages/core/src/utils/shellAstParser.ts` | 1,156 | AST 解析 + 只读判定 + 子命令映射 + 规则提取 |
 | `packages/core/src/utils/shellReadOnlyChecker.ts` | 364 | 正则回退（WASM 失败时） |
-| `packages/core/src/tools/shell.ts` | 706 | Shell 工具入口 + 权限决策 |
-| `packages/core/src/services/shellExecutionService.ts` | 1,032 | PTY 执行 + 输出捕获 |
-| `packages/core/src/permissions/shell-semantics.ts` | 1,686 | 语义分析（命令 → 虚拟文件/网络操作） |
+| `packages/core/src/tools/shell.ts` | 4,291 | Shell 工具入口 + 权限决策 + 后台 shell 执行（v0.16.0 大幅扩展） |
+| `packages/core/src/services/shellExecutionService.ts` | 1,937 | PTY 执行 + 输出捕获 + 前台→后台 promote 支持（v0.16.0 扩展） |
+| `packages/core/src/permissions/shell-semantics.ts` | 1,685 | 语义分析（命令 → 虚拟文件/网络操作） |
 
 ---
 
@@ -370,4 +370,4 @@ Qwen Code:   "这些模式是安全的" → 枚举安全 → 未匹配则询问
 3. **权限规则提取降低审批疲劳**：Qwen Code 的 `extractCommandRules()` 自动建议最小范围规则（如 `git clone *`），而非让用户手动配置
 4. **枚举方向决定维护成本**：枚举"安全"（Qwen Code）更易维护（新工具默认拒绝），枚举"危险"（Claude Code）覆盖面更广但需持续更新
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码（Claude Code v2.1.89、Qwen Code v0.15.0），后续版本可能已变更。
+> **免责声明**: 以上安全哲学分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核。Claude Code v2.1.89；Qwen Code v0.16.0。安全判定核心逻辑（`getDefaultPermission`、`shellAstParser.ts` AST 分析、`shellReadOnlyChecker.ts` 回退）在 v0.15.0→v0.16.0 间无实质变化；`shell.ts`（706→4,291 行）和 `shellExecutionService.ts`（1,032→1,937 行）大幅扩展，主要新增后台 shell pool、前台→后台 promote、commit attribution 等功能，不影响本文安全模型部分的分析。

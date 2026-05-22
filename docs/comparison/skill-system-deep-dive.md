@@ -112,7 +112,7 @@ function vw(H, $) {
 **Qwen Code（严格：YAML 必须 + name + description 必须）**
 
 ```javascript
-// 从 v0.13.0 cli.js 提取
+// 从 v0.16.0 packages/core/src/skills/skill-load.ts 提取
 const match = normalizedContent.match(frontmatterRegex);
 if (!match) {
   throw new Error("Invalid format: missing YAML frontmatter");  // ← 直接报错！

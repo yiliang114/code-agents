@@ -1,6 +1,6 @@
 # Fork 子代理 Deep-Dive
 
-> 当 Agent 需要将任务委派给子代理时，如何共享完整的对话上下文并最大化 prompt cache 命中率？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.15.0 开源）的源码分析，深度介绍 Claude Code 的隐式 Fork Subagent 机制及其与 Qwen Code Agent 工具的架构差异。
+> 当 Agent 需要将任务委派给子代理时，如何共享完整的对话上下文并最大化 prompt cache 命中率？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.16.0 开源）的源码分析，深度介绍 Claude Code 的隐式 Fork Subagent 机制及其与 Qwen Code Agent 工具的架构差异。
 
 ---
 
@@ -282,7 +282,7 @@ const resolvedTools = useExactTools
 ### Qwen Code Agent 工具入口
 
 ```typescript
-// 源码: qwen-code/packages/core/src/tools/agent.ts
+// 源码: qwen-code/packages/core/src/tools/agent/agent.ts
 interface AgentParams {
   description: string
   prompt: string
@@ -290,7 +290,7 @@ interface AgentParams {
 }
 ```
 
-**SubagentManager 搜索优先级**（源码: `subagent-manager.ts#L186-L217`）：
+**SubagentManager 搜索优先级**（源码: `subagent-manager.ts#L189-L221`）：
 
 ```
 Session 级 → Project 级 → User 级 → Extension 级 → Built-in
@@ -330,9 +330,10 @@ Fork 模型在保留完整上下文的同时，成本仅比无上下文传递高
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `packages/core/src/tools/agent.ts` | 676 | Agent 工具（`subagent_type` 必填，无 fork） |
-| `packages/core/src/subagents/subagent-manager.ts` | 1,053 | 子代理管理器（5 级搜索） |
-| `packages/core/src/subagents/builtin-agents.ts` | 159 | 内置代理（general-purpose, Explore） |
+| `packages/core/src/tools/agent/agent.ts` | 2,419 | Agent 工具（`subagent_type` 必填，无 fork；含 override 支持） |
+| `packages/core/src/tools/agent/fork-subagent.ts` | 180 | Fork 子代理辅助（Qwen Code 自有实验性实现） |
+| `packages/core/src/subagents/subagent-manager.ts` | 1,221 | 子代理管理器（5 级搜索） |
+| `packages/core/src/subagents/builtin-agents.ts` | 325 | 内置代理（general-purpose, Explore；Explore 新增 `model: 'fast'`） |
 
 ---
 
@@ -344,4 +345,4 @@ Fork 模型在保留完整上下文的同时，成本仅比无上下文传递高
 4. **异步强制**使 fork 子代理不阻塞父代理——用户可继续与父代理交互，子代理在后台完成
 5. **占位文本统一**是一个精巧的缓存优化——不同文本会破坏缓存前缀一致性
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码（Claude Code v2.1.89、Qwen Code v0.15.0），后续版本可能已变更。
+> **免责声明**: 以上分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核（Claude Code v2.1.89、Qwen Code v0.16.0），后续版本可能已变更。

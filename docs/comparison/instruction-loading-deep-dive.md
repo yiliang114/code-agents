@@ -1,8 +1,8 @@
 # 指令文件加载 Deep-Dive
 
-> CLAUDE.md vs QWEN.md——项目指令如何被发现、解析和注入到系统提示？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.15.0 + 2026-04 最新 PR）的源码分析，对比两者在指令文件发现层级、`@include` 指令、Frontmatter 路径过滤和信任模型方面的设计差异。
+> CLAUDE.md vs QWEN.md——项目指令如何被发现、解析和注入到系统提示？本文基于 Claude Code（v2.1.89 源码分析）和 Qwen Code（v0.16.0 开源）的源码分析，对比两者在指令文件发现层级、`@include` 指令、Frontmatter 路径过滤和信任模型方面的设计差异。
 >
-> **最后更新**：2026-04-17（PR#3087 Auto-Memory/Auto-Dream + **PR#3339 `.qwen/rules/` 路径规则** 均已合并，Qwen Code 指令加载系统与 Claude Code 大部分对齐）
+> **最后更新**：2026-05-22，对照 v0.16.0 复核（PR#3087 Auto-Memory/Auto-Dream + **PR#3339 `.qwen/rules/` 路径规则** 均已合并，Qwen Code 指令加载系统与 Claude Code 大部分对齐）
 
 ---
 
@@ -171,7 +171,7 @@ description: TypeScript 编码规范
                      └── AGENTS.md
 ```
 
-**文件名可配置**（源码: `memoryTool.ts#L78-L113`）：
+**文件名可配置**（源码: `memory-config.ts`，v0.16.0 从 `memoryTool.ts` 拆分为轻量模块）：
 
 ```typescript
 setGeminiMdFilename('MY_CUSTOM.md')  // 替换默认文件名
@@ -345,12 +345,12 @@ Use React functional components with hooks.
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `packages/core/src/utils/memoryDiscovery.ts` | 357 | 文件发现（3 层） |
-| `packages/core/src/utils/memoryImportProcessor.ts` | ~417 | @include 处理（Tree/Flat 格式） |
-| `packages/core/src/tools/memoryTool.ts` | 543 | 文件名配置与存储路径 |
-| `packages/core/src/core/prompts.ts` | L78-L118 | 系统提示注入 |
+| `packages/core/src/utils/memoryDiscovery.ts` | 427 | 文件发现（3 层；v0.16.0 适配 QWEN_HOME 环境变量） |
+| `packages/core/src/utils/memoryImportProcessor.ts` | 417 | @include 处理（Tree/Flat 格式） |
+| `packages/core/src/tools/memory-config.ts` | 47 | 文件名配置（v0.16.0：原 memoryTool.ts 拆分，轻量模块） |
+| `packages/core/src/core/prompts.ts` | L79-L118 | 系统提示注入（v0.16.0 新增 deferredTools 支持） |
 
-> **免责声明**: 以上分析基于 2026 年 Q1 源码（Claude Code v2.1.89、Qwen Code v0.15.0）+ 2026-04 社区 PR 追踪（PR#3087 已合并 / PR#3339 开发中）。后续版本可能已变更。
+> **免责声明**: 以上分析基于 2026 年 Q1 初稿，2026-05-22 对照 v0.16.0 复核（Claude Code v2.1.89、Qwen Code v0.16.0），后续版本可能已变更。
 
 ## 7. 社区 PR 追踪（均已合并）
 
@@ -359,6 +359,6 @@ Use React functional components with hooks.
 | [PR#3087](https://github.com/QwenLM/qwen-code/pull/3087) | ✅ MERGED | 2026-04-16 | Auto-Memory（`extract`）+ Auto-Dream（`dream`）+ Permission scope |
 | [PR#3339](https://github.com/QwenLM/qwen-code/pull/3339) | ✅ **MERGED** | **2026-04-17** | `.qwen/rules/` 条件规则 + `paths:` frontmatter + HTML 注释剥离 + 递归扫描 + **嵌套子目录** |
 
-**追赶结果**：本 Deep-Dive 的"逐维度对比"从 13 个差距项**减少到 5 个**（仅剩：固定文件名、Team Memory、Hook 事件、Worktree 去重、多级信任模型）。
+**追赶结果**：本 Deep-Dive 的"逐维度对比"从 13 个差距项**减少到 5 个**（仅剩：固定文件名、Team Memory、Hook 事件、Worktree 去重、多级信任模型）。v0.16.0 新增 QWEN_HOME 环境变量支持，全局内存目录可自定义。
 
 **关键意义**：Qwen Code 和 Claude Code 在"指令加载"维度上的追赶是 **2026 年 4 月最显著的功能对齐**之一，Qwen Code 借助 **两周内的 PR#3087 + PR#3339 组合拳**基本完成了对 Claude Code 指令系统核心能力的对标，**并在"嵌套子目录规则"这一点上超过了 Claude Code 的扁平结构**。
