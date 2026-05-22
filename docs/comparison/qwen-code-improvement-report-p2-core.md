@@ -1099,7 +1099,7 @@ async def get_agent_card(self, *args: Any, **kwargs: Any) -> AgentCard:
 
 **原 item 内容（保留作为目标参考）**：
 
-**思路**：当前 qwen-code 的可观测性仅有阿里云 RUM（`gb4w8c3ygj-default-sea.rum.aliyuncs.com`），**没有 OpenTelemetry 支持**。这意味着：
+**思路**：当前 qwen-code 的可观测性仅有阿里云 RUM（`***REDACTED***.rum.aliyuncs.com`），**没有 OpenTelemetry 支持**。这意味着：
 
 - 无法接入企业 OTel 栈（Datadog / New Relic / Honeycomb / Jaeger / Grafana Tempo）
 - 无法做细粒度 span 分析（哪个工具慢？哪个 LLM 调用慢？哪个 embedding 慢？）

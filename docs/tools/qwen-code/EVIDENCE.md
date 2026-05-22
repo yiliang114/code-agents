@@ -15,15 +15,15 @@
 
 ### B. 阿里云 RUM（全新，Qwen 添加）
 - 源码: packages/core/src/telemetry/qwen-logger/qwen-logger.ts
-- 端点: `gb4w8c3ygj-default-sea.rum.aliyuncs.com`
-- App ID: `gb4w8c3ygj@851d5d500f08f92`
+- 端点: `***REDACTED***.rum.aliyuncs.com`
+- App ID: `***REDACTED***`
 - 事件类型: RumViewEvent, RumActionEvent, RumExceptionEvent, RumResourceEvent
 - 40+ 个事件: session, prompts, tool calls, API, arena, auth, subagent, skills, feedback
 
 ## 认证系统（全新，Qwen 添加）
 - OAuth2 设备码流程 + PKCE (RFC 7636)
 - OAuth 基础 URL: https://chat.qwen.ai
-- Client ID: f0304373b74a44d2b584a3fb70ca9e56
+- Client ID: ***REDACTED***
 - Scope: openid profile email model.completion
 - 凭据存储: ~/.qwen/oauth_creds.json
 - 跨进程令牌管理: 文件锁 ~/.qwen/oauth_creds.lock

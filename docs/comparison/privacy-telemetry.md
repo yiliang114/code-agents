@@ -32,7 +32,7 @@
 | | 可配置 OTLP 端点 | OpenTelemetry |
 | **Goose** | `us.i.posthog.com/capture/` | PostHog |
 | | 可配置 OTLP + Langfuse 端点 | OpenTelemetry + LLM 可观测 |
-| **Qwen Code** | `gb4w8c3ygj-default-sea.rum.aliyuncs.com` | 阿里云 RUM（App ID: gb4w8c3ygj@851d5d500f08f92） |
+| **Qwen Code** | `***REDACTED***.rum.aliyuncs.com` | 阿里云 RUM（App ID: ***REDACTED***） |
 | | 可配置 OTLP 端点（继承 Gemini） | OpenTelemetry（Clearcut 已移除） |
 | **Kimi CLI** | **无** | — |
 | **OpenCode** | **无** | — |

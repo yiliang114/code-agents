@@ -152,8 +152,8 @@ export GEMINI_TELEMETRY_ENABLED=false
 | 组件 | Gemini CLI（上游） | Qwen Code（分叉） |
 |------|-------------------|-------------------|
 | 主遥测 | Google Clearcut | **Aliyun RUM** |
-| 端点 | `play.googleapis.com` | `gb4w8c3ygj-*.rum.aliyuncs.com` |
-| App ID | — | `gb4w8c3ygj@851d5d500f08f92` |
+| 端点 | `play.googleapis.com` | `***REDACTED***.rum.aliyuncs.com` |
+| App ID | — | `***REDACTED***` |
 | OTLP | 可配置 | 继承 |
 
 ### Aliyun RUM 事件类型

@@ -248,7 +248,7 @@ ToolRegistry → Tool 执行 → 文件系统/Shell
 
 - 设备码流程 + PKCE（RFC 7636）
 - 端点: `https://chat.qwen.ai/api/v1/oauth2/device/code`
-- Client ID: `f0304373b74a44d2b584a3fb70ca9e56`
+- Client ID: `***REDACTED***`
 - 共享令牌管理器: `sharedTokenManager.ts`
 - 凭据存储: `~/.qwen/oauth_creds.json`
 

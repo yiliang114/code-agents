@@ -7,12 +7,12 @@
 ## 遥测系统（源码: aider/analytics.py）
 
 ### PostHog（活跃）
-- API key: `phc_99T7muzafUMMZX15H8XePbMSreEUzahHbtWjy3l5Qbv`
+- API key: `phc_***REDACTED***`
 - 端点: `https://us.i.posthog.com`
 - 发送方式: `ph.capture(distinct_id, event, properties)`
 
 ### Mixpanel（代码存在但已禁用）
-- Token: `6da9a43058a5d1b9f3353153921fb04d`
+- Token: `***REDACTED***`
 - 初始化行被注释: `# self.mp = Mixpanel(mixpanel_project_token)`
 
 ### 用户标识

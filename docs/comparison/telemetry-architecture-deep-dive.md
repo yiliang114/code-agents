@@ -89,7 +89,7 @@
 ```typescript
 // 源码: qwen-code/packages/core/src/telemetry/qwen-logger/qwen-logger.ts
 // 类型: 单例 RUM (Real User Monitoring) Logger
-// 端点: gb4w8c3ygj-default-sea.rum.aliyuncs.com（阿里云 RUM）
+// 端点: ***REDACTED***.rum.aliyuncs.com（阿里云 RUM）
 // 批量: 默认 1,000 条 / 60 秒刷新
 // 队列: FixedDeque（溢出时丢弃最老事件）
 // v0.16.0 变化: readSourceInfo() 新增支持 QWEN_HOME 自定义路径，

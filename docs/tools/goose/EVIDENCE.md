@@ -13,7 +13,7 @@
 ## 遥测系统（源码: crates/goose-cli/src/posthog.rs）
 
 ### PostHog
-- API key: `phc_RyX5CaY01VtZJCQyhSR5KFh6qimUy81YwxsEpotAftT`
+- API key: `phc_***REDACTED***`
 - 端点: `https://us.i.posthog.com/capture/`
 - **默认关闭（opt-in）**
 
