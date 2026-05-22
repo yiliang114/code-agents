@@ -1,0 +1,64 @@
+# 每天定时从 wenshao/codeagents 同步最新内容
+name: Sync upstream (wenshao/codeagents)
+
+on:
+  schedule:
+    # 每天北京时间 9:00（UTC 1:00）执行
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/wenshao/codeagents.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Attempt merge
+        id: merge
+        run: |
+          if git merge upstream/main --no-edit; then
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          fi
+
+      - name: Push if clean merge
+        if: steps.merge.outputs.status == 'clean'
+        run: git push origin main
+
+      - name: Create PR if conflict
+        if: steps.merge.outputs.status == 'conflict'
+        run: |
+          BRANCH="sync-upstream/$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git merge upstream/main --no-edit || true
+          git add -A
+          git commit -m "chore: sync upstream (conflict needs manual resolution)" --allow-empty
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "chore: sync upstream $(date +%Y-%m-%d) (has conflicts)" \
+            --body "自动同步 wenshao/codeagents 时遇到冲突，请手动解决后合并。" \
+            --base main \
+            --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
