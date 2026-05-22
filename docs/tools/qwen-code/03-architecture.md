@@ -1,8 +1,8 @@
 # 3. Qwen Code 技术架构——贡献者参考
 
-> 基于 Gemini CLI fork，新增 CoreToolScheduler（工具并行）、多 Provider 内容生成、Arena 竞赛等核心模块。
+> **v0.16.0** | 基于 Gemini CLI fork，13 个包的 monorepo。核心模块：CoreToolScheduler（工具并行）、多 Provider 内容生成、Arena 竞赛、Goals 系统、Channels 多渠道、ACP Bridge、推测执行、三层压缩。
 >
-> **改进方向**：上下文压缩（仅单一 70% vs Claude Code 5 层）、渲染性能（标准 Ink vs 上游 SlicingMaxSizedBox）、启动优化（无 TCP preconnect）。详见 [架构改进建议](../../comparison/qwen-code-improvement-report-p0-p1-core.md)。
+> **改进方向**：渲染性能（标准 Ink vs 上游 SlicingMaxSizedBox）、启动优化（无 TCP preconnect）。详见 [架构改进建议](../../comparison/qwen-code-improvement-report-p0-p1-core.md)。
 
 ## Monorepo 结构
 
@@ -36,9 +36,18 @@ qwen-code/
 │       ├── mcp/                    # MCP 客户端 + OAuth
 │       ├── telemetry/              # 遥测（OpenTelemetry + RUM）
 │       └── services/               # 会话、压缩、循环检测等
+│       ├── goals/                   # Goals 系统（goalJudge + goalLoop）
+│       ├── followup/               # 推测执行（Speculation + OverlayFs）
+│       ├── memory/                  # 记忆系统（Extract/Recall/Dream/Forget）
+│       ├── lsp/                     # LSP 集成（12 操作）
+│       └── ide/                     # IDE 检测与集成
 ├── packages/webui/                 # Web UI 组件
+├── packages/acp-bridge/            # Agent Communication Protocol Bridge
+├── packages/channels/              # 多渠道（DingTalk/Telegram/WeChat）
 ├── packages/sdk-typescript/        # TypeScript SDK
+├── packages/sdk-python/            # Python SDK
 ├── packages/sdk-java/              # Java SDK
+├── packages/mcp-chrome-integration/ # Chrome MCP 集成
 ├── packages/vscode-ide-companion/  # VS Code 扩展
 ├── packages/zed-extension/         # Zed 编辑器扩展
 ├── packages/web-templates/         # Web 模板

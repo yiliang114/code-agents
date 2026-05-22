@@ -1,6 +1,6 @@
 # 4. Qwen Code 工具系统——贡献者参考
 
-> 16 个核心工具 + MCP 动态工具。相比 Claude Code（42 个）差距显著——缺少 ToolSearch（延迟加载）、MultiEdit（批量编辑）、Cron 系列（定时）、NotebookEdit（Jupyter）等。
+> **v0.16.0 更新**：30+ 核心工具 + MCP 动态工具。相比 v0.14.1（16 个）大幅扩展，新增 Monitor、Cron 系列、Worktree、NotebookEdit、ForkSubagent、SendMessage 等。
 >
 > **改进方向**：ToolSearch 延迟加载（减少 50% 系统提示 token）、ConfigTool（PR#2911 open）、路径补全（PR#2879 open）。详见 [工具改进建议](../../comparison/qwen-code-improvement-report-p2-tools-commands.md)。
 
@@ -82,6 +82,52 @@
 | 工具 | Kind | 用途 | 关键参数 | 源码 |
 |------|------|------|---------|------|
 | **LSP** | Other | 语言服务器协议集成 | （动态） | `tools/lsp.ts` |
+
+## v0.16.0 新增工具
+
+以下工具在 v0.14.1 → v0.16.0 期间新增：
+
+### 监控与定时
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **Monitor** | Execute | 启动后台监控脚本，stdout 每行作为事件通知 | `command`, `description`, `timeout_ms`, `persistent` | `tools/monitor.ts` |
+| **CronCreate** | Execute | 创建定时任务（cron 表达式） | `cron`, `prompt`, `recurring?`, `durable?` | `tools/cron-create.ts` |
+| **CronDelete** | Execute | 删除定时任务 | `id` | `tools/cron-delete.ts` |
+| **CronList** | Read | 列出所有定时任务 | （无） | `tools/cron-list.ts` |
+| **ScheduleWakeup** | Execute | 动态 loop 模式下调度唤醒 | `delaySeconds`, `reason`, `prompt` | `tools/schedule-wakeup.ts` |
+
+### Worktree 隔离
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **EnterWorktree** | Execute | 创建/进入 git worktree 隔离环境 | `name?`, `path?` | `tools/enter-worktree.ts` |
+| **ExitWorktree** | Execute | 退出 worktree（保留或删除） | `action`, `discard_changes?` | `tools/exit-worktree.ts` |
+
+### 多 Agent 通信
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **ForkSubagent** | Other | 启动隔离子 Agent（worktree 级别） | `prompt`, `model?`, `isolation?` | `tools/fork-subagent.ts` |
+| **SendMessage** | Other | 向指定 Agent 发送消息 | `to`, `message` | `tools/send-message.ts` |
+
+### Notebook 编辑
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **NotebookEdit** | Edit | 编辑 Jupyter notebook 单元格 | `notebook_path`, `new_source`, `cell_type?`, `edit_mode?` | `tools/notebook-edit.ts` |
+
+### 桌面通知
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **PushNotification** | Other | 发送桌面/移动端通知 | `message`, `status` | `tools/push-notification.ts` |
+
+### 计划模式
+
+| 工具 | Kind | 用途 | 关键参数 | 源码 |
+|------|------|------|---------|------|
+| **EnterPlanMode** | Other | 进入计划模式，分析后再实施 | （无） | `tools/enter-plan-mode.ts` |
 
 ## 条件工具
 

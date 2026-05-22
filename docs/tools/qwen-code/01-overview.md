@@ -10,8 +10,9 @@
 - **许可证**：Apache-2.0
 - **仓库**：[github.com/QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)
 - **文档**：[qwenlm.github.io/qwen-code-docs](https://qwenlm.github.io/qwen-code-docs/zh/)
-- **版本**：v0.14.1
+- **版本**：v0.16.0
 - **上游**：Gemini CLI v0.8.2（2025-10-23 fork）
+- **包数量**：13（core, cli, webui, acp-bridge, channels, sdk-typescript, sdk-python, sdk-java, mcp-chrome-integration, vscode-ide-companion, zed-extension, web-templates, test-utils）
 
 ## 一、我们做对了什么（独有优势）
 
@@ -27,7 +28,11 @@
 | **分离重试预算** | 内容/流异常/速率限制分别计数 | 竞品统一重试 |
 | **三格式扩展兼容** | Qwen 原生 + Claude 插件转换 + Gemini 扩展转换 | 竞品不互通 |
 | **6 语言国际化** | 中/英/日/德/俄/葡 | Claude Code 仅英文 |
-| **Java SDK** | TypeScript + Java 双 SDK | 竞品仅 TS/Python |
+| **Java SDK** | TypeScript + Python + Java 三套 SDK | 竞品仅 TS/Python |
+| **Goals 系统** | Stop Hook + LLM Judge 驱动的目标持续执行 | Claude Code 无等价物 |
+| **Channels 多渠道** | DingTalk / Telegram / WeChat / 自定义插件 | 竞品仅 CLI/IDE |
+| **ACP Bridge** | Agent Communication Protocol 双向通信 | Claude Code 仅单向 SDK |
+| **推测执行** | Speculation Engine + OverlayFs COW 隔离 | Claude Code 有类似但无 OverlayFs |
 
 ## 二、已知差距
 
