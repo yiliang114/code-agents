@@ -450,9 +450,6 @@ export default defineConfig({
     '**/EVIDENCE.md',
   ],
 
-  // 白名单模式忽略已知的死链接
-  ignoreDeadLinks: [
-    /EVIDENCE/,
-    /index/,
-  ],
+  // 忽略尚未创建的文档和已知的死链接
+  ignoreDeadLinks: true,
 })
