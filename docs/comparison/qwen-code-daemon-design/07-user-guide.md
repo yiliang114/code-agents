@@ -1,10 +1,6 @@
-# 07 — User Guide：怎么用 `qwen serve` daemon
+# Qwen Code daemon (`qwen serve`) 用户使用文档
 
-> [← 上一篇：Roadmap & Ecosystem](./06-roadmap.md) · [回 README](./README.md)
->
-> 这是一篇 **recipe-oriented 使用文档**，面向 daemon Mode B **终态**（Wave plan PR 31 production-ready 完成后）。设计动机看 [§01 Overview](./01-overview.md)、决策依据看 [§02](./02-architectural-decisions.md)、协议细节看 [§03](./03-http-api.md)、客户端架构看 [§04](./04-deployment-and-client.md)、安全模型看 [§05](./05-permission-auth.md)、roadmap 看 [§06](./06-roadmap.md)。
->
-> **当前发布状态**与终态的差异（哪些已在某个 semver release / 哪些仍在 `daemon_mode_b_main` 集成分支）请直接查 [§06](./06-roadmap.md) 的 Wave / F-series 跟踪。本章不复述。
+> Recipe-oriented，面向 daemon Mode B **终态**（feature-complete production-ready 状态）的使用方法。涵盖启动、客户端接入、常用操作、生产部署、故障排查。
 
 ## TL;DR
 
@@ -177,7 +173,7 @@ curl http://127.0.0.1:4170/capabilities \
 2. `QWEN_SERVER_TOKEN` env var
 3. `~/.qwen/serve/token` 文件（如果存在）
 
-**daemon 端实现细节**（详 [§05 §二](./05-permission-auth.md#二layer-1传输层-bearer-tokenstage-1--实现)）：
+**daemon 端实现细节**：
 
 - **SHA-256 hash + `crypto.timingSafeEqual` 比对** —— 防 timing side-channel attack（不让攻击者从响应时间猜 token 字符）
 - **401 uniform 响应** —— "缺 header" / "bad scheme（不是 Bearer）" / "token 错" 三种错误返回**完全一致**，防 side-channel 探测哪种错了
@@ -201,7 +197,7 @@ X-Qwen-Client-Id: client_<uuid>          ← 第 2 道：你是哪个 client 在
 **为什么不用 cookie / OAuth / JWT**：
 - daemon 不是 web app —— 没有 browser session、没有 logout flow
 - 主流 SDK client（IDE plugin / CLI tool / 自动化脚本）拿 bearer 比拿 OAuth 简单
-- OAuth device-flow 是 **daemon 与上游 provider** 之间（让 daemon 代用户登录 Qwen / OpenAI 等），不是 client 与 daemon 之间 —— 别混淆，详 [§07 §5.6](#56-oauth-device-flow远端-daemon-auth-provider)
+- OAuth device-flow 是 **daemon 与上游 provider** 之间（让 daemon 代用户登录 Qwen / OpenAI 等），不是 client 与 daemon 之间 —— 别混淆，详见 [§5.6](#56-oauth-device-flow远端-daemon-auth-provider)
 
 ### 2.3 安全启动配方
 
@@ -266,13 +262,13 @@ qwen serve --require-auth \
 | `consensus` | N-of-M voter 投票（default N = `floor(M/2)+1`，可 `policy.consensusQuorum` override），first option 到 quorum 赢；中间投票 fan out `permission_partial_vote` SSE event | 多人 review 工作流 |
 | `local-only` | 仅 loopback voter 能决（**kernel-stamped `req.socket.remoteAddress`，不看 X-Forwarded-For 或任何 header**）；remote 403 `permission_forbidden / remote_not_allowed` | 远端 daemon 但 permission 只接受本地批准 |
 
-修改后**重启 daemon 生效**（不支持热加载）。详 [§05 §五 Permission Vote 流](./05-permission-auth.md#五permission-vote-流pr3889--pr4232--完整)。
+修改后**重启 daemon 生效**（不支持热加载）。
 
 ---
 
 ## 三、2 种 deployment shape
 
-> 核心不变式：**daemon host = workspace host = runtime host**。所有 fs / tool / MCP / skill / shell 在 daemon 所在那台机器上 evaluate；如果你想"daemon 在远端但 workspace 在本地"，那是反模式，daemon 看不到 local files，详 [§04 §五 Runtime locality](./04-deployment-and-client.md)。
+> 核心不变式：**daemon host = workspace host = runtime host**。所有 fs / tool / MCP / skill / shell / 网络 egress / 凭据存取在 daemon 所在那台机器上 evaluate；如果你想"daemon 在远端但 workspace 在本地"，那是反模式——daemon 看不到 local files，`POST /session` 携带本地 cwd 会被 `400 workspace_mismatch` 拒。
 
 ### Shape 1: Local single-machine（本地单机）✅ 推荐
 
@@ -388,7 +384,6 @@ const markdown = viewState.blocks.map(daemonBlockToMarkdown).join('\n\n');
 
 包含 reducer 状态字段 `currentTool` / `approvalMode` / `awaitingResync` / `permissionVoteProgress` 等。
 
-详 [§04 §三 Client adapter 与 SDK 共享层](./04-deployment-and-client.md)。
 
 ### 4.3 curl 直走 HTTP/SSE
 
@@ -468,7 +463,7 @@ qwen serve
 
 ## 五、常用操作 recipes
 
-下表 route 见 [§03 §一](./03-http-api.md#一路由总览)。
+下表是常用 route 速查；完整 ~40 route 列表通过 `GET /capabilities` + `GET /workspace/sessions` 等运行时探测。
 
 ### 5.1 Session 生命周期
 
@@ -535,7 +530,6 @@ curl -X POST "http://127.0.0.1:4170/session/$SID/permission/req_abc" \
 // remote (非 127.0.0.1) client 应答 → 403 permission_forbidden / remote_not_allowed
 ```
 
-详 [§05 §五 Permission Vote 流](./05-permission-auth.md#五permission-vote-流pr3889--pr4232--完整)。
 
 ### 5.4 Workspace state CRUD（mutation gate 后）
 
@@ -610,7 +604,7 @@ done
 # token 落地到 daemon host ~/.qwen/auth/qwen.json (0o600)
 ```
 
-token 在 daemon host **永远不出现在 wire / log / error / stderr / template literal**（BrandedSecret 4-way redaction）。详 [§05 §八 OAuth device-flow + BrandedSecret](./05-permission-auth.md)。
+token 在 daemon host **永远不出现在 wire / log / error / stderr / template literal**（BrandedSecret 4-way redaction：`toString` / `util.inspect` / `JSON.stringify` / `valueOf` 全 redact 成 `[REDACTED]`，仅通过显式 `.unwrap()` 拿原值）。token 文件用 `0o600` 权限（umask-respecting + force mode）。
 
 ---
 
@@ -832,7 +826,7 @@ spec:
     spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 50Gi}}}
 ```
 
-**多 tenant 部署 = 多 daemon process / pod**（OS 进程级 / namespace 级隔离）。1 daemon = 1 workspace 不变，不要在 daemon 内做应用层 tenant 抽象。详 [§05 §六 Multi-Tenant 约束](./05-permission-auth.md#六multi-tenant-关键约束)。
+**多 tenant 部署 = 多 daemon process / pod**（OS 进程级 / namespace 级天然隔离）。1 daemon = 1 workspace 不变，不要在 daemon 内做应用层 tenant 抽象 —— `systemd MemoryMax=` / cgroup / docker `--memory` / K8s `resources.limits.memory` 直接 = per-tenant quota。同 daemon N session 共 OS 权限（同 `qwen --acp` child，共 user UID + fs 视图），所以**不能让多 tenant 共一个 daemon**。
 
 ### 8.4 Reverse proxy / TLS（生产必备）
 
@@ -882,7 +876,7 @@ daemon host = runtime owner，所有 fs / tool / MCP / skill / shell / LSP / pro
 | MCP server credentials | MCP config 引用 daemon host env |
 | SSH agent / kubeconfig | daemon host 本地（client 端的不自动传过来）|
 
-**client credentials 不会自动可用** —— daemon host 必须自己持有。详 [§05 §十 生产部署 best practice](./05-permission-auth.md#十生产部署-best-practice--runtime-locality--egress-策略)。
+**client credentials 不会自动可用** —— daemon host 必须自己持有。多 tenant 场景下，1 daemon = 1 tenant 时 credentials per-daemon process 隔离最干净。
 
 ---
 
@@ -902,7 +896,6 @@ daemon host = runtime owner，所有 fs / tool / MCP / skill / shell / LSP / pro
 
 Stroustrup 零成本抽象原则——**不要为不需要的东西付费**。
 
-详 [§02 §7 部署模式](./02-architectural-decisions.md#7-部署模式--mode-b-mainline--mode-a-parking-lot)。
 
 ### 9.2 Mode A (`qwen --serve`) 不是主线
 
@@ -910,18 +903,16 @@ Stroustrup 零成本抽象原则——**不要为不需要的东西付费**。
 
 ---
 
-## 十、延伸阅读
+## 十、外部参考
 
-| 章节 | 内容 |
+| 资源 | 用途 |
 |---|---|
-| [§01 Overview](./01-overview.md) | 架构图 + decision matrix + Wave 进度 + 资源经济性 |
-| [§02 Architectural Decisions](./02-architectural-decisions.md) | 8 决策：1 daemon = 1 workspace × N session / MCP 生命周期 / FileReadCache / Permission flow / 多 client 并发 / Mode B mainline / server-client-runtime boundary |
-| [§03 HTTP API & Protocol](./03-http-api.md) | 完整路由表 + SSE 事件 catalog + capability tags + `errorKind` taxonomy + 三套来源 lockstep |
-| [§04 Deployment & Client](./04-deployment-and-client.md) | Deployment shape matrix + client convergence + Runtime locality + Reverse RPC 5 类 |
-| [§05 Security & Permission](./05-permission-auth.md) | 三层权限模型 + bearer + clientId stamping + mutation gate + permission vote + OAuth device-flow + typed-error 设计哲学 + audit hooks |
-| [§06 Roadmap & Ecosystem](./06-roadmap.md) | Timeline + 31-PR Wave breakdown + chiga0 #3803 6 contracts + F-series 重组 + vs OpenCode + vs Anthropic Managed Agents |
-| 上游 issue tracker | [QwenLM/qwen-code#4175](https://github.com/QwenLM/qwen-code/issues/4175) Mode B production-ready Wave plan |
-| ACP transport spec | [RFD #721 ACP Streamable HTTP transport](https://github.com/agentclientprotocol/agent-client-protocol/pull/721) |
+| [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code) | qwen-code GitHub 主仓 |
+| [QwenLM/qwen-code#4175](https://github.com/QwenLM/qwen-code/issues/4175) | Mode B production-ready Wave plan（功能演进跟踪） |
+| [RFC 6750](https://datatracker.ietf.org/doc/html/rfc6750) | Bearer token HTTP 认证标准 |
+| [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) | OAuth 2.0 Device Authorization Grant（device flow 标准） |
+| [RFD #721 ACP Streamable HTTP transport](https://github.com/agentclientprotocol/agent-client-protocol/pull/721) | `/acp` 端点遵循的标准草案 |
+| [Agent Client Protocol](https://github.com/agentclientprotocol/agent-client-protocol) | ACP 协议主仓 |
 
 ---
 
@@ -1000,4 +991,4 @@ ACP-native client 接不上  → /acp 端点是否开?       → 检查 QWEN_SER
 
 ---
 
-> 本章描述 daemon Mode B **终态**（feature-complete production-ready）。**当前发布状态**与终态的差异（哪些已在某个 semver release / 哪些仍在集成分支待周期 merge）请查 [§06](./06-roadmap.md) Wave / F-series 跟踪表。
+> 本文档描述 daemon Mode B **终态**（feature-complete production-ready）。当前 qwen-code release 的实际可用能力面可能少于此处描述 —— 通过运行时 `GET /capabilities` 协商 feature tag 是最准确的能力检测方式（参见附录 A）。
