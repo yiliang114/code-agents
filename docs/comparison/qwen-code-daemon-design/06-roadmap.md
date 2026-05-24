@@ -114,7 +114,7 @@ capability registry → DaemonSessionClient → typed events
 | **2.5** Reliability + session lifecycle closure | client heartbeat + SSE replay sizing + slow-client warnings + session metadata/close-delete lifecycle | PR 9-11 — ✅ **3/3 MERGED**：PR 9 [#4235](https://github.com/QwenLM/qwen-code/pull/4235) + PR 10 [#4237](https://github.com/QwenLM/qwen-code/pull/4237) + PR 11 [#4240](https://github.com/QwenLM/qwen-code/pull/4240) 2026-05-17 | 1.5a #4 reliability + #2 lifecycle closure |
 | **3** Read-only control plane + diagnostics | read-only status routes + preflight/env diagnostics + MCP guardrails (measurement, not full pool) | PR 12-14 — ✅ **3/3 + PR 14b 全 MERGED**：PR 12 [#4241](https://github.com/QwenLM/qwen-code/pull/4241) + PR 13 [#4251](https://github.com/QwenLM/qwen-code/pull/4251) 2026-05-17 + PR 14 [#4247](https://github.com/QwenLM/qwen-code/pull/4247) 2026-05-18 + follow-up PR 14b [#4271](https://github.com/QwenLM/qwen-code/pull/4271) 2026-05-18 17:06 | 1.5c read-only + chiga0 diagnostics |
 | **4** Auth-gated mutation/control routes | **mutation gating helper** + memory/agents CRUD + approval/tools/init/MCP-restart + FileSystemService 边界 + safe file read + file write/edit + auth device-flow | PR 15-21 — ✅ **7/7 完整 MERGED** 🎉：PR 15/16/17/18/19/20/21 全合 (#4236/#4249/#4282/#4250/#4269/#4280/#4255) | 1.5c CRUD + 文件 routes |
-| **5** Architecture extraction + output sinks + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator + 独立 output sinks + flag-gated client adapters | PR 22-26 — ✅ PR 22a/22b/1/22b/2 MERGED ([#4295](https://github.com/QwenLM/qwen-code/pull/4295)/[#4298](https://github.com/QwenLM/qwen-code/pull/4298)/[#4304](https://github.com/QwenLM/qwen-code/pull/4304))；✅ **F1** [#4319](https://github.com/QwenLM/qwen-code/pull/4319) (PR 22b/3 + 22b') + **F1 follow-up** [#4334](https://github.com/QwenLM/qwen-code/pull/4334) + **F2** [#4336](https://github.com/QwenLM/qwen-code/pull/4336) (PR 23 shared MCP pool) + **F3** [#4335](https://github.com/QwenLM/qwen-code/pull/4335) (PR 24 PermissionMediator) MERGED to `daemon_mode_b_main`；🔧 **F4 prereq** [#4360](https://github.com/QwenLM/qwen-code/pull/4360) (daemon protocol completion) OPEN；F4 client adapter 本体 (PR 26) + F5 (PR 25 output sinks) 待开 | 1.5-prereq full + 1.5a #3 full + adapter migration |
+| **5** Architecture extraction + output sinks + full multi-client security | bridge primitives extraction + real MCP shared pool (config-hash keyed) + pairing revocation + full PermissionMediator + 独立 output sinks + flag-gated client adapters | PR 22-26 — ✅ PR 22a/22b/1/22b/2 MERGED ([#4295](https://github.com/QwenLM/qwen-code/pull/4295)/[#4298](https://github.com/QwenLM/qwen-code/pull/4298)/[#4304](https://github.com/QwenLM/qwen-code/pull/4304))；✅ **F1** [#4319](https://github.com/QwenLM/qwen-code/pull/4319) + **F1 follow-up** [#4334](https://github.com/QwenLM/qwen-code/pull/4334) + **F1 test split** [#4445](https://github.com/QwenLM/qwen-code/pull/4445) + **F2** [#4336](https://github.com/QwenLM/qwen-code/pull/4336) (PR 23 shared MCP pool) + **F2 cleanup PR A** [#4411](https://github.com/QwenLM/qwen-code/pull/4411) + **F3** [#4335](https://github.com/QwenLM/qwen-code/pull/4335) (PR 24 PermissionMediator) + **F4 prereq** [#4360](https://github.com/QwenLM/qwen-code/pull/4360) MERGED to `daemon_mode_b_main`；chiga0 SDK 侧并行 ✅ 两个 PR 全 MERGED to `daemon_mode_b_main`：[#4328](https://github.com/QwenLM/qwen-code/pull/4328) shared UI transcript layer + [#4353](https://github.com/QwenLM/qwen-code/pull/4353) SDK daemon-ui unified completeness follow-up（#4328 55% → #4353 95%，~4d 17h，24 commits / 61 reviews，R1-R7 收尾 security hardening）；F4 client adapter 本体 (PR 26) + F5 (PR 25 output sinks) 待开 | 1.5-prereq full + 1.5a #3 full + adapter migration |
 | **6** Release hardening + v0.16 | alpha release docs + npm alpha publish + **production token defaults** (`~/.qwen/serve/instances/<host>-<port>-<workspaceHash>/token`) + deployment refs + v0.16 release | PR 27-31 | Stage 2 + release |
 
 ### Wave 1 — Protocol foundation（无依赖，可立即开始）
@@ -288,10 +288,10 @@ chiga0 设计哲学（每 PR 反复出现）：**existing default path remains u
 
 **CI 注意**：PR target `daemon_mode_b_main`，`ci.yml pull_request` trigger 只 fire `main / release/**` → **CI 不跑**；最终通过 `daemon_mode_b_main → main` 周期 merge PR 触发 full CI matrix。
 
-**F1 ✅ MERGED 2026-05-19 16:26** to `daemon_mode_b_main` (`981bc7c7e`)。**3 deferred follow-up 由 PR#4334 全 ship**：
-- ✅ 服务端 adapter wrapping PR 18 `WorkspaceFileSystem` 满足 `BridgeFileSystem`（commit `9560dfc28` 落地 + commit `881133407` 加 `writeTextOverwrite` primitive 解 Copilot review 抓的 mode preservation 问题）
-- ✅ `runQwenServe.ts` wiring → **真关 PR 18 `ws.ts:613` TOCTOU 线** (commit `9560dfc28`)
-- ⏳ `httpAcpBridge.test.ts` (~6604 LOC) → `acp-bridge/src/bridge.test.ts` 拆走（4/174 daemon-host integration tests fail 跨包，需单独 PR 拆 4 个 integration test 到 cli test file）
+**F1 ✅ MERGED 2026-05-19 16:26** to `daemon_mode_b_main` (`981bc7c7e`)。**3 deferred follow-up 全部 ship 完**：
+- ✅ 服务端 adapter wrapping PR 18 `WorkspaceFileSystem` 满足 `BridgeFileSystem`（#4334 commit `9560dfc28` + commit `881133407` 加 `writeTextOverwrite` primitive 解 Copilot review 抓的 mode preservation 问题）
+- ✅ `runQwenServe.ts` wiring → **真关 PR 18 `ws.ts:613` TOCTOU 线**（#4334 commit `9560dfc28`）
+- ✅ **`httpAcpBridge.test.ts` 6861 LOC 跨包搬迁**（[#4445](https://github.com/QwenLM/qwen-code/pull/4445) MERGED 2026-05-23 08:46，`57d04786`）：`git mv` 100% rename detection 保 blame；181 tests → 177 `acp-bridge/src/bridge.test.ts` + 4 split 到 `cli/serve/daemonStatusProvider.test.ts`（唯一真耦合 daemon-host env/preflight cell 的 test）；新 `acp-bridge/src/internal/testUtils.ts` 抽共享 fixture (`FakeAgent` / `makeChannel` / `makeBridge` / `WS_A` / `WS_B` / `SESS_A`)；跨包解析双通道：TS 走 `./internal/testUtils` subpath export，vitest 运行时走 `resolve.alias` 指 `.ts` source 不用 rebuild；`internal/` + `@internal` JSDoc tag = package-private（沿用 `internal/stderrLine.ts` 既有惯例）；2 轮 self-review via `code-reviewer` agent，8 findings folded；291/291 acp-bridge + 4/4 daemonStatusProvider 全绿
 
 **F1 follow-up batch ([#4334](https://github.com/QwenLM/qwen-code/pull/4334))** OPEN REVIEW_REQUIRED 2026-05-19 17:20 (F1 合后 54m，+894/-54 9 files)：
 
@@ -350,7 +350,7 @@ chiga0 设计哲学（每 PR 反复出现）：**existing default path remains u
 
 F4 = 原 Wave 5 PR 26 `flag-gated daemon client adapters`。client adapter 本体开始前，先有一个 **F4 prereq PR 把 daemon 协议层补齐**——否则 client adapter 渲染不出正确 UI。
 
-**F4 prereq ([#4360](https://github.com/QwenLM/qwen-code/pull/4360))** 🔧 OPEN REVIEW_REQUIRED 2026-05-20 12:45（doudouOUC, +897/-24 11 files, target `daemon_mode_b_main`, branch off F3 merge tip），2 commits bundled：
+**F4 prereq ([#4360](https://github.com/QwenLM/qwen-code/pull/4360))** ✅ MERGED 2026-05-21 03:11 to `daemon_mode_b_main`（doudouOUC, +897/-24 11 files, branch off F3 merge tip），2 commits bundled：
 
 **commit 1 `14637cd79` — #19 stamping**（chiga0 [#4175 comment #19](https://github.com/QwenLM/qwen-code/issues/4175) 点的 3 项 daemon-side stamping；SDK 侧 PR#4353 已 forward-compat ready）：
 
@@ -967,4 +967,4 @@ Anthropic Managed Agents 的内部模型很可能是 per-session container/proce
 
 ---
 
-下一篇：[← 回到 README](./README.md)
+下一篇：[07 — User Guide →](./07-user-guide.md) · [回 README](./README.md)

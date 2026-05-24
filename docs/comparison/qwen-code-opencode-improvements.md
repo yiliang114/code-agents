@@ -1,8 +1,8 @@
 # Qwen Code 改进建议 — 对标 OpenCode
 
-> 基于 OpenCode (anomalyco/opencode) 源码逐项比对，识别 Qwen Code 可借鉴的 **29 项**能力（其中 **4 项已赶超**——item-13 Hook / item-14 Worktree / item-16 LSP / item-20 Skill）。OpenCode 共 **437 文件、78,174 行**——一个功能完备的多客户端 AI 平台。
+> 基于 OpenCode (anomalyco/opencode) 源码逐项比对，识别 Qwen Code 可借鉴的 **34 项**能力（其中 **4 项已赶超**——item-13 Hook / item-14 Worktree / item-16 LSP / item-20 Skill）。OpenCode 一个月内（2026-04-24 → 2026-05-24）从 **216K → 312K 行**（+44%，1596 commits），新增 4 个独立 packages 推进 desktop app / LLM cache policy / Scout agent / TUI diff viewer 等方向。
 >
-> **最后核对日期**：2026-04-24（两侧源码均已 `git pull` 刷新，新增 item-28/29）
+> **最后核对日期**：2026-05-24（两侧源码均已 `git pull` 刷新；新增 item-30~34，refresh item-5/12 状态）
 >
 > **相关报告**：
 > - [Claude Code 改进建议报告（256 项）](./qwen-code-improvement-report.md)——行业领先者对比
@@ -43,8 +43,13 @@
 | [25](#item-25) | Format 代码格式化集成 | **P3** | 1 周 | `format/` | 616 行 2 文件 |
 | [26](#item-26) | Command 动态命令注册 | **P3** | 2 天 | `command/` | 195 行 |
 | [27](#item-27) | Effect 框架工具集 | **P3** | — | `effect/` | 851 行 6 文件 |
-| [28](#item-28) | 可配置工具输出截断限制 🆕 | **P2** | 1 天 | `tool/truncate.ts` + `config/config.ts` | 106 行（PR#23770）|
-| [29](#item-29) | TUI 编辑器上下文 builtin protocol 🆕 | **P2** | 1 周 | `cli/cmd/tui/context/editor.ts` | 448 行（PR#24034）|
+| [28](#item-28) | 可配置工具输出截断限制 | **P2** | 1 天 | `tool/truncate.ts` + `config/config.ts` | 106 行（PR#23770）|
+| [29](#item-29) | TUI 编辑器上下文 builtin protocol | **P2** | 1 周 | `cli/cmd/tui/context/editor.ts` | 448 行（PR#24034）|
+| [30](#item-30) | Desktop app v2（Electron 桌面客户端）🆕 | **P2** | 3-4 周 | `packages/desktop/` | 2,969 行 |
+| [31](#item-31) | LLM cache policy auto-placement 🆕 | **P1** | 1-2 周 | `packages/llm/cache-policy.ts` | ~720 行 |
+| [32](#item-32) | Scout 智能 repo 研究 agent 🆕 | **P1** | 2-3 周 | `tool/repo_overview.ts` + `repo_clone.ts` | ~440 行 |
+| [33](#item-33) | TUI Diff Viewer（file-tree + 折叠 + 语法高亮）🆕 | **P2** | 1-2 周 | `tui/.../diff-viewer-file-tree.tsx` | ~500 行 |
+| [34](#item-34) | Thinking content collapse（推理模型 UX）🆕 | **P2** | 3-5 天 | `tui/context/thinking.ts` | ~220 行 |
 
 ---
 
@@ -317,6 +322,8 @@ OpenCode 实现了完整的 session 分叉/回退系统，核心是 `SessionReve
 ### 5. SQLite 持久化（P1）
 
 **问题**：Qwen Code 使用 JSONL 文件存储会话历史——追加写入简单但读取性能差。一个 500 轮对话的 JSONL 文件可能 10MB+，加载需读取整个文件。无法按条件查询（如"找所有提到 auth 的会话"），无索引、无并发写安全。
+
+**2026-05-24 状态更新**：OpenCode 2026-05 新增 **`packages/effect-drizzle-sqlite/`（3,474 行）—— 独立 Effect.js + Drizzle ORM SQLite 持久化库**，含 migration 框架 + examples + test，作为通用基础设施（不仅给 session data 用）。这把 item-5 从"规划"升级到"production-ready 库可复用"——Qwen Code 若做 SQLite 持久化，可以直接借鉴这个包的 Effect 风格 schema/migration 模式，而不是从头写。原 SQLite Persistence 推进思路（DR、WAL、并发安全）不变。
 
 ### 5.1 行业背景：Code Agent 会话存储的现状
 
@@ -763,6 +770,8 @@ bonjour.publish({
 
 **问题**：Qwen Code 硬编码支持 Anthropic/Google/Qwen 等少数 Provider。添加新 Provider 需要修改核心代码。
 
+**2026-05-24 状态更新**：OpenCode 2026-05 把 LLM 层从 `core/src/provider/` 抽到**独立 `packages/llm/`** —— 含 `protocols/` / `providers/` / `route/` / `route/transport/` / `schema/` 分层 + **`cache-policy.ts` 智能缓存放置**（详 item-31）。这是 provider 体系从"plugin"演变到"独立 package + 智能 routing"的范式升级。同时 plugin 系统加 `xai.ts`（PR#28557 xAI Grok with device-code login）+ `digitalocean.ts`（PR#26095 DigitalOcean OAuth + inference router）等新 provider plugin。
+
 **OpenCode 的解决方案**：`provider/`（31 文件 7,927 行）——可扩展的多 Provider 架构：
 
 **内置 Provider**（25+）：
@@ -1191,6 +1200,198 @@ TUI autocomplete + prompt
 
 ---
 
+<a id="item-30"></a>
+
+### 30. Desktop app v2 — Electron 桌面客户端 🆕（P2）
+
+**问题**：Qwen Code 只有 CLI + VSCode 插件，没有独立桌面客户端。chiga0 推的 daemon `web-shell` 是基于 browser 的（需浏览器 + daemon 双进程），不是原生 desktop app。给非开发者 / 跨平台分发 / native OS 集成（系统托盘、全局快捷键、系统通知）场景下，独立 Electron app 仍是常见诉求。
+
+**OpenCode 的解决方案**（2026-05 重写为 v2）：
+
+| package | 行数 | 用途 |
+|---|---|---|
+| `packages/desktop/src/main/` | ~1,000 | Electron main process（菜单 / 窗口 / IPC / 自动更新）|
+| `packages/desktop/src/preload/` | ~400 | preload script —— 安全暴露 IPC 给 renderer |
+| `packages/desktop/src/renderer/` | ~1,500 | renderer（updater.ts / webview-zoom.ts / titlebar 等）|
+| **合计** | **~2,969 行** | feature-complete Electron app |
+
+**关键 v2 改进**（一个月内 commit 流）：
+- titlebar redesign —— 整合 home / session 入口 / toolbar
+- pinch zoom 支持
+- export logs / menu bar auto-hide
+- session-new-design-view 桌面优先的会话导航
+- webview-zoom.ts —— webview 缩放控制
+
+**Qwen Code 现状**：[PR#3778](https://github.com/QwenLM/qwen-code/pull/3778) 曾尝试导入 Craft Agents fork 作 desktop app（+341K LOC，OPEN CHANGES_REQUESTED），但 wenshao 要求拆分。仍无 production-ready desktop app。
+
+**Qwen Code 修改方向**：
+- 如果做独立 desktop app，可参考 OpenCode v2 的 packages/desktop 包结构 + Electron + IPC 安全模式
+- vs `daemon web-shell` 的取舍：desktop app = 单进程更易分发但更新慢；web-shell = 多进程灵活但需启动 daemon
+
+**实现成本**：~3-4 周（如启动）—— Electron 基建 + IPC + updater + 系统集成
+
+**意义**：覆盖非开发者 / 跨平台分发场景；与 daemon `web-shell` 是互补不是替代。
+
+---
+
+<a id="item-31"></a>
+
+### 31. LLM cache policy auto-placement 🆕（P1）
+
+**问题**：Qwen Code 对 prompt cache 的策略是固定的——cache 位置（在 system / first user message / 中间某轮）、TTL、breakpoint cap、tool 隔离都由开发者写死。不同模型、不同请求形态（短/长）、不同任务（首轮探索 vs 多轮 follow-up）最优 cache 策略差异很大。token 成本节省空间未开发。
+
+**OpenCode 的解决方案**（PR#26786 + #26779 ~720 行）：
+
+新 `packages/llm/cache-policy.ts` —— **动态计算 cache 放置策略**：
+- 输入：模型 / 请求消息列表 / tool 列表 / 推理 mode
+- 输出：cache breakpoint 位置 + TTL 选择（ephemeral / 5min / 1h / unlimited）+ tool 隔离决策
+- 覆盖 Anthropic / OpenAI / Gemini / Bedrock 4 大 provider 各自 cache schema
+- **262 行 cache-policy.test.ts** —— 验证不同模型 + 不同请求形态的 placement 决策
+
+**核心思路**：cache 策略不再是硬编码，而是 **per-request 计算**：
+- 短对话（< 3 turn）→ 不缓存（cost > benefit）
+- 长 system prompt + 短 user → cache 在 system 后
+- 多轮重复 tool call → cache 在 tool definition 后 + tool 输出隔离
+- 推理 mode（max effort）→ 关闭缓存（reasoning trace 一次性，缓存无收益）
+
+**Qwen Code 现状**：cache 配置散落在各 provider adapter，无统一策略层；新增 provider 都得自己写 cache 处理。
+
+**Qwen Code 修改方向**：
+1. 在 `packages/core/src/providers/` 上加 `cache-policy.ts` 抽象层
+2. provider adapter 调用 `decideCachePlacement({model, messages, tools, mode})` 返回 placement decision
+3. 测试矩阵：每个 provider × 5+ 请求形态 → expected placement
+4. 暴露 settings 让用户 override（如 `cachePolicy: "aggressive" | "balanced" | "disabled"`）
+
+**实现成本**：~1-2 周（1 人）—— 算法 + 4 provider adapter 适配 + 测试矩阵
+
+**意义**：token 成本直接降低（aggressive cache 可省 30-60% input token），对商业可行性影响大。
+
+**改进收益**：用户的 monthly bill 直接降低；同时对 100K+ context 的长对话性能也有提升（cache hit 时 TTFT 降一半）。
+
+---
+
+<a id="item-32"></a>
+
+### 32. Scout 智能 repo 研究 agent 🆕（P1）
+
+**问题**：用户开新 session 第一句问"这个 repo 怎么 work"或"帮我把 X 模块的功能解释下"——agent 没有自动的 repo overview 机制，只能从 README + 几个文件 read 后猜测。如果是不熟的开源 repo（如想读 Linux kernel 某子系统），agent 缺乏"先扫一遍再回答"的能力。
+
+**OpenCode 的解决方案**（~440 行新工具集）：
+
+| 工具 | 行数 | 功能 |
+|---|---|---|
+| `tool/repo_overview.ts` | ~238 | 自动生成 repo 结构总览 —— AST 解析 + 导出 / 依赖图 / 关键模块识别 |
+| `tool/repo_clone.ts` | ~209 | 智能 git clone 管理 —— 缓存 + ref 切换 + 自动 .gitignore 内化 |
+| `tool/repo_clone.txt` + `repo_overview.txt` | — | tool definitions（OpenAI function calling schema）|
+
+加上原有 `tool/codesearch.ts`（Exa 语义代码搜索，item-6）和 `agent/prompt/scout.txt` agent prompt，组成完整的 **Scout agent**：
+- session 启动时自动调 `repo_overview` 生成 summary
+- 用户问 "这个 repo 怎么 work" 时，agent 已有上下文不需要从头摸
+- 跨 repo 比较场景：scout 自动 clone 多个 ref repo 并并行 overview
+
+**Qwen Code 现状**：没有 repo 自动 overview 工具；用户需手动告诉 agent "先看看 README" / "ls 一下目录结构"。
+
+**Qwen Code 修改方向**：
+1. 新增 `RepoOverviewTool`：用 `ripgrep` + AST 解析（用 LSP 已加载的语言 server 拿 symbol）生成 modules + exports 报告
+2. 新增 `RepoCloneTool`：智能 clone + ref 缓存到 `~/.qwen/scout-cache/`
+3. 新增 `repo-scout` skill：在 session 启动时（或显式 `/scout`）触发 overview，注入到 system context
+4. 与 LSP 集成（避免重复 parse）+ 与 ripgrep（避免重复扫描）
+
+**实现成本**：~2-3 周（1 人）—— AST 集成 + clone 管理 + skill prompt
+
+**意义**：first-contact 体验质变 —— 第一句问的回答从"我看下"（5 个 tool call 后才有内容）变成"基于 repo 的 X/Y/Z 模块, ..."（即时上下文）。
+
+**改进收益**：新 repo 首次提问的 token 消耗降 50% + 回答质量显著提升。
+
+---
+
+<a id="item-33"></a>
+
+### 33. TUI Diff Viewer — file tree + 折叠 + 语法高亮 🆕（P2）
+
+**问题**：Qwen Code TUI 看 git diff / agent 修改预览只是纯文本输出 —— 大型变更（多文件 / 多 hunk）无法交互式浏览。用户想"先看哪个文件改动最大" / "只看 X 文件的 Y 处" 都要肉眼扫纯文本。
+
+**OpenCode 的解决方案**（~500 行新组件）：
+
+| 文件 | 用途 |
+|---|---|
+| `cli/cmd/tui/feature-plugins/system/diff-viewer-file-tree.tsx` | 可折叠 file tree —— 按目录层级折叠 + 大目录启发式自动收起 |
+| `cli/cmd/tui/feature-plugins/system/diff-viewer-file-tree-utils.ts` | tree 构建 + 排序 + collapse 逻辑 |
+| `test/cli/tui/diff-viewer.test.tsx` | 交互测试 |
+| `test/cli/tui/diff-viewer-file-tree-utils.test.ts` | 树结构测试 |
+
+加上**40+ 语言语法高亮**支持（基于 highlight.js / tree-sitter），让 diff 看起来像 GitHub PR 而不是纯文本。
+
+**核心交互**：
+```
+┌─ Changed files (12) ────────────────────────┐
+│ ▼ src/                                       │
+│   ▼ tools/                                   │
+│     ▶ shell.ts          +120 -45  M         │
+│     ▶ edit.ts           +80  -20  M         │
+│   ▶ ui/  (3 files collapsed)                 │
+│ ▶ test/  (5 files collapsed)                 │
+│ ▶ docs/  (2 files collapsed)                 │
+└──────────────────────────────────────────────┘
++ syntax-highlighted diff in main pane
+```
+
+**Qwen Code 现状**：TUI 看 diff 仅纯文本；大变更只能 `git diff | less`。
+
+**Qwen Code 修改方向**：
+1. 在 `packages/cli/src/ui/components/` 加 `DiffViewer.tsx`（Ink 组件）+ `diff-tree.ts`
+2. 复用 `cli-highlight` 或集成 `@wooorm/starry-night`（tree-sitter wrapper）做语法高亮
+3. 触发场景：`/diff`、approval-mode 预览编辑 batch、`git status` after agent 修改
+4. 键盘交互：`j/k` 浏览文件、`o` 折叠/展开、`Enter` 进入文件查看 hunk
+
+**实现成本**：~1-2 周（1 人）—— Ink 组件 + diff parsing + highlight 集成
+
+**意义**：让 agent 多文件批量修改的预览体验**追上 GitHub PR 界面**。
+
+**改进收益**：大变更 review 速度从"扫一遍纯文本（30 秒+）"降到"扫一遍 tree 找重点（5 秒）"。
+
+---
+
+<a id="item-34"></a>
+
+### 34. Thinking content collapse — 推理模型 UX 🆕（P2）
+
+**问题**：o1 / Qwen-QwQ / DeepSeek-R1 等推理模型每轮输出 **大段 `<thinking>` reasoning trace**——可能比最终答案长 5-10x。当前 Qwen Code TUI 把 thinking 与 final answer 同等显示，导致对话区被 reasoning trace 淹没，难以快速找到结论。
+
+**OpenCode 的解决方案**（~220 行）：
+
+| 文件 | 行数 | 用途 |
+|---|---|---|
+| `cli/cmd/tui/context/thinking.ts` | ~150 | thinking content collapse / expand state 管理 |
+| `feature-plugins/system/session-v2.tsx` | ~70（集成）| 在 session 视图中**默认折叠 thinking**，显示 "💭 [思考 N 行]" 占位，点击/`t` 键展开 |
+
+**核心交互**：
+```
+User: Refactor this auth flow
+Assistant:
+  💭 [思考 245 行]                    ← 默认折叠，按 t 展开
+  
+  Refactored auth.ts with 3 changes:
+  1. Extract token validation...
+  2. ...
+```
+
+**Qwen Code 现状**：thinking content 直接显示，淹没 final answer。
+
+**Qwen Code 修改方向**：
+1. `packages/cli/src/ui/components/` 加 `ThinkingBlock.tsx` —— 默认 collapsed 显示行数 + 折叠标志
+2. `MessageRenderer.tsx` 识别 `<think>` / `<reasoning>` tag（或 provider-specific 字段如 OpenAI o1 的 `reasoning_content`），路由到 ThinkingBlock
+3. 键盘交互：`t` 切换当前消息 thinking 折叠 / `Shift+T` 全部展开
+4. Web-shell 同步支持（chiga0 SDK daemon UI 层 reducer 加 `thinkingCollapsed` 状态）
+
+**实现成本**：~3-5 天（1 人）—— UI 组件 + state 管理 + 几个键盘 binding
+
+**意义**：推理模型 UX 完善 —— 找答案不被 thinking 淹没；想看推理过程随时展开。
+
+**改进收益**：使用 o1 / Qwen-QwQ 等推理模型的对话可读性显著提升。
+
+---
+
 ## 模块级架构差异
 
 ### OpenCode 独有模块（Qwen Code 无对应）
@@ -1252,6 +1453,52 @@ TUI autocomplete + prompt
 
 ## 更新日志
 
+### 2026-05-24（OpenCode 上游 `git pull` · 新增 5 项 + 2 项 refresh）
+
+**OpenCode 源码扫描**：`2026-04-24 → 2026-05-24` 间 **1596 commits**，HEAD `0cf99cf5f`，**主分支是 `dev` 不是 `main`**。OpenCode LOC **216,508 → 312,027**（+95K，+44%）。
+
+**新增 4 个独立 packages**（核心方向）：
+
+| package | 行数 | 关系 |
+|---|---|---|
+| `packages/desktop/` | 2,969 | **新方向 item-30**（Electron 桌面客户端 v2） |
+| `packages/effect-drizzle-sqlite/` | 3,474 | **item-5 refresh**（SQLite 持久化具体实现库） |
+| `packages/llm/` | ~6,000+ | **item-12 refresh + item-31 新方向**（LLM 路由层分离 + cache-policy auto-placement） |
+| `packages/http-recorder/` | 1,351 | test/debug 基建，未单列 item |
+
+**新增 5 项 item**（item-30 ~ item-34）：
+
+| # | 功能 | P | 文件 |
+|---|---|---|---|
+| 30 | Desktop app v2（Electron）| P2 | `packages/desktop/` |
+| 31 | LLM cache policy auto-placement | **P1** | `packages/llm/cache-policy.ts` |
+| 32 | Scout 智能 repo 研究 agent | **P1** | `tool/repo_overview.ts` + `repo_clone.ts` |
+| 33 | TUI Diff Viewer（file-tree + 语法高亮）| P2 | `tui/.../diff-viewer-file-tree.tsx` |
+| 34 | Thinking content collapse（推理模型 UX）| P2 | `tui/context/thinking.ts` |
+
+**Item refresh**（已有 29 项里需刷新状态）：
+
+| Item | 刷新内容 |
+|---|---|
+| [item-5](#item-5) | **`effect-drizzle-sqlite` (3,474 行) 落地为独立可复用库**（Effect.js + Drizzle + migration），从"规划"→"production-ready 库可复用" |
+| [item-12](#item-12) | LLM 层从 `core/src/provider/` 抽到独立 `packages/llm/`，分 `protocols/` + `providers/` + `route/` + `route/transport/` + `schema/`；新增 `xai.ts` Grok / `digitalocean.ts` plugin |
+
+**关键诚实原则** —— OpenCode 主分支是 `origin/dev` 不是 `main`！所有 commit 通过 `git merge-base --is-ancestor <sha> origin/dev` 验证 IN dev 才计入。本次审计**未发现** PR/feature branch 上未合的 candidate（与上次 Codex 审计排除 4 个 unmerged feature 不同）。
+
+#### 次要变更不单列 item
+
+| 类别 | 代表 PR | 不单列原因 |
+|---|---|---|
+| TUI session pinning + recent cycle | PR#26858 | UI 交互改进，价值低于 5 个主推 item |
+| HTTP API v2 27+ 路由桥接 | 多 PR `feat(httpapi)` | item-8 HTTP Server 已覆盖大方向，仅是 API surface 完整化 |
+| xAI Grok + DigitalOcean provider plugin | PR#28557 / #26095 | 单 provider 集成已 fold 到 item-12 refresh 提及 |
+| i18n / Editor / Nix packaging | 多 PR | 本地化 / 编辑器特定集成 / 发行工程，非新能力 |
+| MCP permission registration/auth | PR#27525 | item-18 Plugin 体系递进改进 |
+| HTTP response compression | PR#26440 | 性能优化 |
+| `customize-opencode` skill | PR#26899 | item-20 Skill 已有方向深化 |
+
+---
+
 ### 2026-04-24（OpenCode 上游 `git pull` · 新增 2 项）
 
 **OpenCode 源码扫描**：`2026-04-10 → 2026-04-24` 间 60+ commit（含大量 Effect Schema 迁移）。识别出 **2 项新可借鉴能力**。
@@ -1303,4 +1550,4 @@ TUI autocomplete + prompt
 
 ---
 
-*分析基于 OpenCode (anomalyco/opencode v1.3.0, 74,418 行) 和 Qwen Code 源码，截至 2026 年 4 月。*
+*分析基于 OpenCode (anomalyco/opencode, branch `dev`, HEAD `0cf99cf5f`, **312,027 行**) 和 Qwen Code 源码 (**631,020 行 TS**)。最后核对：2026-05-24。审计标准：仅算 merge 到 `origin/dev` 的代码，PR/branch 上未合 feature 不算 OpenCode 已发布能力。*

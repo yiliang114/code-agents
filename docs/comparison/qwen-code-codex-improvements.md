@@ -1,8 +1,8 @@
 # Qwen Code 改进建议——对标 Codex CLI
 
-> 基于 Codex CLI (openai/codex) 完整 Rust 源码（70+ crate，**651,174 行**）与 Qwen Code 源码（**281,954 行 TS**）的系统对比，识别 **28 项**可借鉴的能力（其中 **1 项已实现**——item-13 Hook 系统）。Codex CLI 是唯一采用 Rust 原生构建 + 沙箱默认启用的主流 CLI Code Agent。
+> 基于 Codex CLI (openai/codex) 完整 Rust 源码（80+ crate，**909,950 行**）与 Qwen Code 源码（**631,020 行 TS**）的系统对比，识别 **29 项**可借鉴的能力（其中 **1 项已实现**——item-13 Hook 系统）。Codex CLI 是唯一采用 Rust 原生构建 + 沙箱默认启用的主流 CLI Code Agent。
 >
-> **最后核对日期**：2026-04-24（两侧源码均已 `git pull` 刷新，新增 item-26/27/28）
+> **最后核对日期**：2026-05-24（两侧源码均已 `git pull` 刷新，新增 item-29，refresh item-1/8/9/25 状态）
 >
 > **相关报告**：
 > - [Claude Code 改进建议报告（256 项）](./qwen-code-improvement-report.md)——行业领先者对比
@@ -39,9 +39,10 @@
 | [23](#item-23) | Code Mode 轻量沙箱 | **P3** | `code-mode/` | 2,746 行 |
 | [24](#item-24) | 请求压缩（Zstd） | **P3** | `features/` | ~100 行 |
 | [25](#item-25) | Exec Server 远程执行 | **P3** | `exec-server/` | 5,150 行 |
-| [26](#item-26) | Sticky Environment 会话级环境变量选择 🆕 | **P2** | `app-server/` v2 thread state | ~500 行（PR#18897）|
-| [27](#item-27) | Permission Profiles 统一权限档位 🆕 | **P2** | `core/` + `app-server/` + `tui/` + `mcp/` + `exec-server/` | ~1,500 行（6 PR）|
-| [28](#item-28) | `excludeTurns` 分页加载 Thread 🆕 | **P3** | `app-server/` v2 thread_fork/resume | ~420 行（PR#19014）|
+| [26](#item-26) | Sticky Environment 会话级环境变量选择 | **P2** | `app-server/` v2 thread state | ~500 行（PR#18897）|
+| [27](#item-27) | Permission Profiles 统一权限档位 | **P2** | `core/` + `app-server/` + `tui/` + `mcp/` + `exec-server/` | ~1,500 行（6 PR）|
+| [28](#item-28) | `excludeTurns` 分页加载 Thread | **P3** | `app-server/` v2 thread_fork/resume | ~420 行（PR#19014）|
+| [29](#item-29) | External Agent Config + Session 迁移导入 🆕 | **P2** | `external-agent-migration/` + `external-agent-sessions/` | ~3,607 行 |
 
 ---
 
@@ -65,6 +66,8 @@
 **Qwen Code 修改方向**：① 添加 Linux Bubblewrap/Landlock 原生沙箱（不需要 Docker）；② 考虑在 `--full-auto` 或 CI 模式下默认启用沙箱；③ 网络默认阻断（当前 Seatbelt 默认 `permissive-open` 允许网络）。
 
 **实现成本**：~1 周（Linux Landlock），参考 Claude Code 改进报告 [stability#30](./qwen-code-improvement-report-p2-stability.md#item-30)。
+
+**2026-05-24 状态更新**：Codex 2026-05 新增 `codex-rs/bwrap/` 独立 crate（45 行 wrapper + build.rs，引入 PR `26f355b67b`）—— **Linux Bubblewrap 二进制现 bundled 进发行**，开箱即用，用户不需要预装 `bwrap`。这降低了 Linux 沙箱的部署门槛，Qwen Code 若做 Bubblewrap 集成，应同样考虑 bundled 路径。
 
 ---
 
@@ -198,6 +201,8 @@
 
 支持 stdio + WebSocket 两种传输。
 
+**2026-05-24 状态更新**：Codex 2026-05 新增 `codex-rs/app-server-transport/`（9,150 行，PR `51bfb5f3b1`）—— 把 transport 层抽到独立 crate，含 websocket + stdio + auth guard + connection management；同时新增 `codex-rs/app-server-daemon/`（3,015 行，PR `1752f374a8`）为远端 SSH Codex 实例提供 app-server lifecycle 管理（`codex daemon start/stop/status`）。Qwen Code 借鉴 IDE 协议时可参考这套 transport 分层 + remote lifecycle 设计。
+
 **实现成本**：~3 周
 
 ---
@@ -217,6 +222,8 @@
 **参考实现**：[Multica](https://github.com/multica-ai/multica)（`server/pkg/agent/`，4,201 行 Go）提供了统一的 Agent Backend 抽象——同一 `Backend` 接口驱动 Claude Code（stream-json）、Codex CLI（JSON-RPC）、OpenClaw、OpenCode 四种 Agent。Qwen Code 如果要编排外部 Agent（如调用 Claude Code 做 /ultrareview），可参考此模式。
 
 **实现成本**：~2 周，参考 Claude Code 改进报告 [engine#14](./qwen-code-improvement-report-p0-p1-engine.md#item-14)。
+
+**2026-05-24 状态更新**：Codex 2026-05 新增 `codex-rs/agent-graph-store/`（454 行，PR `782191547c`）—— 存储与查询 thread-spawn 的父子拓扑关系，为多 agent 协作提供结构化存储边界。Qwen Code 做多 agent 编排时可参考这种"先建图存关系再 spawn"的模式，便于事后追踪和调试。
 
 ---
 
@@ -526,12 +533,57 @@ thread/turns/list { page: 0, size: 50 }  ← UI 按需翻页
 
 ---
 
+<a id="item-29"></a>
+
+### 29. External Agent Config + Session 迁移导入 🆕（P2）
+
+**问题**：用户已经在 Claude Desktop / Cursor / 其他 AI 工具上配了一堆 MCP server / hooks / custom commands / subagents，迁到 Qwen Code 要全手动重配；旧工具的会话历史也带不过来。社区里"迁移友好度"是 AI agent 工具增长的重要变量。
+
+**Codex 的解决方案**（2026-05 引入两个独立 crate，**total ~3,607 行**）：
+
+| Crate | 行数 | 引入 PR | 用途 |
+|---|---|---|---|
+| `external-agent-migration` | 2,141 | `cb8b1bbcd6` | 检测并转换外部 agent 的 MCP servers / hooks / commands / subagents 配置 |
+| `external-agent-sessions` | 1,466 | `4c68bd728f` | 从外部 agent 的会话文件检测并导入到 Codex rollout 历史 |
+
+**核心设计**：
+
+```
+~/.claude / ~/.config/cursor / ~/.config/<other-agent>
+   ↓ detect (auto-scan known agent paths)
+保守转换管道（仅导入安全可表示的配置）
+   ↓
+Codex config + rollout/sessions（带 import ledger 追踪来源）
+```
+
+- **保守转换** —— 不是 1:1 复制，对每类配置（MCP / hooks / custom commands / subagents）单独写 mapper，无法可靠表达的 silently skip + 报告给用户
+- **Import ledger** —— 记录每条 imported entry 的源 agent + 源 path + 时间戳，让用户可以审计 / 撤销
+- **Session 导入** —— 检测外部 agent 的会话文件（YAML/JSON 各种格式），解析后生成 Codex 标准 rollout 记录；大 session 会自动 compaction 后再 resume，不会一次性吞掉 1000+ turn
+
+**Qwen Code 现状**：完全没有外部 agent 迁移机制。Qwen 用户从 Claude Code / Cursor / 其他工具切过来都是手动重新配。
+
+**Qwen Code 修改方向**：
+1. 定义 `external_agent_detector` 接口：扫描 `~/.claude` / `~/.config/cursor` / `~/.config/aider` 等，识别 agent + version
+2. 为每个支持的外部 agent 写 `<source-agent>_mapper`：MCP / hooks / slash commands / subagents 各一个 mapper
+3. 新 slash command `/import` 或 CLI 子命令 `qwen import --from claude-code` 触发
+4. Import ledger 存到 `~/.qwen/imports.jsonl`，每条带 source-agent / source-path / import-time / status
+5. Session 导入需 compaction —— 调用 `ChatRecordingService` 的 summarize 流程把 1000+ turn 压成 1 个 summary turn 再 resume
+6. UI: 首次启动 detect 到外部 agent 时给一次性 prompt "检测到 Claude Desktop 配置，是否导入？(y/n)"
+
+**实现成本**：~2-3 周（1 人）—— detect + 多 agent mapper 矩阵 + compaction 集成 + import ledger + UI prompt
+
+**意义**：用户迁移友好度从"清零重配"变成"一行命令导入"，是用户增长的关键变量。
+
+**改进收益**：Claude Code / Cursor / Aider 用户切换 Qwen Code 的摩擦从"花 30 分钟重配"降到"5 秒导入 +  几分钟核对"。
+
+---
+
 ## 二、竞品对比矩阵
 
 | 能力 | Codex CLI | Claude Code | Gemini CLI | Qwen Code |
 |------|----------|-------------|-----------|-----------|
 | **技术栈** | Rust 原生 | TypeScript/Rust | TypeScript | TypeScript |
-| **代码规模** | 619,458 行 | ~512,000 行 | ~550,000 行 | ~439,000 行 |
+| **代码规模** | 909,950 行 | ~512,000 行 | ~550,000 行 | 631,020 行 |
 | **默认沙箱** | ✅ 3 平台原生 | 可选 | 可选 | 可选（Docker/Podman/Seatbelt） |
 | **网络隔离** | ✅ 默认阻断 | 可选 | 无 | ❌ |
 | **Feature Flag** | 52 运行时 | 22 编译时 | 无 | ❌ |
@@ -569,6 +621,64 @@ thread/turns/list { page: 0, size: 50 }  ← UI 按需翻页
 | **多格式扩展** | Claude + Gemini + Qwen 三格式兼容 |
 
 ## 五、更新日志
+
+### 2026-05-24（Codex 上游 `git pull` · 新增 1 项 + 4 项 refinement）
+
+**Codex 源码扫描**：`2026-04-24 → 2026-05-22` 间 **1043 commits**，HEAD `7d47056ea4`。Codex LOC **651,174 → 909,950**（+258K，+40%）。
+
+**新增 13 个 crate**（核心方向）：
+
+| Crate | 行数 | 关系 |
+|---|---|---|
+| `external-agent-migration` / `external-agent-sessions` | 2,141 + 1,466 | **新方向 item-29** |
+| `agent-graph-store` | 454 | item-9 refinement |
+| `app-server-transport` | 9,150 | item-8 refinement (transport 分层) |
+| `app-server-daemon` | 3,015 | item-8 / item-25 overlap (remote lifecycle) |
+| `bwrap` | 45 | item-1 refinement (bundled binary) |
+| `file-watcher` | 1,393 | 内部重构 |
+| `message-history` | 633 | 内部重构 |
+| `file-system` | 192 | 内部重构 |
+| `core-api` | 79 | SDK 文档 / API stability surface |
+| `thread-manager-sample` | 385 | 官方 ThreadManager 示例 |
+| `ext/{memories,guardian,extension-api,goal}` | ~2,500 | 扩展生态模块化（早期，未独立 item） |
+
+**只新增 1 项 item**（item-29 External Agent 迁移）—— 其他 12 个新 crate 均为已有 item 的 refinement 或内部重构。
+
+#### 重要排除：本次审计排除了 4 个看似新的方向
+
+源码审计严格按 "**只算 merge 到 `origin/main` 的代码**" 标准过滤。以下 4 个 feature commit 出现在 1043 commits 列表里但**不在 main 分支**（PR/feature branch only），不计入 Codex 已发布能力：
+
+| Feature 名 | 引入 commit | 在 main? | 备注 |
+|---|---|---|---|
+| review-story（model-backed code review narrative） | `5e8a5b2c7c` | ❌ | 2026-05-23 PR 分支，未合，可能仍在改 |
+| next-prompt suggestion engine | `a0d7b8e4cd` / `78e459feb8` / `f00ebd615c` | ❌ | 2026-05-22 PR 分支，未合 |
+| usage attribution（token usage breakdown）| `b79ed47409` / `357d7118ac` / `138376e6e1` | ❌ | 2026-05-22 PR 分支，未合 |
+| prompt hooks（动态 prompt 注入）| `1a3f6444e3` | ❌ | PR 分支，未合 |
+
+这 4 项若未来 merge 到 main，可在下次 review 时再单列 item。
+
+#### Item refinement（已有 28 项里需刷新数字 / 状态）
+
+| Item | 刷新内容 |
+|---|---|
+| [item-1](#item-1) | 新增 `bwrap` crate (bundled Linux Bubblewrap binary) — PR `26f355b67b` |
+| [item-8](#item-8) | 新增 `app-server-transport` (9,150 行) + `app-server-daemon` (3,015 行) — PR `51bfb5f3b1` / `1752f374a8` |
+| [item-9](#item-9) | 新增 `agent-graph-store` (454 行) thread-spawn 父子拓扑存储 — PR `782191547c` |
+| [item-25](#item-25) | `app-server-daemon` 提供 SSH 远端 lifecycle 管理（与 item-8 共享）|
+
+#### 次要变更不单列 item
+
+| commit | 方向 | 不单列原因 |
+|---|---|---|
+| `c579da41b1` / `2004173cd7` | `file-watcher` / `message-history` 从 core 提取 | 架构重构，无新用户能力 |
+| `26f355b67b` | bwrap binary bundle | item-1 工程改进 |
+| `51bfb5f3b1` | app-server-transport restore | item-8 传输细节 |
+| `1752f374a8` | app-server-daemon | item-8 / item-25 lifecycle 细化 |
+| `9dcc4130cf` | code-mode durable session interface | item-23 深化，未公开特性 |
+| `5bc43bd551` | experimental turn additional context | item-26 (Sticky Environment) 上下文扩展 |
+| `3094e2b6b0`+ | agent task identity + ChatGPT opt-in | item-27 身份细化 |
+
+---
 
 ### 2026-04-24（Codex 上游 `git pull` · 新增 3 项）
 
@@ -612,4 +722,4 @@ thread/turns/list { page: 0, size: 50 }  ← UI 按需翻页
 
 ---
 
-*分析基于 Codex CLI (openai/codex, Apache-2.0, 70+ Rust crate, **651K 行**) 和 Qwen Code 源码 (**282K 行**)。最后核对：2026-04-16。*
+*分析基于 Codex CLI (openai/codex, Apache-2.0, 80+ Rust crate, **910K 行**) 和 Qwen Code 源码 (**631K 行**)。最后核对：2026-05-24。审计标准：仅算 merge 到 `origin/main` 的代码，PR/branch 上未合 feature 不算 Codex 已发布能力。*

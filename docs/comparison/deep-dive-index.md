@@ -1,4 +1,4 @@
-# Deep-Dive 文章索引（150 篇）
+# Deep-Dive 文章索引（151 篇）
 
 > 按主题分类的深度分析文章，每篇聚焦一个具体技术机制的 Claude Code vs Qwen Code 对比。
 >
@@ -30,12 +30,13 @@
 | [反应式压缩](./reactive-compression-deep-dive.md) | prompt_too_long 恢复 |
 | [命令队列编排](./command-queue-orchestration-deep-dive.md) | 统一队列 + 优先级调度 |
 
-## 工具与命令（17 篇）
+## 工具与命令（18 篇）
 
 | 文章 | 主题 |
 |------|------|
 | [斜杠命令](./slash-commands-deep-dive.md) | 命令体系总览 |
 | [关键命令](./key-commands-deep-dive.md) | /compact /plan /init |
+| [`/goal` 命令对比](./goal-command-deep-dive.md) | 3-Agent 实现深度对比（Codex 完整 subsystem / Claude evaluator-in-prompt cRK / Qwen LLM-as-judge subquery + 零新 subsystem 复用 Stop hook）：完成判定算法 / 状态机 4-2-4 态 / 持久化 / Bootstrap / token 预算+安全 / GoalPill UI / 协同 plan-compact-resume-fork |
 | [工具并行](./tool-parallelism-deep-dive.md) | 智能批处理 |
 | [工具搜索](./tool-search-deep-dive.md) | ToolSearch 延迟加载 |
 | [流式工具执行](./streaming-tool-execution-deep-dive.md) | 流水线执行 |

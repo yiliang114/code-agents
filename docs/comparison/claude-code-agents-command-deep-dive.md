@@ -348,7 +348,7 @@ Claude 的 markdown + YAML frontmatter 是 **事实标准**（OpenAI Codex / Cur
 ### 10.3 AI 生成 agent 是缺失的杀手 feature
 
 Qwen Code 当前没有 `/agents generate` 能力。可作为 **Stage 2+ candidate**：
-- 类似 `/goal` 用 LLM-as-judge 思路（详 [PR#4088 /goal subquery](./qwen-code-improvement-report.md)）
+- 类似 `/goal` 用 LLM-as-judge 思路（详 [`goal-command-deep-dive.md`](./goal-command-deep-dive.md)）
 - 但 task 是"生成 agent 定义"而非"判断 goal 完成"
 - 实现：`queryModelWithoutStreaming` + 长 system prompt + JSON 输出 schema 验证
 - UI：wizard 内"Generate"分支调用
