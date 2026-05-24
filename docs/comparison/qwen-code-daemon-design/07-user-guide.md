@@ -7,7 +7,7 @@
 `qwen serve` 启动一个本地 HTTP daemon，把 qwen-code 的 agent 能力暴露给**多种 client**（web chat / web terminal / IDE / Zed / Goose / 自动化脚本）—— 不用每个 client 自己 spawn `qwen --acp` child。
 
 **典型场景**：
-- 🖥️ 浏览器里跑 web chat / web terminal，让 agent 操作本地 repo
+- 🖥️ 浏览器里跑**内置 web-shell**（qwen-code 自带的 React web 客户端，功能与 `qwen` CLI 对等），让 agent 操作本地 repo
 - ☁️ 远端 cloud devbox / Codespaces / K8s pod 跑 daemon，本地浏览器/IDE 连进去
 - 🧑‍🤝‍🧑 同一 session 多 tab 协作，shared permission 审批
 - 🤖 Zed / Goose 等 ACP-native client 接入（走 `/acp` 端点）
@@ -47,7 +47,7 @@
 
 | 术语 | 含义 |
 |---|---|
-| **client** | 调 daemon 的程序：web chat / SDK / curl 脚本 / VSCode 插件 / Zed / Goose 等。**一个 daemon 可被多 client 同时连接**（每个 client 可订阅同一个 session 的事件） |
+| **client** | 调 daemon 的程序：**内置 web-shell（`packages/web-shell`）** / 官方 SDK / curl 脚本 / VSCode companion / channels / Zed / Goose 等。**一个 daemon 可被多 client 同时连接**（每个 client 可订阅同一个 session 的事件）|
 | **bearer token** | HTTP 标准 `Authorization: Bearer <token>` 认证。daemon 启动时设（`QWEN_SERVER_TOKEN` env / `--token` flag / 自动生成）。详 [§2.2](#22-bearer-token-认证基础) |
 | **`X-Qwen-Client-Id`** | daemon 第一次见到 client 时 stamp 给它的 122-bit randomUUID，**daemon 生成、client 不能伪造**。所有 mutation 请求必须带，permission 投票用它判 "哪个 client 在投" |
 
@@ -315,12 +315,47 @@ daemon 对外提供 **两套 northbound transport 共存**，client 按生态选
 
 | transport | 端点 | 适合 |
 |---|---|---|
-| **REST + SSE**（qwen-specific dialect） | `/session` / `/workspace/*` / `GET /session/:id/events` SSE | qwen 官方 SDK / web-shell / VSCode companion / channels / curl |
+| **REST + SSE**（qwen-specific dialect） | `/session` / `/workspace/*` / `GET /session/:id/events` SSE | qwen 内置 web-shell / 官方 SDK / VSCode companion / channels / curl |
 | **ACP Streamable HTTP**（[RFD #721](https://github.com/agentclientprotocol/agent-client-protocol/pull/721) 标准） | `/acp` 单端点（POST/GET/DELETE）| Zed / Goose / 任何 ACP-native SDK |
 
-两套 transport 共享同一 `HttpAcpBridge` + `EventBus` —— **同一个 session 可以从任一 transport 访问**。env `QWEN_SERVE_ACP_HTTP=0` 关 ACP HTTP。
+两套 transport 共享同一 bridge + event bus —— **同一个 session 可以从任一 transport 访问**。env `QWEN_SERVE_ACP_HTTP=0` 关 ACP HTTP。
 
-### 4.1 TypeScript SDK：`DaemonSessionClient`
+下面按"绝大多数用户最先用 → 开发者/集成场景"的顺序排：
+
+### 4.1 Web-shell —— 内置 web client（推荐绝大多数用户）
+
+qwen-code 内置 `packages/web-shell` —— daemon-backed React web 客户端，是浏览器里跑 daemon 的**默认入口**。功能与 native `qwen` CLI 基本对等：
+
+| 能力 | 内置 |
+|---|---|
+| Session create / load / resume / **`/session/:id` URL restore**（刷新页面恢复同一 session） | ✅ |
+| 流式 prompt / 取消 / model 切换 / approval mode 切换 | ✅ |
+| Slash command completion + 对齐 CLI 行为（`/model --fast` / `/rename --auto` / `/new` / `/reset` / `/resume`）| ✅ |
+| Permission request 弹审批 | ✅ |
+| Memory / MCP server / Skills / Agents 配置面板 | ✅ |
+| 多 tab 同时连同一 daemon 的同一 session | ✅ |
+
+**启动**：
+
+```bash
+# 1) 起 daemon
+export QWEN_SERVER_TOKEN=$(openssl rand -hex 32)
+qwen serve --require-auth
+
+# 2) 浏览器访问 web-shell（具体 URL 取决于你的 qwen-code 安装方式 / 部署形态）
+#    本机开发：http://localhost:<web-shell-port>/?token=<token>
+#    生产部署：web-shell 静态资源可由 daemon 或前置反向代理服务
+#    刷新页面后 session 通过 /session/:id URL 自动恢复
+
+# 3) 远端 daemon + 本地浏览器（Shape 2）：
+#    web-shell 配置 baseUrl 指向远端 daemon，连接需 TLS reverse proxy
+```
+
+**架构注意**：web-shell 与 daemon 是**两个进程**——web-shell 进程跑静态资源（Vite dev server / nginx），daemon 进程跑 `qwen serve`。`/session/:id` 是 web-shell 的 SPA route，daemon API 同前缀路径 `/session/<id>/prompt` 等的实际目标是 daemon 进程；web-shell 的 dev server 显式 bypass HTML navigation 避免把 page refresh 错路由到 daemon API endpoint。生产部署需要在反向代理层做等价配置。
+
+如需 fork 改造自己的 web client，`packages/web-shell` 的源码就是参考实现 —— 它本身用的也是后面 §4.2 / §4.3 的 SDK。
+
+### 4.2 TypeScript SDK：`DaemonSessionClient`
 
 ```ts
 import { DaemonSessionClient } from '@qwen-code/sdk-typescript/daemon';
@@ -360,7 +395,7 @@ await client.closeSession(sessionId);
 unsubscribe();
 ```
 
-### 4.2 SDK 共享 daemon UI 层 `@qwen-code/sdk-typescript/daemon-ui`
+### 4.3 SDK 共享 daemon UI 层 `@qwen-code/sdk-typescript/daemon-ui`
 
 如果你在写 web chat / web terminal client，**不要自己 reimplement** streaming merge / tool preview / permission state / shell output —— 用 SDK 提供的共享 UI 层：
 
@@ -385,7 +420,7 @@ const markdown = viewState.blocks.map(daemonBlockToMarkdown).join('\n\n');
 包含 reducer 状态字段 `currentTool` / `approvalMode` / `awaitingResync` / `permissionVoteProgress` 等。
 
 
-### 4.3 curl 直走 HTTP/SSE
+### 4.4 curl 直走 HTTP/SSE
 
 **建 session**：
 ```bash
@@ -417,7 +452,7 @@ curl -N -H "Accept: text/event-stream" \
   "http://127.0.0.1:4170/session/$SID/events"
 ```
 
-### 4.4 ACP-native client (Zed / Goose / RFD #721 SDK)
+### 4.5 ACP-native client (Zed / Goose / RFD #721 SDK)
 
 `/acp` 端点接 [RFD #721](https://github.com/agentclientprotocol/agent-client-protocol/pull/721) Streamable HTTP transport，让 ACP-native client 不需要懂 qwen-specific REST 方言就能驱动 daemon：
 
@@ -443,7 +478,7 @@ daemon-specific 扩展放在 **`_qwen/...` namespace**（ACP spec 保留 `_` 前
 
 这些 extension 在 `initialize` 响应里 advertise。
 
-### 4.5 `/demo` 调试页
+### 4.6 `/demo` 调试页
 
 `/demo` 是单 HTML browser-based debug UI —— 最薄 POST+SSE 验证面：
 
@@ -453,11 +488,7 @@ qwen serve
 # 输入 token（如果 --require-auth）→ 发 prompt → 看 typed event 流
 ```
 
-主要用于：联调 daemon 协议时验证 wire shape / 看 typed event payload / 复现 client bug。**不是 production UI**。
-
-### 4.6 Web-shell（可选 reference web client）
-
-`packages/web-shell` 是 daemon-backed React web-shell 参考实现 —— 接 daemon session / SSE / permission / slash command / model 切换 / approval mode / session resume / memory + MCP + skills + agents view / `/session/:id` URL restore，对齐 CLI/ACP slash 行为（`/model --fast` / `/rename --auto` / `/new` / `/reset`）。可直接用，也可作 fork starting point。
+主要用于：联调 daemon 协议时验证 wire shape / 看 typed event payload / 复现 client bug。**不是 production UI** —— 生产用 §4.1 web-shell。
 
 ---
 
