@@ -449,6 +449,117 @@ remote-control 后续不得重新拥有 runtime、event log 或 worker server。
 
 ---
 
+## 9. Dual northbound transport — REST+SSE + ACP HTTP（2026-05-24）
+
+> 来源：chiga0 [PR#4472](https://github.com/QwenLM/qwen-code/pull/4472) `feat(daemon): ACP Streamable HTTP transport at /acp [RFD #721]`（基于 [Agent Client Protocol RFD #721](https://github.com/agentclientprotocol/agent-client-protocol/pull/721)）。
+
+### 决策
+
+`qwen serve` daemon **同时暴露两套 northbound transport**，共享同一 `HttpAcpBridge` + `EventBus`：
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│  qwen-specific REST + SSE          standard ACP HTTP     │
+│  POST /session/:id/prompt          POST /acp             │
+│  GET  /session/:id/events (SSE)    GET  /acp (SSE)       │
+│  POST /workspace/*                 DELETE /acp           │
+│           ↓                                ↓             │
+│           └──────── shared ─────────────────┘            │
+│              HttpAcpBridge + EventBus                    │
+│                       ↓                                  │
+│                qwen --acp child                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+| 维度 | qwen-specific REST + SSE | ACP HTTP (RFD #721) |
+|---|---|---|
+| 端点 | `/session/:id/*` / `/workspace/*` 多 endpoint | `/acp` 单 endpoint |
+| 协议 | qwen 自创 REST 方言 | 标准 ACP JSON-RPC + Streamable HTTP |
+| 适合 client | qwen 官方 SDK / web-shell / VSCode companion / channels / curl | Zed / Goose / future ACP-native SDK |
+| 同 session 跨 transport 访问 | ✅ 共享同一 bridge + EventBus，两个 transport 看到的事件流一致 | |
+| env toggle | 始终 on（daemon 主功能）| `QWEN_SERVE_ACP_HTTP=0` 可关 |
+| vendor extension | qwen 自创字段 | `_qwen/*` namespace（ACP spec 保留 `_` 前缀）|
+
+### 依据（为什么 dual 而不是只走 qwen REST）
+
+#### 战略层 — ACP 是 AI Agent 的 LSP
+
+| 类比 | LSP（2016 微软推） | ACP（Zed 推） |
+|---|---|---|
+| 解决的问题 | IDE × 编程语言 N×M 适配 | client × agent N×M 适配 |
+| 实现前 | 每个 IDE 为每种语言单独写支持 | 每个 client 为每个 agent 单独写支持 |
+| 实现后 | 一个 LSP server 走遍所有 IDE | 一个 ACP client 可驱动任何 ACP agent |
+
+AI agent 工具正在 LSP-出现-前那个 inflection point。**早接入 ACP = 拿到全部 ACP-aware client 生态渠道**（不需要 Zed / Goose 团队专门为 qwen 写适配；反之亦然）。
+
+#### 客户层 — 避免 vendor lock-in 接入成本
+
+只走 qwen-specific REST：每个 client（Zed / Goose / 未来 IDE）都要实现 qwen 私有 REST 客户端 → 接入门槛极高，做开放协议的工具有动力不接 qwen。
+
+走 ACP 标准：任何 ACP-aware client 实现一次 ACP 客户端，可驱动 qwen + 任何其他 ACP agent → 接入门槛归零，qwen 蹭到协议生态网络效应。
+
+#### 竞争层 — "开放 vs 闭门" 差异化
+
+| Agent | protocol 开放性 |
+|---|---|
+| Claude Code | 完全闭门，自创 protocol + 二进制混淆 |
+| Cursor | 闭门，私有 protocol |
+| **qwen-code** | **走 ACP open standard** ← 本决策 |
+| Goose | 走 ACP open standard |
+
+qwen 在闭源模型质量上拼不过 Claude / GPT 的话，**"开放协议生态"是可能的差异化轴**。Anthropic 不会做（要 Claude Desktop 独占），OpenAI 不会做（要 Codex 独占），qwen 做就有先发优势。
+
+#### 架构层 — 为什么 dual 而不是替换
+
+完全替换 REST 风险太大：
+- 现有 webui + 3 个官方 SDK + VSCode companion + channels 全部依赖 REST surface
+- 替换 = 所有现有客户得重写
+- ACP spec **自己仍在 Draft**，押注替换太早
+
+Dual additive 的好处：
+- 现有客户零迁移 —— REST 继续工作
+- ACP 早期 adopter 拿到入口 —— Zed / Goose 可以接
+- env `QWEN_SERVE_ACP_HTTP=0` 可关 —— 不愿冒险的部署可禁用
+- 两个 transport 共享同一 bridge —— **同一 session 可从任一 transport 访问**，mixed-client 协作天然支持
+
+#### 时机层 — 为什么现在做
+
+| 时机 | 利弊 |
+|---|---|
+| **早做（现在 spec Draft 期）** | RFD #721 演进时 qwen 可 influence；Zed/Goose 第一波集成时 qwen 就在；early mover advantage |
+| 晚做（spec 落地后）| 错过第一波集成；spec 演进过程中无话语权 |
+| 永远不做 | 错失开放生态，长期被推到自有 client 之外 |
+
+**dual-transport additive 是降低早做风险的手段** —— spec 还在变没关系，REST 这边稳着，`/acp` 这边跟 spec 一起演进，env flag 可关。
+
+### 实现要点
+
+| 要点 | 说明 |
+|---|---|
+| 单端点 `/acp` | POST / GET / DELETE 全在一个 URL；POST `{initialize}` 返 `Acp-Connection-Id` header，后续操作带这个 header |
+| Vendor extension namespace `_qwen/...` | ACP spec 保留的 `_` 前缀；daemon-specific 功能 `_qwen/session/set_model` / `_qwen/session/heartbeat` 等放这；`initialize` 响应里 advertise |
+| REST parity | PR#4472 后期加 `f101aca1b3` commit —— 把现有 `/session/*` / `/workspace/*` REST endpoints 通过 `/acp` extension namespace **同样暴露一份**，ACP-native client 不通过 REST 也能访问完整 daemon 功能面 |
+| 共享 EventBus | `/acp` SSE 与 `/session/:id/events` SSE 看到的事件流一致，同一 session 跨 transport 访问无差异 |
+| env opt-out | `QWEN_SERVE_ACP_HTTP=0` 关闭 ACP transport（保留单 REST），生产部署可按需禁用 |
+| 9 轮 review iteration 修 wire-level concurrency 坑 | R2 reconnect/ownership/leaks / R4 write-failure ownership / R5 permission-vote release / R6 concurrent-prompt abort+zombies / R7 close TOCTOU+pump lifecycle / R9 reconnect prompt survival —— wire protocol 实现常见陷阱 |
+| 实现位置 | 新 `packages/cli/src/serve/acpHttp/` 目录含 `jsonRpc.ts` / `sseStream.ts` / `connectionRegistry.ts` / `dispatch.ts` / `index.ts`；从 `server.ts` 经 `mountAcpHttp(app, bridge, {boundWorkspace})` 挂载 |
+| Deferred follow-up | WebSocket upgrade / HTTP/2 multiplexing / 完整 `fs/*`+`terminal/*` forwarding / SSE resumability parity |
+
+### Trade-offs
+
+| 利 | 弊 |
+|---|---|
+| ACP 生态接入（Zed / Goose / future SDK）网络效应 | 多维护一套 transport 代码（mitigation：共享 bridge）|
+| 开放标准是竞争差异化轴 | RFD #721 spec 演进时 daemon 实现要跟（mitigation：env opt-out 可关，spec 跟变可滚回）|
+| 现有客户零迁移 | 同功能两套 wire 表达需保 parity 一致性（mitigation：`f101aca1b3` REST parity batch + shared bridge）|
+| 同 session 跨 transport mixed-client 协作 | client 实现可能在两个 transport 之间不知道用哪个（mitigation：文档明确推荐 —— qwen 官方 client 用 REST，ACP-native client 用 /acp）|
+
+### 与 §8 boundary 决策的关系
+
+§8 把 daemon 终态架构分为 4 层（adapter / client SDK / server / runtime worker）—— 本决策是 **server 层增加第二个 northbound transport**，不影响其他层。client SDK 仍是 `DaemonClient` / `DaemonSessionClient`（走 REST）；新增 ACP-native client 是另一种 adapter，与现有 SDK 并列。
+
+---
+
 ## 九、决策矩阵汇总
 
 | # | 决策 | 选择 | 关键依据 |
@@ -461,6 +572,7 @@ remote-control 后续不得重新拥有 runtime、event log 或 worker server。
 | 6 | 多 client 并发 | **同 session prompt 串行（FIFO）+ 事件 fan-out + 任何 client 可应答 permission** | PR#3889 commit `ca996ecb5`（FIFO + no-poison）+ ACP 协议语义 + EventBus subscriber set |
 | 7 | 部署模式 | **Mode B mainline；Mode A parking lot** | 2026-05-15 决策：优先 TUI / channels / web / IDE 接入 Mode B；remote-control 后置 |
 | 8 | Server / client / runtime boundary | **server control plane / daemon client-protocol / adapters / runtime worker 分层**；daemon-native renderer 为目标；remote-control 只是 control overlay | 2026-05-18 deployment/package/runtime comments；§04 deployment shape matrix；§06 deployment + package contract |
+| 9 | northbound transport | **dual: qwen-specific REST+SSE + 标准 ACP HTTP（/acp 单端点）共享同一 HttpAcpBridge + EventBus**；vendor 字段走 `_qwen/...` namespace；`QWEN_SERVE_ACP_HTTP=0` opt-out | 2026-05-24 [PR#4472](https://github.com/QwenLM/qwen-code/pull/4472) ACP Streamable HTTP transport（基于 ACP RFD #721）；ACP 是 AI agent 的 LSP，早期 mover 拿生态网络效应；dual additive 控制风险 |
 
 ---
 
