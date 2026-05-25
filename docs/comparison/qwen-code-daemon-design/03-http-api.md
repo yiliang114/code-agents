@@ -128,6 +128,44 @@ POST   /workspace/auth/device-flow/poll    poll for token
                                            build-time grep 防 client browser-spawn
 ```
 
+### Post-Wave 4 — Capability backlog 路由（#4514 inventory）
+
+> Wave 4 完整 7/7 MERGED 后，按 [Issue #4514 daemon capability gap inventory](https://github.com/QwenLM/qwen-code/issues/4514) Tier-1 优先级 pull S-sized 路由（template = Wave 4 PR 17 `POST /session/:id/approval-mode`）。
+
+```
+# T1.3 — Manual compaction over HTTP（PR#4516 🔧 OPEN）
+POST   /session/:id/compress               server 端总 force=true 匹配 TUI /compress（body 不收 force）
+                                           走 qwen/control/session/compress ACP extMethod → GeminiClient.tryCompressChat(force=true)
+                                           返 {sessionId, originalTokenCount, newTokenCount, compressionStatus, durationMs}
+                                           compressionStatus = core CompressionStatus enum 字符串名
+                                           SSE session_compacted 仅在 compressionStatus !== 'NOOP' 时发
+                                             — NOOP=below-threshold history 未动，发会假涨 reducer sessionCompactedCount
+                                           两层 concurrency guard：
+                                             CompactionInFlightError → 409 compaction_in_flight
+                                             PromptInFlightError    → 409 prompt_in_flight（防 daemon 调和 agent
+                                                                       sendMessageStream 内置 pre-send tryCompress race）
+                                           non-strict mutation gate（与 /prompt parity）
+                                           180s timeout（SESSION_COMPRESS_TIMEOUT_MS）
+                                           AbortSignal propagation deferred follow-up
+
+# T1.4 — Per-session metadata KV bag（PR#4516 🔧 OPEN）
+POST   /session/:id/_meta                  daemon 端 KV 包，for IM / channel adapter（chat_id, sender_id, thread_id）
+                                           Body: { meta: Record<string, JSONValue>, merge?: boolean }
+                                           merge:true 下 null value 设 key 为 null（per-key DELETE deferred）
+                                           validation: key regex ^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$ → 400 invalid_meta_key
+                                                       reserved 'qwen.' 前缀 → 400 reserved_meta_key
+                                                       serialized 8 KB 上限 → 413 meta_too_large
+                                           SSE session_meta_changed 每次写发，载 FULL new bag（不是 diff）
+                                             — 不管 Last-Event-ID gap subscribers 总收敛
+GET    /session/:id/_meta                  daemon-side only — NO ACP roundtrip
+                                           SessionEntry 上 in-memory map；close/kill 时随 byId.delete(sessionId) 自动驱逐
+                                           v1 NOT injected into LLM prompt（auto-inject deferred until pilot validates format）
+                                           Capability tag 发后 GET /session/:id/context 的 state.meta always present 即便 {}
+                                             — 避免 old-daemon-vs-empty-bag 歧义
+                                           NOT persisted across daemon restart in v1（load/resume 恢复 session meta: {} 起手）
+                                           Capability tags: session_compress / session_meta
+```
+
 ### Wave 5 — Architecture extraction（部分 MERGED）
 
 | PR | 阶段 | 状态 | 说明 |
@@ -145,8 +183,9 @@ GET    /health?deep=1                       深度健康检查（含 ACP child l
 POST   /ext/:method                         ACP extMethod 桥接（给 vendor zero-fork 扩展）
 POST   /workspace/pty                       open PTY（Upgrade: websocket）
 GET    /workspace/lsp                       LSP 状态
-POST   /session/:id/_meta                   per-session context
 ```
+
+> `POST /session/:id/_meta` 在 PR#4516 已落地为 Post-Wave 4 capability backlog 路由（详上 T1.4 段）；不再是 Stage 2 候选。
 
 ### `:id` 校验语义
 
