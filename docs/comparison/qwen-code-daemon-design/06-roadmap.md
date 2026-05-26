@@ -748,7 +748,7 @@ Stage 1 的主链路已经可用：prompt / events / cancel / model / permission
 |---|---|
 | Client identity | pair tokens + per-client revocation；daemon-stamped `originatorClientId`，不能由 client 自报 |
 | Permission | `POST /session/:id/permission/:requestId`；session-scoped pending map；`permission_already_resolved` event；`PermissionMediator` 收敛 ACP direct / daemon / stream-json |
-| Session lifecycle | `loadSession` / `unstable_resumeSession` HTTP；close/delete session；per-request `sessionScope` override；`POST /session/:id/_meta` |
+| Session lifecycle | `loadSession` / `unstable_resumeSession` HTTP；close/delete session；per-request `sessionScope` override；`POST /session/:id/_meta`（[PR#4516](https://github.com/QwenLM/qwen-code/pull/4516) 🔧 OPEN —— #4514 backlog T1.4，与 `POST /session/:id/compress` T1.3 同 PR 打包）|
 | Reliability | client heartbeat；larger/per-session replay ring；`slow_client_warning` before `client_evicted`；stream gap semantics |
 | Browser/network | named `--allow-origin` / same-origin web strategy；phantom SSE cleanup；可选 WebSocket transport |
 
