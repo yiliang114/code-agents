@@ -9,6 +9,8 @@
 > **2026-05-22 v0.16.0 更新**：PR#3969（Ctrl+B keybind）/ PR#3970（TaskBase envelope，`flavor` 重命名为 `isBackgrounded`）/ PR#3933（monitor notifications）均已合并入 v0.16.0。Phase D part (b) 完整收官。"追踪中"原 OPEN 项全部关闭。
 >
 > **2026-05-24 Claude Code v2.1.150 binary 复核**：⚠️ 文档原结论"Claude Code 把同期工程力量放在云端 fleet... 本地 Coordinator panel 维持 v2.1.81 时设计" **部分推翻**。v2.1.150 二进制 `strings` 扫描确认 **`background-tasks-dialog` / `BackgroundTasksSettings` / `BackgroundAppearance`** 三个新组件名稳定存在（v2.1.145 时点已含相同 string count）—— Claude 在 v2.1.132（本文档原对比基线）→ v2.1.145 之间加了 **`/tasks` 单任务 transcript 详情对话框**（prompt + tool calls + result 三段式 + 状态 3 态 start/progress/error）+ **`/daemon` 服务化管理面板**（3 类 services：scheduled task / assistant / remote-control server）。原结论"只在云端投入"不成立；但 Qwen "4-kind 统一调度 framework"仍领先 —— Claude `/daemon` 是 systemd-style 长跑服务管理（与 Qwen in-session task 不同维度），`/tasks` 是轻量单任务查看器。具体形态见 §零 [`background-tasks-dialog` 实际形态](#background-tasks-dialog-实际形态2026-05-24-binary-反编译)。
+>
+> **2026-05-26 PR#4477 in flight**：wenshao 2026-05-24 开 [PR#4477](https://github.com/QwenLM/qwen-code/pull/4477) `feat(cli): dense inline panel + keyboard navigation for parallel agent fan-out` (target `main`, +809/-95 12 files, 9 commits, OPEN REVIEW_REQUIRED) —— LiveAgentPanel 上**再加一层 inline dense panel + 完整键盘导航**，与 Claude Coordinator 拉开第二层差距。两个新能力：① **`InlineParallelAgentsDisplay`** —— `/review` 等 ≥2 parallel agent fan-out 组现在不再走 `CompactToolGroupDisplay` 的 `Agent × 9 / <last name>` 单行折叠或 `ToolMessage` 全展开，而是渲染密集面板（每 agent 一行：status `○`/`✔` · name · activity · elapsed · tokens）；live + committed 两阶段都渲；committed 入 `<Static>` 永久 scrollback。② **LiveAgentPanel 键盘导航**：`main` 作首行 + agent rows；输入框 `↓` focus panel 选 `main`；`↑↓` 在 `main` + agent 间导航带 `▸` 指示；`Enter` 直开 `BackgroundTasksDialog` detail 模式；`Esc` / `↑-at-top` 回输入框；新 `detail-from-panel` dialog 模式 `←` 回 panel 而非 list；可打印字符自动失焦 type 入输入框；`LiveAgentPanel.DEFAULT_MAX_ROWS` 5→12 让 9 个 `/review` agent 全可见。详 [§六.14](#已落地-14inline-dense-panel--liveagentpanel-keyboard-navpr4477-2026-05-24-open)。
 
 ## 零、最新动态（截至 2026-05-24，含 v0.16.0 release + Claude v2.1.150 binary 复核）
 
@@ -52,12 +54,14 @@
 | [PR#3892](https://github.com/QwenLM/qwen-code/pull/3892) | 2026-05-08 05:42 | 🔧 **runForkedAgent YOLO wrapper 第三 Config-wrapper site 闭合**（PR#3873 review follow-up）：YOLO override + 每 fork FileReadCache + memory-extraction 都修复 | [§六.9 followup](#已落地-9subagent-稳定性与隔离pr3735--pr3873--pr3887) |
 | **[PR#3894](https://github.com/QwenLM/qwen-code/pull/3894)** | **2026-05-08 11:56** | 🌟 **foreground → background promote 集成**（Phase D part (b) PR-2 of 3 #3831）：shell tool 检测 background-promote abort，snapshot 输出到 `bg_xxx.output` 文件，注册 `BackgroundShellEntry`，return ToolResult 指向 `/tasks` / dialog / `task_stop` | [§六.12](#已落地-12foreground--background-promote-pr3894-pr3969) |
 | [PR#3956](https://github.com/QwenLM/qwen-code/pull/3956) | 2026-05-08 12:20 | 🔧 **subagent approval banner 显示 tool details**：compactMode early-return 修复，让 banner 渲染完整 body（command / file diff / MCP tool）而非只 agent name + 通用 prompt | [§六.13](#已落地-13subagent-approval-banner-工具细节pr3956) |
+| **[PR#4477](https://github.com/QwenLM/qwen-code/pull/4477)** | **2026-05-24 08:37 🔧 OPEN** | 🌟🌟 **inline dense panel + LiveAgentPanel keyboard nav** for parallel agent fan-out（`/review` 等 ≥2 agent 场景）：新 `InlineParallelAgentsDisplay` 1 行/agent（status·name·activity·elapsed·tokens）替代 `Agent × 9 / <last name>` 折叠；LiveAgentPanel `↓` from input · `↑↓` navigate · Enter detail · Esc back · maxRows 5→12 | [§六.14](#已落地-14inline-dense-panel--liveagentpanel-keyboard-navpr4477-2026-05-24-open) |
 
-### 追踪中（2026-05-22 更新：原 OPEN 项已全部合并入 v0.16.0）
+### 追踪中（2026-05-22 更新：原 OPEN 项已全部合并入 v0.16.0；2026-05-26 新增 PR#4477 in flight）
 
 - ✅ **[PR#3969](https://github.com/QwenLM/qwen-code/pull/3969) Ctrl+B promote keybind**（✓ 已合并入 v0.16.0，#3831 PR-3 of 3）—— foreground → background promote 的 UI 终结篇，加 Ctrl+B 用户键绑（详见 [§六.12](#已落地-12foreground--background-promote-pr3894-pr3969)）
 - ✅ **[PR#3970](https://github.com/QwenLM/qwen-code/pull/3970) TaskBase envelope + foreground subagent persistence**（✓ 已合并入 v0.16.0）—— 引入 shared `TaskBase` envelope；foreground subagent 也接入 JSONL transcript writer + meta sidecar；agent-task discriminator 从 `flavor: 'foreground' \| 'background'` **正式重命名为 `isBackgrounded: boolean`**（旧名保留一个版本作 type alias）
 - ✅ **[PR#3933](https://github.com/QwenLM/qwen-code/pull/3933) monitor notifications routing for subagents**（✓ 已合并入 v0.16.0）—— Monitor 通知路由到启动 monitor 的 owning subagent，修复 subagent-owned monitors 污染 parent context 的问题
+- 🔧 **[PR#4477](https://github.com/QwenLM/qwen-code/pull/4477) inline dense panel + LiveAgentPanel keyboard nav**（OPEN REVIEW_REQUIRED 2026-05-24，wenshao 自开自迭代 9 commits）—— 对**纯并行 agent 组**（`/review` 9-agent fan-out 类）渲 `InlineParallelAgentsDisplay` 密集面板（1 行/agent 含 live activity）替代 `Agent × 9` 折叠；LiveAgentPanel 加完整键盘路径（`↓` from input · `↑↓` navigate · Enter detail · Esc back · `←` from detail 回 panel）；`DEFAULT_MAX_ROWS` 5→12；详 [§六.14](#已落地-14inline-dense-panel--liveagentpanel-keyboard-navpr4477-2026-05-24-open)
 - ❌ **monitor → `send_message` 集成** — PR#3684 自述"未做"清单第 2 项。`task_stop` 已通过 PR#3791 覆盖；`send_message` 因 monitor 语义模糊被推迟（详见 [§六.5](#已落地-5phase-c-event-monitor-toolpr3684-系列追踪以来最大单-pr)）
 - 🟡 **`/agents --history` 归档对比视图** — 当前 `BackgroundTasksDialog` 偏运行时管理，历史归档 + 对比 diff 仍未实现
 - 🆕 **Claude Code Ultrareview**（云端 fleet）— v2.1.132 Week 17 public preview，云端 fleet 并行 review agents → CLI/Desktop。与 Qwen 本地 background subagents 思路**正交**（云端 vs 本地）—— v2.1.150 仍稳定，未停止扩张（binary 含 29 处 `Ultrareview` + 31 处 `Ultraplan` 提示）
@@ -233,7 +237,7 @@
 
 | 维度 | Claude Code | Qwen Code |
 |---|---|---|
-| **发起展示** | Task：内联 `⏺ Task(...)` ⎿ 摘要<br>Coordinator：输入框下方常驻面板 `○ name · ▶ 0s` | 嵌入：工具组 `├─ agent_name ● Running`<br>**Background：状态行 pill + Down 键打开 dialog**（PR#3488）<br>**🆕 LiveAgentPanel：输入框下方常驻面板 `○ name (activity) ▶ Ns · Nk tokens`**（PR#3909，port Claude pattern）|
+| **发起展示** | Task：内联 `⏺ Task(...)` ⎿ 摘要<br>Coordinator：输入框下方常驻面板 `○ name · ▶ 0s` | 嵌入：工具组 `├─ agent_name ● Running`<br>**Background：状态行 pill + Down 键打开 dialog**（PR#3488）<br>**LiveAgentPanel：输入框下方常驻面板 `○ name (activity) ▶ Ns · Nk tokens`**（PR#3909，port Claude pattern）<br>**🆕 InlineParallelAgentsDisplay：≥2 并行 agent 组的密集面板**，1 行/agent 含 live activity + elapsed + tokens（PR#4477 OPEN，反超 Claude `Agent × 9` 折叠）|
 | **SubAgent 身份** | `AgentProgressLine.tsx:75` 彩色背景标签 | `AgentExecutionDisplay.tsx:148` 彩色 `agentColor` + StatusDot |
 | **执行中实时性** | Task：spinner + 最终结果<br>Coordinator：仅最后一个工具 + 计数（1s tick）| 嵌入：**完整工具列表**（默认最后 5 个，verbose 全部）<br>**Dialog：Running/Completed/Failed/Cancelled 4 类状态**（PR#3488）|
 | **展示模式切换** | Task 固定；Coordinator `↑↓`+Enter 导航 | 嵌入：**Ctrl+E / Ctrl+F 三档切**（compact ↔ default ↔ verbose）<br>Dialog：`↑↓` 导航 + Enter 进详情 + Left/Esc 关闭 |
@@ -981,6 +985,96 @@ child process 继续跑（独立 AbortController）
 - 用现有 `MaxSizedBox` overflow 把 body cap 在 5 行内
 
 **意义**：审批 subagent 工具时用户能看到具体动作（"`rm -rf /tmp/foo`" / "Edit src/x.ts: +5 -2 lines" / "MCP `github::create_pr` 参数 ..."）而非黑盒——**比之前更安全的审批 UX**。
+
+---
+
+### 已落地 14：inline dense panel + LiveAgentPanel keyboard nav（PR#4477）🔧 2026-05-24 OPEN
+
+[PR#4477](https://github.com/QwenLM/qwen-code/pull/4477) 🔧 2026-05-24 08:37（**+809/-95 12 files, 9 commits, OPEN REVIEW_REQUIRED**） `feat(cli): dense inline panel + keyboard navigation for parallel agent fan-out`
+
+**两个独立但配套的能力**：
+
+#### 1. `InlineParallelAgentsDisplay`（dense inline panel for parallel fan-out）
+
+**修的痛点**：`/review <pr-url>` 类命令 fan out 出 9 个并行 agent，每个跑数分钟；旧渲染两端都不好：
+
+| 模式 | 旧效果 | 问题 |
+|---|---|---|
+| Compact | `Agent × 9 / Code Quality`（折叠到一行） | 9 agent 跑几分钟，0 信息密度 |
+| 非 Compact | 每 agent 一个完整 `ToolMessage`（多行 chrome）| 信息密度低，刷屏 |
+
+**新效果**：对**纯并行 agent 组**（≥2 个 agent call + 0 non-agent tool + 无 pending approval）渲染密集面板：
+
+```
+╭─ Parallel agents · 9 · 3/9 done ──────────────────────────────╮
+│ ✔ Agent 1: Correctness                      12s · 8.1k tok    │
+│ ✔ Agent 2: Security                          8s · 3.4k tok    │
+│ ○ Agent 3: Code Quality ReadFile index.ts   3m 38s · 9.0k tok │
+│ ○ Agent 4: Performance  Shell grep ...      3m 38s · 1.2k tok │
+│ ✔ Agent 5: Test Coverage                     5s · 605 tok     │
+│ ...                                                            │
+╰────────────────────────────────────────────────────────────────╯
+```
+
+每行：status (`○` running / `✔` done) · name · activity · elapsed · tokens；列宽 `NAME_COL_WIDTH = 26`（fit `/review` 最长 agent label `Code Quality` 在 100-col 终端）；活动列 (`ReadFile index.ts` / `Shell grep ...`) 从 `BackgroundTaskRegistry.recentActivities` 1s tick 实时拉；完成后 unregister 时 fall back to `AgentResultDisplay.executionSummary` 的 elapsed + tokens 防 blank-out。
+
+**两阶段渲染**：
+- **Live phase**（`isPending=true`）：dense panel 渲所有 agent；`LiveAgentPanel`（输入框下方）仍同时渲 running agent（短暂 overlap，agent 完成后 expire 自动消除）
+- **Committed phase**：dense panel commit 到 `<Static>` 永久 scrollback 记录
+
+**Routing 条件**（`ToolGroupMessage.isPureParallelAgentGroup` 新 predicate）：
+- 组 ≥2 calls 且 **全是 agent**（mixed groups 保留 legacy renderer）
+- 无 pending confirmation（approval focus 不被劫持）
+
+**Iteration history**（9 commits）：
+- 初版（05-24 08:37）：`InlineAgentClaimContext` 让 inline panel 声明 agentIds，`LiveAgentPanel` filter 掉，防双显示（refcount avoid React commit/cleanup interleave drop）
+- review fold（05-24 09:25）：split into read+write context（claimers 不为别处 claim 重渲染）+ 抽 `isPureParallelAgentGroup` predicate + `NAME_COL_WIDTH = 26` 文档化
+- committed-only refactor（05-24 15:56）：live phase 让位 LiveAgentPanel；删 `InlineAgentClaimContext`（一度反向）
+- 改两阶段（05-24 17:08）：dense panel 同时 live + committed；`LiveAgentPanel.DEFAULT_MAX_ROWS` **5 → 12** 让 9 agent 全可见
+
+#### 2. LiveAgentPanel keyboard navigation
+
+**修的痛点**：输入框到运行中 agent 无键盘路径——用户得知道 footer pill 才能进 `BackgroundTasksDialog`。
+
+**新交互**：
+
+```
+> _                                          ← 输入框
+▸ main  Active agents (6)                    ← ↓ 选 "main"
+  ○ Agent 3: Code Quality (Read) ▶ 3m       ← ↓ 又一次选 agent
+  ○ Agent 4: Performance (Shell) ▶ 3m
+  ○ Agent 6: Attacker (Read)     ▶ 3m
+  ...
+  ↑↓ navigate · Enter detail · Esc back
+```
+
+- `↓` from 输入框 → focus LiveAgentPanel，select "main"
+- `↑↓` → 在 "main" + agent rows 间导航，selection `▸` 指示
+- `Enter` on agent → 直开 `BackgroundTasksDialog` **detail mode**（full agent view，不经过 list）
+- `←` from detail → 回 LiveAgentPanel selection（**不是** dialog list；新 `detail-from-panel` dialog 模式）
+- `Esc` / `↑ at top` → 回输入框
+- 可打印字符 → auto-unfocus + 字符 type into 输入框
+
+**实现要点**：
+- `BackgroundTaskViewContext` 加 `livePanelFocused` / `livePanelSelectedIndex` / `enterBgDetailFromPanel`
+- Header 从 `Active agents (N/N)` 简化为 `Active agents (N)`（PR-G 后再简化为单 `main` 标题）
+- `bgAgentCount`（agent-only）替代 `bgEntries.length`（含 shell / monitor / dream）作键盘 nav bounds——避免选到非 agent entry
+- LiveAgentPanel 返回 null 时 auto-clear `livePanelFocused` 防 stuck focus
+- `InlineAgentClaimProvider` sit inside `BackgroundTaskViewProvider`（两个 surface 都可见，不跨 provider boundary）
+
+#### 与已落地 10（PR#3909）的关系
+
+| 层级 | PR#3909（2026-05-07）| PR#4477（本 PR, 2026-05-24）|
+|---|---|---|
+| **Always-on glance** | LiveAgentPanel 输入框下方常驻 1 行/agent | ✅ 保留 + maxRows 5→12 + 键盘导航 |
+| **Live inline** | inline `AgentExecutionDisplay` 已移除 | **新加 dense panel for 并行 fan-out**（信息密度高） |
+| **Detail view** | `BackgroundTasksDialog`（按需，光标 enter）| 新增 `detail-from-panel` 模式：从 LiveAgentPanel 直进 detail，`←` 回 panel |
+
+**意义**：PR#3909 让 Qwen 与 Claude Coordinator panel 对齐（**glance 层**对齐），本 PR 让 Qwen 在 inline 层（dense panel）+ 交互层（keyboard nav）**领先 Claude** —— Claude `CoordinatorAgentStatus.tsx` 至今仍只是 always-on panel 显示信息，没有键盘 detail-from-panel 路径，并行 agent fan-out 也没有专门 dense rendering（每 agent 通过 inline `AgentProgressLine` + Coordinator panel 折叠双显示）。
+
+**验证**：手动 `tmux` `/review <pr-url> --comment` 跑 9-agent fan-out（包括对 PR#4472 自己 review）：9 agent 全渲 with live status / activity / elapsed / tokens，`○ → ✔` glyph transition，LiveAgentPanel 正确去重；11 new tests + 57 prior tests on touched files pass + `tsc --noEmit` clean。
+
+**review fold-in** (10 reviews 至 2026-05-26)：拆 read/write context 防误重渲染 / `bgAgentCount` 替代 `bgEntries.length`（Critical：之前算 shell+monitor+dream 进 bound）/ auto-clear focus on empty agent set / `useCallback`/`useEffect` ESLint deps 修齐 / `AgentTabBar.test` `setLivePanelFocused` 入参更新。
 
 ---
 

@@ -164,6 +164,46 @@ GET    /session/:id/_meta                  daemon-side only — NO ACP roundtrip
                                              — 避免 old-daemon-vs-empty-bag 歧义
                                            NOT persisted across daemon restart in v1（load/resume 恢复 session meta: {} 起手）
                                            Capability tags: session_compress / session_meta
+
+# T2.9 — Prompt absolute deadline + SSE writer idle timeout（PR#4530 🔧 OPEN, target main 直接合）
+--prompt-deadline-ms <n>                   env QWEN_SERVE_PROMPT_DEADLINE_MS
+                                           server-side wallclock cap on POST /session/:id/prompt
+                                           expiry → daemon abort AbortController + return 504
+                                                    errorKind: prompt_deadline_exceeded
+                                           per-prompt body deadlineMs 可 SHORTEN below cap
+                                                            但不能 EXTEND（operator stays upper bound）
+                                           实现 Promise.race(bridge.sendPrompt, deadlinePromise) ——
+                                                deadline 独立 reject race，不依赖 bridge cooperation
+                                                （buggy agent 忽略 AbortSignal 时 504 仍按时落地）
+                                           orphaned bridge promise tail .catch(() => undefined)
+                                                防 unhandledRejection
+                                           上限 MAX_TIMEOUT_MS = 2_147_483_647 (2^31-1 ms, ~24.8 天)
+                                                boot 校验防 Node setTimeout overflow
+                                           关 httpAcpBridge.ts 长存 FIXME(stage-2) "buggy agent
+                                                holding FIFO open indefinitely"
+
+--writer-idle-timeout-ms <n>               env QWEN_SERVE_WRITER_IDLE_TIMEOUT_MS
+                                           per-SSE-connection idle deadline
+                                           n ms 内无 write flush 成功（heartbeat 或真事件都算）
+                                                → daemon emit terminal client_evicted 帧
+                                                  reason: writer_idle_timeout + close
+                                           推荐 ≥30000ms for production
+                                                <15000ms 不是 no-op —— 会 evict 健康连接
+                                                       第一个 heartbeat refresh lastWriteAt 前 idle timer 已 fire
+                                           实现直接 res.write 不走 writeChain ——
+                                                chain 可能 stuck on the very drain we're trying to detect
+                                           trackWriterIdle boolean 防 chatty stream 每 write stamp timestamp
+                                                数百到数千 writes per session 性能
+                                           关 SSE handler "Stage 2 may add" gap
+
+# Conditional capability tags（仅当对应 flag set 时 advertise）
+prompt_absolute_deadline                   advertise 后 SDK 可发 body.deadlineMs
+                                           老 daemon 静默 drop 匹配 v=1 additive rule
+writer_idle_timeout                        advertise 后 SDK 可 expect client_evicted{reason:'writer_idle_timeout'}
+
+# Closed errorKind taxonomy 扩 2 个 → 11 / 10（详 §八）
++ prompt_deadline_exceeded                 504 from POST /session/:id/prompt
++ writer_idle_timeout                      data field on client_evicted
 ```
 
 ### Wave 5 — Architecture extraction（部分 MERGED）
@@ -473,28 +513,39 @@ const q = query({ transport: new HttpTransport({
 
 ---
 
-## 八、Closed `errorKind` 7-value taxonomy（PR#4251 ✅）
+## 八、Closed `errorKind` taxonomy（PR#4251 起，持续扩 closed enum）
 
-PR#4251 把 daemon HTTP 错误从 ad-hoc string 收敛为 closed enum，让 SDK 客户端可以 `switch (err.errorKind)` 而非靠 message regex。
+PR#4251 把 daemon HTTP 错误从 ad-hoc string 收敛为 closed enum，让 SDK 客户端可以 `switch (err.errorKind)` 而非靠 message regex。**初版 7 值；后续 PR 持续 mirror 添加到 `SERVE_ERROR_KINDS` (acp-bridge) + `DAEMON_ERROR_KINDS` (SDK) 两端 closed enum 保 drift 一致**。
 
 ```ts
 type DaemonErrorKind =
-  | 'missing_binary'    // qwen CLI 找不到（PR#4300 BridgeChannelClosedError / MissingCliEntryError 之前的早期变体）
-  | 'blocked_egress'    // 网络出口被防火墙阻断（egress probe 失败）
-  | 'auth_env_error'    // 必要 auth env 缺失 / 无效
-  | 'init_timeout'      // ACP child init 超时
-  | 'protocol_error'    // ACP NDJSON 协议错误（schema 不匹配 / 帧损坏）
-  | 'missing_file'      // 文件读路径不存在 / 越 sandbox 边界
-  | 'parse_error'       // request body parse / zod schema 失败
+  // PR#4251 ✅ 初始 7 值（diagnostic status cells / MCP guardrails / FS boundary）
+  | 'missing_binary'        // qwen CLI 找不到（PR#4300 BridgeChannelClosedError / MissingCliEntryError 之前早期变体）
+  | 'blocked_egress'        // 网络出口被防火墙阻断（egress probe 失败）
+  | 'auth_env_error'        // 必要 auth env 缺失 / 无效
+  | 'init_timeout'          // ACP child init 超时
+  | 'protocol_error'        // ACP NDJSON 协议错误（schema 不匹配 / 帧损坏）
+  | 'missing_file'          // 文件读路径不存在 / 越 sandbox 边界
+  | 'parse_error'           // request body parse / zod schema 失败
+  // PR#4247/4271 ✅ 扩展（status cells stat failure / MCP budget refusal）
+  | 'stat_failed'           // `/workspace/preflight` stat() 失败（permission / EACCES）
+  | 'budget_exhausted'      // MCP budget enforce 模式拒服务器（per-server `mcp_server` + workspace-level `mcp_budget` cell）
+  // PR#4530 🔧 OPEN（target main）扩展（T2.9 long-running deployment guards）
+  | 'prompt_deadline_exceeded'  // `POST /session/:id/prompt` 超 `--prompt-deadline-ms` cap，daemon abort + 返 504（独立 Promise.race，不依赖 bridge cooperation）
+  | 'writer_idle_timeout'       // SSE 连接无 write flush 成功超 `--writer-idle-timeout-ms` cap，daemon emit terminal `client_evicted{reason:'writer_idle_timeout'}` + close
 ```
+
+**当前状态**（截至 2026-05-26）：`SERVE_ERROR_KINDS` 11 值 / `DAEMON_ERROR_KINDS` 10 值（`stat_failed` 仅 serve 侧 —— 因 SDK 侧只 mirror 用户面 error）。两端各有 drift-insurance test 锁排序。
 
 跨 PR 复用模式：
 - PR#4247 ✅ `/workspace/preflight` + `/workspace/env` 用该枚举返诊断结果
 - PR#4251 ✅ MCP restart 守卫用 `missing_binary` / `protocol_error`
+- PR#4271 ✅ Wave 3 PR 14b 加 `budget_exhausted` —— MCP budget refusal SSE push 事件 + status cell
 - PR#4282 ✅ FS boundary 越界用 `missing_file`
 - PR#4295 ✅ Wave 5 PR 22a `BridgeTimeoutError` / `BridgeChannelClosedError` / `MissingCliEntryError` 在 typed-error 层进一步细化
+- PR#4530 🔧 OPEN T2.9 加 `prompt_deadline_exceeded` / `writer_idle_timeout` —— prompt absolute deadline + SSE writer idle timeout
 
-> typed-error 设计哲学：HTTP wire 仅暴露 7 个 closed enum；daemon 内部用富类型 `Error` 子类（`TrustGateError` / `BridgeTimeoutError` 等）保留 stack / cause / metadata，序列化到 wire 时降级到 enum + redacted message。
+> typed-error 设计哲学：HTTP wire 仅暴露 closed enum；daemon 内部用富类型 `Error` 子类（`TrustGateError` / `BridgeTimeoutError` 等）保留 stack / cause / metadata，序列化到 wire 时降级到 enum + redacted message。
 
 ---
 
