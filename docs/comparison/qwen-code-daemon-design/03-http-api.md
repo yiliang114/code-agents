@@ -204,6 +204,16 @@ writer_idle_timeout                        advertise 后 SDK 可 expect client_e
 # Closed errorKind taxonomy 扩 2 个 → 11 / 10（详 §八）
 + prompt_deadline_exceeded                 504 from POST /session/:id/prompt
 + writer_idle_timeout                      data field on client_evicted
+
+# Context-usage 路由（PR#4573 🔧 OPEN，target daemon_mode_b_main，ytahdn web-shell 用）
+GET    /session/:id/context-usage          返 session token 使用分布 — ServeSessionContextUsageStatus
+                                           完整链路：
+                                             SDK   `DaemonSessionContextUsageStatus` 类型 + `sessionContextUsage()` method
+                                             bridge `getSessionContextUsageStatus()` 接口 + `SERVE_STATUS_EXT_METHODS.sessionContextUsage`
+                                             CLI   route + `acpAgent.buildSessionContextUsageStatus()` 实现
+                                           Capability tag: session_context_usage: {since: 'v1'}
+                                           动机：web-shell ContextUsageMessage 组件渲染 token usage breakdown
+                                                —— TUI 已有同视图，daemon client 之前无对应 wire 路径
 ```
 
 ### Wave 5 — Architecture extraction（部分 MERGED）

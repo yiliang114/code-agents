@@ -13,7 +13,7 @@
 | **Kimi CLI** | **85%** 或 剩余 <50K | 带标签的结构化摘要 | ✗ | **✓（/compact [FOCUS]）** | ✗ | 异步+重试 | ✗ |
 | **Claude Code** | **~95%**（版本/缓冲实现可能有差异） | **三层压缩体系** | 未见公开证据 | **✓（/compact [指令]）** | ✗ | 非阻塞 | ✗ |
 | **Aider** | 总 token 数 > 1024（默认阈值） | 递归分割摘要 | ✗ | ✗ | **✓（最多 3 层）** | **后台线程** | ✗ |
-| **Qwen Code** | 主会话手动 **70%** 阈值；v0.15.x+ 子代理自动触发（同阈值）；v0.16.0 堆压力安全网另行触发 | 4 阶段框架（分叉继承）+ 反应式溢出压缩 | 未见独立二次验证证据 | ✗ | ✗ | 主会话手动；子代理/溢出自动 | 未见 compact prompt 防注入证据 |
+| **Qwen Code** | v0.16.0 单阈值 70%；**v0.16.2+ 改 warn / auto / hard 三档 ladder**（PR#4345 BREAKING：比例下界 + window 边缘 absolute-byte 预留 + hard-tier API 拒绝前 force rescue）；v0.15.x+ 子代理自动触发；堆压力安全网另行触发 | 4 阶段框架（分叉继承）+ 反应式溢出压缩 + **v0.16.2+ hard-tier rescue** | 未见独立二次验证证据 | ✗ | ✗ | 主会话手动；子代理/溢出/堆压力自动；hard-tier API-reject 前 force | 未见 compact prompt 防注入证据 |
 | **Copilot CLI** | 可配置 | 未公开 | 未知 | ✗ | 未知 | 后台 | 未知 |
 | **Codex CLI** | 可配置 | 压缩提示可配置，具体算法未公开 | 未知 | **✓（配置级 `compact_prompt`）** | 未知 | 未知 | 未知 |
 
@@ -374,6 +374,29 @@ extraHistory = [
 ### 与 Gemini CLI 的继承关系
 
 Qwen Code 继承了 Gemini CLI 的 `ChatCompressionService` 框架，默认阈值为 **70%**（Gemini CLI 为 50%）。`hasFailedCompressionAttempt` 断路器、`LoopDetectionService` 和 `PreCompact` Hook 均继承自上游。v0.16.0 在此基础上引入了 `compactionInputSlimming`（图像 token 估算）、堆压力安全网（`fix #4185`）和反应式溢出压缩（`#3879`）。
+
+### ⚠️ v0.16.2+ 重大更新：三档梯度阈值（[PR#4345](https://github.com/QwenLM/qwen-code/pull/4345) MERGED 2026-05-25）
+
+LaZzyMan 在 [PR#4345](https://github.com/QwenLM/qwen-code/pull/4345) `feat(core)!: redesign auto-compaction thresholds with three-tier ladder` (+4076/-227 BREAKING, MERGED 2026-05-25 13:11) 把单阈值 70% 比例触发改成 **warn / auto / hard 三档 ladder**，结合比例下界 + window 边缘附近的 absolute-byte 预留：
+
+```typescript
+auto = max(0.7 × window, effectiveWindow − 13K)     // 主动 cheap-gate
+warn = max(0.6 × window, auto − 20K)                 // UX 提示档
+hard = max(effectiveWindow − 3K, auto)               // force-compaction 触发
+effectiveWindow = window − SUMMARY_RESERVE (20K)     // input + summary 预算
+COMPACT_MAX_OUTPUT_TOKENS = 20K                      // 钉死的 summary cap (matches SUMMARY_RESERVE)
+```
+
+**hard-tier rescue**：在 API 拒绝 oversized prompt 前一发，force compaction。
+
+**小窗口 (32K / 64K)** 自动落到比例分支；**大窗口** 由 absolute 分支主导，把浪费的预留封顶在 ~33K 而非 window 的 30%。
+
+**Breaking changes**：
+- `chatCompression.contextPercentageThreshold` **设置移除** —— 新 ladder 从 context window 内部算，旧字段静默忽略 + 启动时一行 deprecation warning
+- `CompressOptions.hasFailedCompressionAttempt: boolean` **→ `consecutiveFailures: number`**（SDK breaking change，design doc 含 migration guide）
+- Compression side query thinking **禁用**（`includeThoughts: false`）—— 各 provider thinking-budget 语义不一致
+
+**与 PR#4168 的关系**：本 PR 是 #4168 的 clean rewrite —— #4168 跑 12 轮 review 累积 6303 LOC（~2700 是 review-driven scope creep：observability throttles / hostile-provider hardening / 新 escape-hatch feature / i18n / cross-file constant unification），后 PR 不可 review；本 PR ship **原始 spec + R1-R5 早期真 bug 修复**（4288 LOC, 6 clean commit），R6-R12 load-bearing review-driven refinements 拆成 focused follow-up issue。
 
 ---
 
