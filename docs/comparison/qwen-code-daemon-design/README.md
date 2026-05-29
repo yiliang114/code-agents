@@ -2,6 +2,140 @@
 
 > Qwen Code 引入 HTTP daemon 模式的完整设计方案。基于 [SDK / ACP / Daemon 架构 Deep-Dive](../sdk-acp-daemon-architecture-deep-dive.md) 第七章"Qwen Code 引入 daemon 的工作量评估"展开为可执行的工程蓝图。
 
+## 零、项目概况速览（截至 2026-05-29）
+
+> 一句话：**daemon Mode B 功能面已完整**（routes + 协议 + bridge 抽离 + permission mediation + MCP shared pool + 双 transport），**剩 release 工程化**（PR#4490 反向 merge + PR 28 npm publish + PR 31 cut），**sustaining 工作并行推进**（DaemonWorkspaceService 重构 / telemetry / 新 route），客户端生态已扩到 **REST+SSE / ACP HTTP / MCP stdio 三维入口**，是 daemon 阶段性收官前最后一段路。
+
+### 阶段定位
+
+| 阶段 | 时间 | 状态 |
+|---|---|---|
+| Stage 1 (PR#3889) headless daemon 雏形 | 2026-05-13 | ✅ MERGED |
+| Stage 1.5a (PR#4113) 1 daemon = 1 workspace | 2026-05-15 | ✅ MERGED |
+| Wave 1-4 Protocol → Auth-gated mutation | 2026-05-16 ~ 18 | ✅ 24 PR MERGED |
+| Wave 5 F1/F2/F3/F4 prereq + chiga0 SDK UI 双轨 | 2026-05-19 ~ 28 | ✅ MERGED to `daemon_mode_b_main` |
+| **PR#4490 反向周期 merge `daemon_mode_b_main → main`** | 🚧 | **OPEN CHANGES_REQUESTED**（首次反向 merge，v0.16-alpha cut 前置）|
+| **PR 28 npm publish + PR 31 v0.16-alpha cut** | ⏳ | 待开 |
+
+**Wave plan 进度（22.75 / 31 ≈ 73%）**：
+
+```text
+Wave 1 Protocol foundation       ████████ 4/4 ✅
+Wave 2 Session lifecycle         ████████ 4/4 ✅
+Wave 2.5 Reliability             ██████   3/3 ✅
+Wave 3 Read-only control plane   ██████   3/3 ✅
+Wave 4 Auth-gated mutation       ██████████ 7/7 ✅
+Wave 5 Architecture extraction   █████░    F1+F2+F3+F4prereq ✅ / F4 client adapter + PR 25 待
+Wave 6 Release hardening         ░░░░░     PR 27 ✅ + PR 30a ✅；PR 28/29/31 待
+```
+
+### 团队与分工
+
+| 作者 | 角色 | 重点 |
+|---|---|---|
+| **doudouOUC**（jinye）| **F-series 主力**，server-side 架构 | F1-F4 prereq / #4514 backlog / #4175 inventory / telemetry / file logger / route 扩 |
+| **chiga0** | SDK + ACP transport + side-channel | SDK daemon UI 双 PR / cross-client sync / **ACP HTTP transport** / side-channel design / **non-blocking POST /prompt** |
+| **ytahdn** | web-shell consumer | `packages/web-shell` daemon-backed React web-shell / context-usage API / daemon-react-sdk subpath |
+| **jifeng**（2026-05-28 新加入）| MCP bridge | `qwen-serve-bridge` daemon 作 MCP server 让 Qoder / Claude Desktop / Cursor 接 |
+| wenshao（项目 maintainer）| review + 架构守门 | 9-agent `/review` 并行 / 多轮 review fold-in |
+
+### 9 个核心架构决策
+
+| # | 决策 | 选择 |
+|---|---|---|
+| 1 | session 跨 client 共享 | default `sessionScope: 'single'` |
+| 2 | 状态进程模型 | **1 daemon = 1 workspace × N session**（OS 进程级隔离）|
+| 3 | MCP 生命周期 | F2 #4336 后 **workspace-scope shared transport pool** |
+| 4 | FileReadCache 共享 | per-session 严格私有 |
+| 5 | Permission flow | F3 #4335 **4 strategies**（first-responder / designated / consensus / local-only）|
+| 6 | 多 client 并发 | 同 session prompt 串行（FIFO）+ 事件 fan-out |
+| 7 | 部署模式 | **Mode B mainline**；Mode A parking lot |
+| 8 | server / client / runtime boundary | 4 层分离 |
+| 9 | **northbound transport** | **dual additive: qwen REST+SSE + 标准 ACP HTTP**（PR#4472 落地）|
+
+详 [§02 Architectural Decisions](./02-architectural-decisions.md)。
+
+### 客户端生态（3 维入口已建）
+
+```text
+                ┌──────────────────────────────────────────────┐
+                │            qwen serve daemon                  │
+                │  HttpAcpBridge + EventBus + workspace pool    │
+                └──────────────────┬───────────────────────────┘
+                                   │
+       ┌───────────────────┬───────┴───────┬─────────────────┐
+       ▼                   ▼               ▼                 ▼
+  ① REST+SSE           ② ACP HTTP      ③ MCP stdio       (4) ACP stdio
+  /session/* + /workspace/*   /acp     qwen-serve-bridge   (legacy local)
+  消费者:                消费者:        消费者:            (in-process TUI)
+  - web-shell (ytahdn)  - Zed         - Qoder
+  - webui (chiga0)      - Goose       - Claude Desktop
+  - 3 SDK / channel     - future      - Cursor / any MCP
+    adapter / IM bot      ACP SDK       客户端
+```
+
+**关键差异化**：qwen-code 是**唯一同时打 ACP 标准 + MCP 标准**的 daemon —— Claude/Cursor 闭门；Goose 仅 ACP；qwen 开放协议生态是长期竞争轴。
+
+### 正在进行的工作（截至 2026-05-29 OPEN PRs）
+
+**优先级 1：v0.16-alpha cut 关键路径**：
+- 🔥 [PR#4490](https://github.com/QwenLM/qwen-code/pull/4490) `chore(integration): daemon_mode_b_main → main` —— **首次反向周期 merge**，+87931/-22289，14 feature PR 周期 merge，OPEN CHANGES_REQUESTED，**alpha cut 必先合**
+- ⏳ PR 28 npm publish scaffolding（发布清单已冻：`@qwen-code/{qwen-code, core, sdk, webui}`）
+- ⏳ PR 31 v0.16-alpha.0 cut
+
+**优先级 2：F-series 收尾 + 架构 sustaining**：
+- 🚧 [PR#4563](https://github.com/QwenLM/qwen-code/pull/4563) `DaemonWorkspaceService` 重构（issue #4542 方案 C）+2054/-1011
+- 🚧 [PR#4556](https://github.com/QwenLM/qwen-code/pull/4556) telemetry trace daemon prompt lifecycle +1325/-424
+- 🚧 [PR#4552](https://github.com/QwenLM/qwen-code/pull/4552) T2.8 runtime MCP server add/remove +2886/-31
+- 🚧 [PR#4608](https://github.com/QwenLM/qwen-code/pull/4608) telemetry tool spans + session.id to daemon/ACP +728/-632
+- 🚧 [PR#4606](https://github.com/QwenLM/qwen-code/pull/4606) request-level logging for serve routes +178/-6
+
+**优先级 3：新 daemon route + 客户端 UX**：
+- 🚧 [PR#4610](https://github.com/QwenLM/qwen-code/pull/4610) `POST /session/:id/btw` for side questions（doudouOUC）+329/-128
+- 🚧 [PR#4603](https://github.com/QwenLM/qwen-code/pull/4603) web-shell `/delete` 批量 delete（ytahdn）+948/-41
+- 🚧 [PR#4511](https://github.com/QwenLM/qwen-code/pull/4511) side-channel coordination design docs (A1/A2/A4/A5) +434
+
+### 仍未关的 backlog
+
+**#4514 Tier-2 未开**：
+- T2.1 `loadSession` / `resume` graduate from `unstable_`（需 #4253 prereq）
+- T2.2 Pair tokens + per-client revocation（L sized，security review）
+
+**#4514 Tier-3 全部待开**：branch/rewind/restore HTTP / `--max-body-size` / rate-limiting / `/extensions` HTTP / `/tasks` HTTP / multi-daemon coord
+
+**#4511 side-channel design 剩余**：A2 / A5（A1+A4 ✅）
+
+**Wave 5 剩余**：F4 client adapter 本体（scope 已两次 revisit）/ PR 25 output sinks
+
+**Wave 6 剩余**：PR 28 npm publish / PR 29 auto-gen token / PR 30 容器化 deployment refs / PR 31 cut
+
+### 撤回的两条 backlog（架构 lesson）
+
+| PR | backlog 项 | 撤回原因 |
+|---|---|---|
+| ❌ [PR#4516](https://github.com/QwenLM/qwen-code/pull/4516) T1.3 + T1.4 | `POST /compress` / `POST/GET /_meta` | 已可经 `POST /prompt` slash-passthrough + ACP `_meta` per-request 达到 |
+| ❌ [PR#4515](https://github.com/QwenLM/qwen-code/pull/4515) T2.5 + T2.6 | `GET /session/:id/stats` / `/export` | 同理：可经 `POST /prompt` `/stats` / `/export` slash passthrough |
+
+**lesson**：backlog "missing capability" 标记需 client demand 验证；发现 wire surface gap ≠ 要 implement；**已有 passthrough 的 surface 是 polish 不是 gap**。
+
+### 关键文档入口
+
+| 看什么 | 文档 |
+|---|---|
+| 项目当前状态 + 活动流 | [README](./README.md)（本文档，§一以下是活动流明细）|
+| 项目概览 + Wave 进度 + 阶段说明 | [01-overview.md](./01-overview.md) |
+| 9 个核心架构决策 | [02-architectural-decisions.md](./02-architectural-decisions.md) |
+| HTTP / SSE API 完整路由表 | [03-http-api.md](./03-http-api.md) |
+| 部署模式 / client 边界 | [04-deployment-and-client.md](./04-deployment-and-client.md) |
+| Permission / Auth | [05-permission-auth.md](./05-permission-auth.md) |
+| Roadmap + Wave breakdown | [06-roadmap.md](./06-roadmap.md) |
+| **终态用户使用文档** | [07-user-guide.md](./07-user-guide.md) |
+| upstream 实施 tracker | [Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) |
+| capability backlog | [Issue #4514](https://github.com/QwenLM/qwen-code/issues/4514) |
+| side-channel design | [Issue #4511](https://github.com/QwenLM/qwen-code/issues/4511) |
+
+---
+
 ## 一、TL;DR
 
 > **2026-05-15 决策更新**：先忽略 Mode A（`qwen --serve`）。后续 roadmap 以 **Mode B：`qwen serve` headless daemon 作为底层 runtime** 为主线；Mode A 暂停在 [Issue #4156](https://github.com/QwenLM/qwen-code/issues/4156) 里作为 parking lot，已合并的 [PR#4160](https://github.com/QwenLM/qwen-code/pull/4160) 仅作为可复用 in-memory channel primitive 记录。
