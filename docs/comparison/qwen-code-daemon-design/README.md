@@ -2,6 +2,140 @@
 
 > Qwen Code 引入 HTTP daemon 模式的完整设计方案。基于 [SDK / ACP / Daemon 架构 Deep-Dive](../sdk-acp-daemon-architecture-deep-dive.md) 第七章"Qwen Code 引入 daemon 的工作量评估"展开为可执行的工程蓝图。
 
+## 零、项目概况速览（截至 2026-05-29）
+
+> 一句话：**daemon Mode B 功能面已完整**（routes + 协议 + bridge 抽离 + permission mediation + MCP shared pool + 双 transport），**剩 release 工程化**（PR#4490 反向 merge + PR 28 npm publish + PR 31 cut），**sustaining 工作并行推进**（DaemonWorkspaceService 重构 / telemetry / 新 route），客户端生态已扩到 **REST+SSE / ACP HTTP / MCP stdio 三维入口**，是 daemon 阶段性收官前最后一段路。
+
+### 阶段定位
+
+| 阶段 | 时间 | 状态 |
+|---|---|---|
+| Stage 1 (PR#3889) headless daemon 雏形 | 2026-05-13 | ✅ MERGED |
+| Stage 1.5a (PR#4113) 1 daemon = 1 workspace | 2026-05-15 | ✅ MERGED |
+| Wave 1-4 Protocol → Auth-gated mutation | 2026-05-16 ~ 18 | ✅ 24 PR MERGED |
+| Wave 5 F1/F2/F3/F4 prereq + chiga0 SDK UI 双轨 | 2026-05-19 ~ 28 | ✅ MERGED to `daemon_mode_b_main` |
+| **PR#4490 反向周期 merge `daemon_mode_b_main → main`** | 🚧 | **OPEN CHANGES_REQUESTED**（首次反向 merge，v0.16-alpha cut 前置）|
+| **PR 28 npm publish + PR 31 v0.16-alpha cut** | ⏳ | 待开 |
+
+**Wave plan 进度（22.75 / 31 ≈ 73%）**：
+
+```text
+Wave 1 Protocol foundation       ████████ 4/4 ✅
+Wave 2 Session lifecycle         ████████ 4/4 ✅
+Wave 2.5 Reliability             ██████   3/3 ✅
+Wave 3 Read-only control plane   ██████   3/3 ✅
+Wave 4 Auth-gated mutation       ██████████ 7/7 ✅
+Wave 5 Architecture extraction   █████░    F1+F2+F3+F4prereq ✅ / F4 client adapter + PR 25 待
+Wave 6 Release hardening         ░░░░░     PR 27 ✅ + PR 30a ✅；PR 28/29/31 待
+```
+
+### 团队与分工
+
+| 作者 | 角色 | 重点 |
+|---|---|---|
+| **doudouOUC**（jinye）| **F-series 主力**，server-side 架构 | F1-F4 prereq / #4514 backlog / #4175 inventory / telemetry / file logger / route 扩 |
+| **chiga0** | SDK + ACP transport + side-channel | SDK daemon UI 双 PR / cross-client sync / **ACP HTTP transport** / side-channel design / **non-blocking POST /prompt** |
+| **ytahdn** | web-shell consumer | `packages/web-shell` daemon-backed React web-shell / context-usage API / daemon-react-sdk subpath |
+| **jifeng**（2026-05-28 新加入）| MCP bridge | `qwen-serve-bridge` daemon 作 MCP server 让 Qoder / Claude Desktop / Cursor 接 |
+| wenshao（项目 maintainer）| review + 架构守门 | 9-agent `/review` 并行 / 多轮 review fold-in |
+
+### 9 个核心架构决策
+
+| # | 决策 | 选择 |
+|---|---|---|
+| 1 | session 跨 client 共享 | default `sessionScope: 'single'` |
+| 2 | 状态进程模型 | **1 daemon = 1 workspace × N session**（OS 进程级隔离）|
+| 3 | MCP 生命周期 | F2 #4336 后 **workspace-scope shared transport pool** |
+| 4 | FileReadCache 共享 | per-session 严格私有 |
+| 5 | Permission flow | F3 #4335 **4 strategies**（first-responder / designated / consensus / local-only）|
+| 6 | 多 client 并发 | 同 session prompt 串行（FIFO）+ 事件 fan-out |
+| 7 | 部署模式 | **Mode B mainline**；Mode A parking lot |
+| 8 | server / client / runtime boundary | 4 层分离 |
+| 9 | **northbound transport** | **dual additive: qwen REST+SSE + 标准 ACP HTTP**（PR#4472 落地）|
+
+详 [§02 Architectural Decisions](./02-architectural-decisions.md)。
+
+### 客户端生态（3 维入口已建）
+
+```text
+                ┌──────────────────────────────────────────────┐
+                │            qwen serve daemon                  │
+                │  HttpAcpBridge + EventBus + workspace pool    │
+                └──────────────────┬───────────────────────────┘
+                                   │
+       ┌───────────────────┬───────┴───────┬─────────────────┐
+       ▼                   ▼               ▼                 ▼
+  ① REST+SSE           ② ACP HTTP      ③ MCP stdio       (4) ACP stdio
+  /session/* + /workspace/*   /acp     qwen-serve-bridge   (legacy local)
+  消费者:                消费者:        消费者:            (in-process TUI)
+  - web-shell (ytahdn)  - Zed         - Qoder
+  - webui (chiga0)      - Goose       - Claude Desktop
+  - 3 SDK / channel     - future      - Cursor / any MCP
+    adapter / IM bot      ACP SDK       客户端
+```
+
+**关键差异化**：qwen-code 是**唯一同时打 ACP 标准 + MCP 标准**的 daemon —— Claude/Cursor 闭门；Goose 仅 ACP；qwen 开放协议生态是长期竞争轴。
+
+### 正在进行的工作（截至 2026-05-29 OPEN PRs）
+
+**优先级 1：v0.16-alpha cut 关键路径**：
+- 🔥 [PR#4490](https://github.com/QwenLM/qwen-code/pull/4490) `chore(integration): daemon_mode_b_main → main` —— **首次反向周期 merge**，+87931/-22289，14 feature PR 周期 merge，OPEN CHANGES_REQUESTED，**alpha cut 必先合**
+- ⏳ PR 28 npm publish scaffolding（发布清单已冻：`@qwen-code/{qwen-code, core, sdk, webui}`）
+- ⏳ PR 31 v0.16-alpha.0 cut
+
+**优先级 2：F-series 收尾 + 架构 sustaining**：
+- 🚧 [PR#4563](https://github.com/QwenLM/qwen-code/pull/4563) `DaemonWorkspaceService` 重构（issue #4542 方案 C）+2054/-1011
+- 🚧 [PR#4556](https://github.com/QwenLM/qwen-code/pull/4556) telemetry trace daemon prompt lifecycle +1325/-424
+- 🚧 [PR#4552](https://github.com/QwenLM/qwen-code/pull/4552) T2.8 runtime MCP server add/remove +2886/-31
+- 🚧 [PR#4608](https://github.com/QwenLM/qwen-code/pull/4608) telemetry tool spans + session.id to daemon/ACP +728/-632
+- 🚧 [PR#4606](https://github.com/QwenLM/qwen-code/pull/4606) request-level logging for serve routes +178/-6
+
+**优先级 3：新 daemon route + 客户端 UX**：
+- 🚧 [PR#4610](https://github.com/QwenLM/qwen-code/pull/4610) `POST /session/:id/btw` for side questions（doudouOUC）+329/-128
+- 🚧 [PR#4603](https://github.com/QwenLM/qwen-code/pull/4603) web-shell `/delete` 批量 delete（ytahdn）+948/-41
+- 🚧 [PR#4511](https://github.com/QwenLM/qwen-code/pull/4511) side-channel coordination design docs (A1/A2/A4/A5) +434
+
+### 仍未关的 backlog
+
+**#4514 Tier-2 未开**：
+- T2.1 `loadSession` / `resume` graduate from `unstable_`（需 #4253 prereq）
+- T2.2 Pair tokens + per-client revocation（L sized，security review）
+
+**#4514 Tier-3 全部待开**：branch/rewind/restore HTTP / `--max-body-size` / rate-limiting / `/extensions` HTTP / `/tasks` HTTP / multi-daemon coord
+
+**#4511 side-channel design 剩余**：A2 / A5（A1+A4 ✅）
+
+**Wave 5 剩余**：F4 client adapter 本体（scope 已两次 revisit）/ PR 25 output sinks
+
+**Wave 6 剩余**：PR 28 npm publish / PR 29 auto-gen token / PR 30 容器化 deployment refs / PR 31 cut
+
+### 撤回的两条 backlog（架构 lesson）
+
+| PR | backlog 项 | 撤回原因 |
+|---|---|---|
+| ❌ [PR#4516](https://github.com/QwenLM/qwen-code/pull/4516) T1.3 + T1.4 | `POST /compress` / `POST/GET /_meta` | 已可经 `POST /prompt` slash-passthrough + ACP `_meta` per-request 达到 |
+| ❌ [PR#4515](https://github.com/QwenLM/qwen-code/pull/4515) T2.5 + T2.6 | `GET /session/:id/stats` / `/export` | 同理：可经 `POST /prompt` `/stats` / `/export` slash passthrough |
+
+**lesson**：backlog "missing capability" 标记需 client demand 验证；发现 wire surface gap ≠ 要 implement；**已有 passthrough 的 surface 是 polish 不是 gap**。
+
+### 关键文档入口
+
+| 看什么 | 文档 |
+|---|---|
+| 项目当前状态 + 活动流 | [README](./README.md)（本文档，§一以下是活动流明细）|
+| 项目概览 + Wave 进度 + 阶段说明 | [01-overview.md](./01-overview.md) |
+| 9 个核心架构决策 | [02-architectural-decisions.md](./02-architectural-decisions.md) |
+| HTTP / SSE API 完整路由表 | [03-http-api.md](./03-http-api.md) |
+| 部署模式 / client 边界 | [04-deployment-and-client.md](./04-deployment-and-client.md) |
+| Permission / Auth | [05-permission-auth.md](./05-permission-auth.md) |
+| Roadmap + Wave breakdown | [06-roadmap.md](./06-roadmap.md) |
+| **终态用户使用文档** | [07-user-guide.md](./07-user-guide.md) |
+| upstream 实施 tracker | [Issue #4175](https://github.com/QwenLM/qwen-code/issues/4175) |
+| capability backlog | [Issue #4514](https://github.com/QwenLM/qwen-code/issues/4514) |
+| side-channel design | [Issue #4511](https://github.com/QwenLM/qwen-code/issues/4511) |
+
+---
+
 ## 一、TL;DR
 
 > **2026-05-15 决策更新**：先忽略 Mode A（`qwen --serve`）。后续 roadmap 以 **Mode B：`qwen serve` headless daemon 作为底层 runtime** 为主线；Mode A 暂停在 [Issue #4156](https://github.com/QwenLM/qwen-code/issues/4156) 里作为 parking lot，已合并的 [PR#4160](https://github.com/QwenLM/qwen-code/pull/4160) 仅作为可复用 in-memory channel primitive 记录。
@@ -75,7 +209,15 @@ ACP NDJSON 协议 → HTTP+SSE daemon
   - ✅ **F3** [PR#4335](https://github.com/QwenLM/qwen-code/pull/4335) Wave 5 PR 24 PermissionMediator 4 strategies **MERGED 2026-05-20 11:13 to `daemon_mode_b_main`** (doudouOUC, +9748/-517 62 files, merge `8eeb5100`; 4 strategies (first-responder pre-F3 default 字节保 / designated / consensus N-of-M + partial vote SSE / local-only kernel-stamped); MultiClientPermissionMediator owns all state; 512-entry audit ring NOT on SSE; 5 hardness invariants 含 N3 deliberately preserved 旧 originatorClientId 不一致 保 wire 字节; pair-token + revocation API 推迟 follow-up)
   - ✅ **F4 prereq** [PR#4360](https://github.com/QwenLM/qwen-code/pull/4360) daemon protocol completion **MERGED 2026-05-21 03:11 to `daemon_mode_b_main`** (doudouOUC, +897/-24 11 files; 2 commits bundled — F4 client-adapter wave 渲染前置: ① **#19 stamping** (chiga0 #4175 comment #19) — `serverTimestamp` (`_meta` at SSE write boundary) / `errorKind` on `stream_error` / tool `provenance` (builtin\|mcp\|subagent + serverId, emitStart+emitResult+emitError 都 stamp) ② **#15 SSE reducer gap detection** (Ilya0527 #4175 comment #15 multi-client state divergence bug) — ring eviction 时 force-push synthetic `state_resync_required` terminal frame; 全 additive backward-compat)
   - ✅ **chiga0 SDK 侧并行 track** —— [PR#4328](https://github.com/QwenLM/qwen-code/pull/4328) `feat(daemon): add shared UI transcript layer` **MERGED 2026-05-22 06:02** (chiga0, +6103/-1993 33 files, merge `d0563ecf5`; 为 web chat / web terminal 加共享 daemon UI 层: typed daemon events → UI events → transcript blocks → framework-free store + React bindings in `@qwen-code/webui`; 解决"web clients should not each reimplement streaming merge / tool preview / permission state / shell output"; **native local TUI / ACP / channel / IDE defaults 不动**——与 maintainer web-first 路线对齐); ✅ [PR#4353](https://github.com/QwenLM/qwen-code/pull/4353) `feat(sdk/daemon-ui): unified completeness follow-up to #4328` **MERGED 2026-05-24 00:51 to `daemon_mode_b_main`** (chiga0, ~4d 17h, +8531/-110 21 files, merge `cf5c2453`, **24 commits / 61 reviews**（review 强度第二高，仅次 F2 #4336 的 247）; **#4328 ~55% → #4353 ~95%**; PR-A through PR-K 覆盖 event 13→28+ types / serverTimestamp / state machine / tool preview taxonomy / render contract / adapter conformance / WebUI migration / 开发者指南 / subagent nesting 消费 / resync-required event handling; **R1-R7 7 轮 review**，收尾阶段从 SDK 消费功能转为 security+edge-case hardening (Critical OAuth fragment leak / ensureSafeImageUrl 限 `data:image/*` / escapeMarkdownText 覆盖 `<` / recovery flow chicken-and-egg); 剩 tool.progress + multimodal 跨包 follow-up)
-  - 🔧 **ytahdn 第 2 PR — context-usage API + daemon-react-sdk subpath + dialog UX** [PR#4573](https://github.com/QwenLM/qwen-code/pull/4573) `feat(web-shell,webui,sdk): context-usage API + daemon-react-sdk refactor + dialog UX` **OPEN CHANGES_REQUESTED CONFLICTING** 2026-05-27 11:13 (ytahdn, **+9820/-3713 119 files**, 2 commits, target `daemon_mode_b_main`); **#4380 MERGED 同一天 9.5h 后开第 2 PR**，连续推进 web-shell；4 块改动：① **新 `GET /session/:id/context-usage` 端点** 全链路 (SDK `DaemonSessionContextUsageStatus` + `sessionContextUsage()` / acp-bridge `ServeSessionContextUsageStatus` + `SERVE_STATUS_EXT_METHODS.sessionContextUsage` / CLI route + `acpAgent.buildSessionContextUsageStatus()`) + 新 capability `session_context_usage: {since:'v1'}` 返 session token 使用分布 ② **webui daemon provider 模块化重构** —— `packages/webui/src/daemon/` 拆为 `session/`（DaemonSessionProvider + actions/selectors/mappers/clientLifecycle/promptContent/transcriptToMessages）+ `workspace/`（DaemonWorkspaceProvider + actions + hooks: useDaemonAgents/Auth/Mcp/...）+ 新 `daemon-react-sdk` subpath export (`@qwen-code/webui/daemon-react-sdk`)，web-shell 经 subpath 统一消费解耦直接依赖 ③ **dialog UX**：11 个弹窗 ← 返回图标移除改右侧 ESC 按钮；新 `data-keyboard-scope` 机制让弹窗 input 仍响应 Esc/Arrow 键；弹窗打开 blur Editor + 禁用全局快捷键 close 后 refocus；补全对齐 CLI 选中不 auto-submit；移除 `/stats` 子命令补全 + Model 弹窗 `c` 键自定义模型 ④ **review fix fold-in（commit 2 `f31c8ddc8`）**：**Security**：Mermaid securityLevel 'loose' → revert 'strict' + sanitizer strip foreignObject/style；**Shift+Tab 不再 silently 设 yolo mode** 只 approve 当前请求；`clientLifecycle` 用 `sessionStorage` 做 **per-tab client ID 隔离**；**Bug fix**：`cancel()` finally block session-ID guard / `lastRecapBlockCountRef` session switch reset / `collectContextData` try/catch + field stripping / `useDaemonResource` sequence counter 防 stale response overwrite / `detachDaemonClient` `keepalive: true` tab-close 时请求可靠送达 / `ResumeDialog` error state；**Perf**：`useSyncExternalStore` selector hoisted via `useCallback`；**Feature**：parallel agents merged display `ParallelAgentsGroup` 组件；**Tests**：`clientLifecycle.test.ts` +9 + `useDaemonResource.test.tsx` +5 + `Markdown.test.ts` 更新 sanitization
+  - ✅ **chiga0 第 7 PR — non-blocking POST /prompt return 202 (architectural)** [PR#4585](https://github.com/QwenLM/qwen-code/pull/4585) `feat(daemon): non-blocking POST /prompt — return 202 with promptId` **MERGED 2026-05-28 08:29 to `daemon_mode_b_main`** (chiga0, +528/-351 10 files, closes #4582); **重大架构变化**：`POST /session/:id/prompt` 现 **非阻塞** 立刻返 `202 Accepted` with `{promptId, lastEventId}`，prompt 完成通过 SSE `turn_complete` / `turn_error` 事件异步交付 by `promptId` correlated；从 daemon design §03 原 blocking model 演化；解决 long-running prompts 阻塞 connection 问题 + 让 client side 不再需要 await HTTP response 完成
+  - ✅ **jifeng 新 contributor — serve-bridge MCP server (qwen-serve-bridge)** [PR#4555](https://github.com/QwenLM/qwen-code/pull/4555) `feat(sdk): add serve-bridge MCP server & rename mcp → daemon-mcp` **MERGED 2026-05-28 18:00 to `daemon_mode_b_main`** (jifeng, +2260/-204 25 files); **为 `qwen serve` daemon 加 MCP Server 桥接层 `qwen-serve-bridge`** 让**任何 MCP 兼容客户端（Qoder / Claude Desktop / Cursor）可通过 stdio 协议与 qwen-code agent 交互**——daemon 作 MCP server 提供 tools；原 `mcp` 重命名为 `daemon-mcp` 区分；commit `ce7a8afc5` 实现 + `0f2f6e6a9` README + `908158459` 2026 copyright
+  - ✅ **session tasks snapshot endpoint** [PR#4578](https://github.com/QwenLM/qwen-code/pull/4578) `feat(daemon): add session tasks snapshot endpoint` **MERGED 2026-05-28 06:47 to `daemon_mode_b_main`** (doudouOUC, +934/-4 26 files); 新只读 daemon session task snapshot API `GET /session/:id/tasks` backed by ACP status extMethod `qwen/status/session/tasks` + SDK helpers + web-shell `/tasks` 本地处理；动机：**web-shell 需在 prompt streaming 中检查 background tasks 不再排队等 ACP prompt queue**；reviewer focus: whitelist task serialization / bridge status path bypass prompt FIFO / web-shell `/tasks` interception
+  - ✅ **server-side shell execution for `!` bang prefix** [PR#4576](https://github.com/QwenLM/qwen-code/pull/4576) `feat(daemon): server-side shell command execution for ! (bang) prefix` **MERGED 2026-05-28 06:06 to `daemon_mode_b_main`** (doudouOUC, +356/-10 16 files); 新 `POST /session/:id/shell` 路由 **直接 daemon 端 shell 执行 bypass LLM**——bridge `executeShellCommand` 用 `ShellExecutionService` + streaming output via `shell_output` SSE 事件；ACP `sessionShellHistory` extMethod 注入 command+result 到 LLM history（匹配 CLI 的 `addShellCommandToGeminiHistory` 格式）；SDK 新 `shellCommand()` on `DaemonClient` / `DaemonSessionClient` + 新 `DaemonShellCommandResult` 类型；web-shell `!` 前缀 handler 走此路由
+  - ✅ **chiga0 第 6 PR — cross-client real-time sync follow-up cleanup** [PR#4510](https://github.com/QwenLM/qwen-code/pull/4510) `fix(daemon): cross-client sync follow-up cleanup (epoch-reset resync, approval-mode serialization, catch-up indicator)` **MERGED 2026-05-28 02:52 to `daemon_mode_b_main`** (chiga0, 创建 2026-05-25 13:08, +1233/-117 10 files); **关 PR#4484 deferred 3 项 design items 中的几个**：① **Epoch-reset resync**——subscriber Last-Event-ID 在 bus high-water 之后（daemon restart 后 EventBus 重建），bus 现 emit `state_resync_required{reason:'epoch_reset'}` 在 replay 前；之前 empty post-restart ring 让 ring-evicted 检查 no-op，consumer 看到"裸"重连无 signal ② **Approval-mode change serialization** ③ **Catch-up indicator** 等
+  - ✅ **followup_suggestion server-pushed SSE event for webui** [PR#4507](https://github.com/QwenLM/qwen-code/pull/4507) `feat(daemon): server-pushed followup_suggestion event for the webui` **MERGED 2026-05-27 13:19 to `daemon_mode_b_main`** (doudouOUC, +1154/-22 18 files); 新 daemon SSE 事件 `followup_suggestion`——ACP child 在 every clean assistant turn 后 push server-generated **ghost-text suggestion**（"what you might want to ask next"）给 attached client；镜像 in-process CLI `AppContainer.tsx` 集成；webui `<InputForm followupState={...}>` prop 接入；让 webui (+ future TUI/IDE daemon adapter) 无需 direct LLM access 即可渲染 followup
+  - ✅ **chiga0 第 3 PR — ACP HTTP transport [RFD #721]** [PR#4472](https://github.com/QwenLM/qwen-code/pull/4472) `feat(daemon): ACP Streamable HTTP transport at /acp [RFD #721]` **MERGED 2026-05-27 08:25 to `daemon_mode_b_main`** (chiga0, 创建 2026-05-24 01:14 历时 ~3.5 天, 最终 +6098/-316 20 files, 多轮 R1-R9+ review); 落实 [§02 决策 9 dual northbound transport](./02-architectural-decisions.md#9-dual-northbound-transport--restsse--acp-http2026-05-24) —— 在 `qwen serve` 加 **official ACP Streamable HTTP transport** 作第二 northbound transport 挂 `/acp` 端点 与 REST+SSE 共存共享同一 `HttpAcpBridge` + `EventBus`；Zed / Goose / future ACP-native SDK 可直接驱动 daemon；vendor extension `_qwen/...` namespace；`QWEN_SERVE_ACP_HTTP=0` opt-out
+  - ✅ **chiga0 drop dead try/catch around `model_switched` publish (BX9_p)** [PR#4557](https://github.com/QwenLM/qwen-code/pull/4557) `refactor(daemon): drop dead try/catch around model_switched publish (BX9_p)` **MERGED 2026-05-27 09:09 to `daemon_mode_b_main`** (chiga0, +11/-9 2 files); 微 cleanup —— `EventBus.publish()` 有 documented never-throws 契约 (BX9_p)，`eventBus.ts:190` 注释 "Don't add new try/catch wrappers around publish()"；删 `setSessionModel` 成功路径 `model_switched` publish 多余 try/catch 保契约 consistent
+  - ✅ **ytahdn 第 2 PR — context-usage API + daemon-react-sdk subpath + dialog UX** [PR#4573](https://github.com/QwenLM/qwen-code/pull/4573) `feat(web-shell,webui,sdk): context-usage API + daemon-react-sdk refactor + dialog UX` **MERGED 2026-05-28 09:59 to `daemon_mode_b_main`** (ytahdn, 创建 2026-05-27 11:13 历时 ~22h, 最终 **+11568/-4059 119 files** review 期间 expand from +9820/-3713); **#4380 MERGED 同一天 9.5h 后开第 2 PR**，连续推进 web-shell；4 块改动：① **新 `GET /session/:id/context-usage` 端点** 全链路 (SDK `DaemonSessionContextUsageStatus` + `sessionContextUsage()` / acp-bridge `ServeSessionContextUsageStatus` + `SERVE_STATUS_EXT_METHODS.sessionContextUsage` / CLI route + `acpAgent.buildSessionContextUsageStatus()`) + 新 capability `session_context_usage: {since:'v1'}` 返 session token 使用分布 ② **webui daemon provider 模块化重构** —— `packages/webui/src/daemon/` 拆为 `session/`（DaemonSessionProvider + actions/selectors/mappers/clientLifecycle/promptContent/transcriptToMessages）+ `workspace/`（DaemonWorkspaceProvider + actions + hooks: useDaemonAgents/Auth/Mcp/...）+ 新 `daemon-react-sdk` subpath export (`@qwen-code/webui/daemon-react-sdk`)，web-shell 经 subpath 统一消费解耦直接依赖 ③ **dialog UX**：11 个弹窗 ← 返回图标移除改右侧 ESC 按钮；新 `data-keyboard-scope` 机制让弹窗 input 仍响应 Esc/Arrow 键；弹窗打开 blur Editor + 禁用全局快捷键 close 后 refocus；补全对齐 CLI 选中不 auto-submit；移除 `/stats` 子命令补全 + Model 弹窗 `c` 键自定义模型 ④ **review fix fold-in（commit 2 `f31c8ddc8`）**：**Security**：Mermaid securityLevel 'loose' → revert 'strict' + sanitizer strip foreignObject/style；**Shift+Tab 不再 silently 设 yolo mode** 只 approve 当前请求；`clientLifecycle` 用 `sessionStorage` 做 **per-tab client ID 隔离**；**Bug fix**：`cancel()` finally block session-ID guard / `lastRecapBlockCountRef` session switch reset / `collectContextData` try/catch + field stripping / `useDaemonResource` sequence counter 防 stale response overwrite / `detachDaemonClient` `keepalive: true` tab-close 时请求可靠送达 / `ResumeDialog` error state；**Perf**：`useSyncExternalStore` selector hoisted via `useCallback`；**Feature**：parallel agents merged display `ParallelAgentsGroup` 组件；**Tests**：`clientLifecycle.test.ts` +9 + `useDaemonResource.test.tsx` +5 + `Markdown.test.ts` 更新 sanitization
   - ✅ **daemon 团队第 3 作者 ytahdn — 第一个 web client 消费者** [PR#4380](https://github.com/QwenLM/qwen-code/pull/4380) `Feat/daemon react cli` **MERGED 2026-05-27 01:42 to `daemon_mode_b_main`** (ytahdn daemon 团队第 3 作者继 doudouOUC + chiga0, 创建 2026-05-21 06:07 历时 ~6 天) (ytahdn daemon 团队第 3 作者继 doudouOUC + chiga0, +12274/-25 **107 files**, target `daemon_mode_b_main`, 41 commits / 31 reviews); **新 `packages/web-shell` daemon-backed React web-shell**——把 chiga0 SDK daemon UI 层 (#4328/#4353) 真落地成可用 web client，接 daemon session + SSE + permission + slash command completion + model/approval 切换 + session resume + memory/MCP/skills/agents view + `/session/:id` URL restore；对齐 CLI/ACP 行为 (`/model --fast` / `/rename --auto` / `/new` / `/reset`)；**第一个真实 web client 验证 chiga0 SDK 设计**；wenshao 2026-05-24 incremental review (161 files +24K/-4K across 22 new commits, 9 parallel review agents) **no new high-confidence Critical** —— 方向健康但旧 thread 未消；风险: `/session/:id` SPA route 与 daemon API `/session` 重叠靠 Vite proxy 显式 bypass HTML navigation
   - ✅ **chiga0 第 4 PR — cross-client real-time sync 5 fixes** [PR#4484](https://github.com/QwenLM/qwen-code/pull/4484) `feat(acp-bridge): cross-client real-time sync completeness (5 fixes)` **MERGED 2026-05-25 09:28 to `daemon_mode_b_main`** (chiga0, 创建 2026-05-24 16:39 历时 17h, 最终 +835/-105 经 review 期间 expand) (chiga0, +195/-18 3 files); cross-client sync audit 发现 8 gap, 本 PR 修 5 个机械性 bridge-layer 的: ① `user_message_chunk` echo on interactive prompt path (之前 client B 看不到 client A 发的 prompt 直到 reload) ② `prompt_cancelled` broadcast on cancelSession (之前只 forward ACP, 不发 bus event) ③ `replay_complete` sentinel on Last-Event-ID 重连成功路径 (与失败路径 `state_resync_required` 对偶) ④ `originatorClientId` on `session_metadata_updated` envelope ⑤ `originatorClientId` on `session_closed` envelope (之前只有 `data.closedBy`); 仍 deferred 3 项需 design 讨论 (in-session setModel bus emit / approval-mode persist 与 broadcast 关系 / `permission_resolved.originatorClientId` voter-vs-originator 语义不一致); **部署协调**: 下游 gateway 自有 user-echo workaround 与 daemon-side echo 会双重帧, 建议先部署 daemon 再 flip `GATEWAY_ECHO_USER_MESSAGE=false`; `_meta.source: 'bridge-echo'` vs `'gateway-echo'` 让 SDK dedup 兜底; 291/291 vitest pass
   - 🔧 **chiga0 第 3 PR — ACP HTTP transport 接入 ACP 生态** [PR#4472](https://github.com/QwenLM/qwen-code/pull/4472) `feat(daemon): ACP Streamable HTTP transport at /acp [RFD #721]` **OPEN CHANGES_REQUESTED**（DRAFT 已转正）05-24 01:14 创建，05-25 14:04 最新更新 (chiga0, **+3475/-0 11 files**, 11 commits / 18 reviews, target `daemon_mode_b_main`); **在 `qwen serve` 加 official ACP Streamable HTTP transport ([RFD #721](https://github.com/agentclientprotocol/agent-client-protocol/pull/721)) 作第二 northbound transport** —— 挂载 `/acp` 单端点，与现有 REST+SSE API **共存**共享 `HttpAcpBridge`+`EventBus`；**让 Zed / Goose / future ACP-native SDK 可直接驱动 daemon**；3 关键决策：dual-transport additive / `_qwen/...` extension namespace / WebSocket+HTTP2 等 deferred；**R1-R9 9 轮 review** 修 wire-level concurrency 经典坑（reconnect / ownership / leaks / write-failure / permission-vote release / concurrent-prompt abort / zombies / close TOCTOU / pump lifecycle / reconnect prompt survival）；**新加 `f101aca1b3` REST parity batch + official extension scheme** —— 跟进 RFD #721 spec 演进，把 daemon REST endpoints (`/session/*` / `/workspace/*`) 同样通过 `/acp` extension namespace 暴露完成 dual-transport 对偶；最新 commit `ef59636022` 把 follow-up roadmap 入 docs；**为什么提供这个能力的 5 层 rationale**（战略 ACP-as-LSP / 客户 vendor lock-in 成本 / 竞争 open-vs-closed 差异化 / 架构 dual-transport additive 控风险 / 时机 Draft spec 早期 mover）文档化到 [§02 决策 9](./02-architectural-decisions.md#9-dual-northbound-transport--restsse--acp-http2026-05-24)
