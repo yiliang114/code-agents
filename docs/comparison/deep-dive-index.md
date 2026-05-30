@@ -1,4 +1,4 @@
-# Deep-Dive 文章索引（151 篇）
+# Deep-Dive 文章索引（152 篇）
 
 > 按主题分类的深度分析文章，每篇聚焦一个具体技术机制的 Claude Code vs Qwen Code 对比。
 >
@@ -105,6 +105,7 @@
 | [Kairos Always-On](./kairos-always-on-agent-deep-dive.md) | 自治 Agent + Cron 调度 |
 | [Fork Subagent](./fork-subagent-deep-dive.md) | 上下文继承 + cache 共享 |
 | [多 Agent](./multi-agent-deep-dive.md) | Swarm 系统 |
+| [Claude Code Dynamic Workflows](./claude-code-dynamic-workflows-deep-dive.md) | 2026-05-28 随 Opus 4.8 发布的 LLM 即兴写 JS 编排脚本 + 隔离 runtime fan-out 几十到上百 subagent；「plan 从 Claude 搬到代码」第三层抽象；8 primitives / `/deep-research` bundled / 双层 gate / 对 Qwen daemon 启发 9-13 人周 |
 | [Coordinator/Swarm](./coordinator-swarm-orchestration-deep-dive.md) | Leader/Worker 编排 |
 | [Agent 工具控制](./agent-tool-access-control-deep-dive.md) | 3 层 allowlist/denylist |
 | [InProcess 隔离](./in-process-agent-isolation-deep-dive.md) | AsyncLocalStorage |
