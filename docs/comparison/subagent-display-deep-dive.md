@@ -65,6 +65,7 @@
 - ❌ **monitor → `send_message` 集成** — PR#3684 自述"未做"清单第 2 项。`task_stop` 已通过 PR#3791 覆盖；`send_message` 因 monitor 语义模糊被推迟（详见 [§六.5](#已落地-5phase-c-event-monitor-toolpr3684-系列追踪以来最大单-pr)）
 - 🟡 **`/agents --history` 归档对比视图** — 当前 `BackgroundTasksDialog` 偏运行时管理，历史归档 + 对比 diff 仍未实现
 - 🆕 **Claude Code Ultrareview**（云端 fleet）— v2.1.132 Week 17 public preview，云端 fleet 并行 review agents → CLI/Desktop。与 Qwen 本地 background subagents 思路**正交**（云端 vs 本地）—— v2.1.150 仍稳定，未停止扩张（binary 含 29 处 `Ultrareview` + 31 处 `Ultraplan` 提示）
+- 🆕 **Claude Code Dynamic Workflows**（2026-05-28 随 Opus 4.8 发布）— **本地** fan-out 编排能力：Claude 即兴写 JS 编排脚本 + 隔离 runtime 跑几十到上百 subagent，与本文聚焦的 LiveAgentPanel / InlineParallelAgentsDisplay 是**同一并行 subagent 现象的两面**——workflow 是 fan-out 的**驱动层**（plan 在代码），LiveAgentPanel / dense panel 是 fan-out 的**展示层**。Qwen Code PR#4477 的 `InlineParallelAgentsDisplay`（≥2 并行 agent 密集面板）正是 daemon/CLI 未来接 workflow-style 编排时的天然展示载体。详 [Claude Code Dynamic Workflows Deep-Dive](./claude-code-dynamic-workflows-deep-dive.md)
 - 🆕 **Claude Code 本地 background-tasks-dialog**（v2.1.132 → v2.1.145 间引入）—— v2.1.150 binary 含 `background-tasks-dialog` / `BackgroundTasksSettings` / `BackgroundAppearance` 三个新组件名，意味着 Claude 也加了**本地** background tasks 对话框。**反驳**文档原结论"Claude 维持 v2.1.81 设计"
   - Qwen daemon External Reference Architecture SaaS 方向上能包装类似产品：[§06 §七 vs Anthropic Managed Agents](./qwen-code-daemon-design/06-roadmap.md)
   - Claude Code 端详见 [§23-recent-updates](../tools/claude-code/23-recent-updates.md)
@@ -1138,8 +1139,8 @@ child process 继续跑（独立 AbortController）
 | Agent 进度行 | `components/AgentProgressLine.tsx` | dialog 内 list item + per-agent rolling tool activity buffer（PR#3488）|
 | `/agents` 菜单 | `components/agents/AgentsMenu.tsx` + 10 文件子目录（agent 定义管理）+ **v2.1.120 起加 `● N running` 计数指示**（2026-04-28）+ **v2.1.132→145 间加 `background-tasks-dialog` / `BackgroundTasksSettings` / `BackgroundAppearance`**（binary 复核，源码未确认）| **`/tasks` 命令**（运行时管理，PR#3642）+ subagent 定义在 `subagents/` 目录 |
 | 工具内联 | `tools/AgentTool/AgentTool.tsx` | `components/messages/ToolGroupMessage.tsx` |
-| SubAgent 嵌入展示 | 无（Task 工具简洁展示）| ~~`components/subagents/runtime/AgentExecutionDisplay.tsx`~~ ⚠ **PR#3909 已替换为 LiveAgentPanel**（inline AgentExecutionDisplay 在 PR#3768 抑制后由 PR#3909 移除并替换为 always-on panel）|
-| 三档切换 | 无 | ~~`AgentExecutionDisplay.tsx:124-140`~~（PR#3909 后过时——LiveAgentPanel 是单一格式 1 行/agent）|
+| SubAgent 嵌入展示 | 无（Task 工具简洁展示）| **`LiveAgentPanel`**（PR#3909 起；inline `AgentExecutionDisplay` 在 PR#3768 抑制后由 PR#3909 移除并替换为输入框下方 always-on panel）|
+| 实时展示格式 | 无 | LiveAgentPanel 单一格式 1 行/agent（PR#3909 起；旧 `AgentExecutionDisplay` 三档切换已废）|
 | 焦点锁 | 无 | `ToolGroupMessage.tsx:99-123` + PR#3771 修复 |
 | `/tasks` 命令 | 无（Claude 没有这个 CLI 入口）| **`packages/cli/src/ui/commands/tasksCommand.ts`**（PR#3642 · 显示 BackgroundShellEntry 状态）|
 | Background agent resume | `tools/AgentTool/resumeAgent.ts:resumeAgentBackground()` | **`BackgroundAgentResumeService`**（PR#3739 +4087/-165）+ transcript-first fork resume + `system/agent_bootstrap` + `system/agent_launch_prompt` |

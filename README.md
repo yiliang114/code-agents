@@ -119,9 +119,13 @@
 - [功能对比矩阵](./docs/comparison/features.md) | [隐私与遥测](./docs/comparison/privacy-telemetry.md) | [定价与成本](./docs/comparison/pricing.md) | [系统要求](./docs/comparison/system-requirements.md)
 - [架构深度对比](./docs/comparison/architecture-deep-dive.md) | [CLI vs IDE](./docs/comparison/cli-vs-ide-agents.md) | [开源 Managed Code Agents 对比](./docs/comparison/managed-agents-landscape.md)
 
+### 周报 / 进展跟踪
+
+- [2026-W22（05-24 ~ 05-31）](./docs/comparison/weekly/2026-W22-0524-0531.md) — Qwen Code / OpenCode / Codex / Claude Code 四方非 daemon 进展对比：Qwen compaction 二次重构 + computer-use + v0.16.2/v0.17.0 双发 / OpenCode acp-next 换代 / Codex Guardian 审批守门 + Python SDK beta / Claude Code Opus 4.8 + dynamic workflows
+
 ### 系统能力 Deep-Dive
 
-**核心架构：** [模型路由](./docs/comparison/model-routing.md) | [上下文压缩](./docs/comparison/context-compression-deep-dive.md) | [MCP 集成](./docs/comparison/mcp-integration-deep-dive.md) | [沙箱安全](./docs/comparison/sandbox-security-deep-dive.md) | [多代理](./docs/comparison/multi-agent-deep-dive.md)
+**核心架构：** [模型路由](./docs/comparison/model-routing.md) | [上下文压缩](./docs/comparison/context-compression-deep-dive.md) | [MCP 集成](./docs/comparison/mcp-integration-deep-dive.md) | [沙箱安全](./docs/comparison/sandbox-security-deep-dive.md) | [多代理](./docs/comparison/multi-agent-deep-dive.md) | [Claude Code Dynamic Workflows](./docs/comparison/claude-code-dynamic-workflows-deep-dive.md)
 
 **扩展系统：** [Hook/插件](./docs/comparison/hook-plugin-extension-deep-dive.md) | [Skill 技能](./docs/comparison/skill-system-deep-dive.md) | [长期记忆](./docs/comparison/memory-system-deep-dive.md) | [闭环学习](./docs/comparison/closed-learning-loop-deep-dive.md)
 
