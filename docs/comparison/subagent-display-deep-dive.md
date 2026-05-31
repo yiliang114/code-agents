@@ -1139,8 +1139,8 @@ child process 继续跑（独立 AbortController）
 | Agent 进度行 | `components/AgentProgressLine.tsx` | dialog 内 list item + per-agent rolling tool activity buffer（PR#3488）|
 | `/agents` 菜单 | `components/agents/AgentsMenu.tsx` + 10 文件子目录（agent 定义管理）+ **v2.1.120 起加 `● N running` 计数指示**（2026-04-28）+ **v2.1.132→145 间加 `background-tasks-dialog` / `BackgroundTasksSettings` / `BackgroundAppearance`**（binary 复核，源码未确认）| **`/tasks` 命令**（运行时管理，PR#3642）+ subagent 定义在 `subagents/` 目录 |
 | 工具内联 | `tools/AgentTool/AgentTool.tsx` | `components/messages/ToolGroupMessage.tsx` |
-| SubAgent 嵌入展示 | 无（Task 工具简洁展示）| ~~`components/subagents/runtime/AgentExecutionDisplay.tsx`~~ ⚠ **PR#3909 已替换为 LiveAgentPanel**（inline AgentExecutionDisplay 在 PR#3768 抑制后由 PR#3909 移除并替换为 always-on panel）|
-| 三档切换 | 无 | ~~`AgentExecutionDisplay.tsx:124-140`~~（PR#3909 后过时——LiveAgentPanel 是单一格式 1 行/agent）|
+| SubAgent 嵌入展示 | 无（Task 工具简洁展示）| **`LiveAgentPanel`**（PR#3909 起；inline `AgentExecutionDisplay` 在 PR#3768 抑制后由 PR#3909 移除并替换为输入框下方 always-on panel）|
+| 实时展示格式 | 无 | LiveAgentPanel 单一格式 1 行/agent（PR#3909 起；旧 `AgentExecutionDisplay` 三档切换已废）|
 | 焦点锁 | 无 | `ToolGroupMessage.tsx:99-123` + PR#3771 修复 |
 | `/tasks` 命令 | 无（Claude 没有这个 CLI 入口）| **`packages/cli/src/ui/commands/tasksCommand.ts`**（PR#3642 · 显示 BackgroundShellEntry 状态）|
 | Background agent resume | `tools/AgentTool/resumeAgent.ts:resumeAgentBackground()` | **`BackgroundAgentResumeService`**（PR#3739 +4087/-165）+ transcript-first fork resume + `system/agent_bootstrap` + `system/agent_launch_prompt` |
